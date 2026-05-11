@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FuelOpt</title>
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="/static/styles.css?v=demo-ui-20260507-6">
+</head>
+<body>
+  <div class="shell">
+    <aside id="search_sidebar" class="side">
+      <header class="brand">
+        <div class="wordmark">Fuel<span>Opt</span></div>
+        <nav class="nav">
+          <a href="/docs">Docs</a>
+          <a href="/health">Health</a>
+        </nav>
+        <div class="refresh-widget">
+          <button id="refresh_catalog" class="refresh-button" type="button" aria-label="Forzar actualización de datos" title="Forzar actualización de datos">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 7.5a7.6 7.6 0 0 0-13.2-3.2L4.5 6.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M4.5 3.2v3.4h3.4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M4 16.5a7.6 7.6 0 0 0 13.2 3.2l2.3-2.3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M19.5 20.8v-3.4h-3.4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <div class="refresh-copy">
+            <span id="refresh_status">Precios descargados: --</span>
+          </div>
+        </div>
+        <button id="sidebar_toggle" class="sidebar-toggle" type="button" aria-label="Contraer filtros" aria-controls="search_sidebar" aria-expanded="true" title="Contraer filtros">
+        </button>
+      </header>
+
+      <section class="headline">
+        <div class="eyebrow">Optimizador de repostaje</div>
+        <h1>Llena tu depósito sin vaciar tu cartera.</h1>
+      </section>
+
+      <section class="controls">
+        <div class="block route-summary">
+          <label class="label">Salida</label>
+          <div id="origin_choice" class="selected-place">Sin seleccionar</div>
+        </div>
+
+        <div class="block">
+          <div class="switch-row">
+            <label class="label" style="margin:0">Regreso al origen</label>
+            <label class="switch">
+              <input id="return_to_origin" type="checkbox" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div id="destination_block" class="route-summary" style="display:none">
+            <label class="label">Llegada</label>
+            <div id="destination_choice" class="selected-place">Sin seleccionar</div>
+          </div>
+        </div>
+
+        <div class="block">
+          <div class="grid">
+            <div>
+              <label class="label" for="fuel_type">Combustible</label>
+              <select id="fuel_type"></select>
+            </div>
+            <div>
+              <label class="label" for="optimization_mode">Objetivo</label>
+              <select id="optimization_mode">
+                <option value="economic">Máximo ahorro</option>
+                <option value="balanced">Equilibrado</option>
+                <option value="minimal_detour">Mínimo desvío</option>
+              </select>
+            </div>
+            <div class="refuel-grid span-2">
+              <div class="refuel-header amount-header">
+                <div class="amount-mode" aria-label="Modo de cantidad">
+                  <button id="refill_mode_liters" class="amount-mode-option active" type="button" aria-pressed="true">Litros</button>
+                  <button id="refill_mode_budget" class="amount-mode-option" type="button" aria-pressed="false">Euros</button>
+                </div>
+              </div>
+              <div class="refuel-header consumption-header">
+                <label class="label" for="consumption_l_100km">Consumo medio</label>
+              </div>
+              <input id="liters" inputmode="decimal" value="30" aria-label="Cantidad a repostar">
+              <input id="consumption_l_100km" inputmode="decimal" value="5.5">
+              <div id="refuel_amount_hint" class="input-hint">Cantidad de combustible a repostar.</div>
+            </div>
+            <div class="span-2">
+              <div class="brand-tools">
+                <label class="label" style="margin:0">Marcas</label>
+                <button id="select_all_brands" class="link-button active" type="button" aria-pressed="true">Todas</button>
+              </div>
+              <div id="brand_checks" class="brand-grid"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <button class="primary" id="submit" type="button">Calcular mejor repostaje</button>
+        <div id="status" class="status"></div>
+      </footer>
+    </aside>
+
+    <main class="stage">
+      <div id="map"></div>
+      <div class="map-top">
+        <div id="route_status" class="route-status" aria-live="polite"></div>
+        <div class="map-card map-search-card">
+          <div class="map-search-head">
+            <div class="point-tabs" style="box-shadow:none;padding:0;background:transparent;border:0;margin-bottom:10px">
+              <button id="tab_origin" class="point-tab active" type="button">Salida</button>
+              <button id="tab_destination" class="point-tab" type="button">Llegada</button>
+            </div>
+            <label id="map_search_label" class="label" for="map_search">Buscar salida</label>
+            <input id="map_search" autocomplete="off" placeholder="Buscar lugar">
+          </div>
+          <div class="map-search-results">
+            <div id="map_suggestions" class="suggestions"></div>
+          </div>
+          <div id="map_choice" class="choice"></div>
+        </div>
+      </div>
+      <section id="result" class="result" data-empty="true"></section>
+    </main>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="/static/app.js?v=demo-ui-20260507-6"></script>
+</body>
+</html>

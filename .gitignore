@@ -1,0 +1,25 @@
+# Local secrets
+.env
+.env.local
+
+# Python/cache artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local runtime logs
+*.log
+data/reports/
+data/db/*.previous-*.sqlite
+data/db/*.next.sqlite
+data/db/*-wal
+data/db/*-shm
+catalog_refresh.lock
+catalog_refresh_report.json
+*.next.sqlite
+*.previous-*.sqlite
+
+# Launcher build artifacts
+build/
+dist/
+*.spec
