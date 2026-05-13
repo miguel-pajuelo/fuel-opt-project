@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements-web.txt
+
+      - name: Crear directorios de datos necesarios
+        run: mkdir -p data/db data/cache data/reports
+
+      - name: Compilar módulos Python
+        run: python -m compileall app -q
+
+      - name: Tests de sanidad
+        run: python tests/sanity_check.py
+
+      - name: Tests de adaptadores
+        run: python tests/test_adapters.py
+
+      - name: Tests de política de refresco
+        run: python tests/refresh_policy_check.py
+
+      - name: Tests de frontend estático
+        run: python tests/frontend_static_check.py
+
+      - name: Tests del pipeline web
+        run: python tests/web_pipeline_check.py

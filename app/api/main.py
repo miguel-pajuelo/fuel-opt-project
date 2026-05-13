@@ -1,18 +1,51 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
 import threading
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from requests import RequestException
+from starlette.middleware.cors import CORSMiddleware
+
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.starlette import StarletteIntegration
+    _sentry_available = True
+except ImportError:
+    _sentry_available = False
+
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.util import get_remote_address
+    _slowapi_available = True
+except ImportError:
+    _slowapi_available = False
+    RateLimitExceeded = Exception  # type: ignore[assignment,misc]
+
+    class Limiter:  # type: ignore[no-redef]
+        def __init__(self, **_: object) -> None:
+            pass
+        def limit(self, *_: object, **__: object):
+            return lambda f: f
+
+    def get_remote_address(_: object) -> str:  # type: ignore[misc]
+        return "unknown"
+
+    def _rate_limit_exceeded_handler(_req: object, _exc: object) -> None:  # type: ignore[misc]
+        pass
 
 from app.config import load_settings
 from app.config import PROJECT_ROOT
@@ -34,10 +67,92 @@ from app.storage.database import (
 )
 
 
+class _JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        data: dict[str, object] = {
+            "time": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "msg": record.getMessage(),
+        }
+        for key in ("request_id", "method", "path", "status", "elapsed_ms", "ip"):
+            if hasattr(record, key):
+                data[key] = getattr(record, key)
+        if record.exc_info:
+            data["exc"] = self.formatException(record.exc_info)
+        return json.dumps(data, ensure_ascii=False, default=str)
+
+
+_log_handler = logging.StreamHandler()
+_log_handler.setFormatter(_JsonFormatter())
+logging.basicConfig(handlers=[_log_handler], level=logging.INFO, force=True)
+logger = logging.getLogger("fuelopt.api")
+
 settings = load_settings()
+limiter = Limiter(key_func=get_remote_address)
+
+_sentry_dsn = os.getenv("SENTRY_DSN", "")
+if _sentry_dsn:
+    if _sentry_available:
+        sentry_sdk.init(
+            dsn=_sentry_dsn,
+            integrations=[StarletteIntegration(), FastApiIntegration()],
+            traces_sample_rate=0.1,
+            send_default_pii=False,
+        )
+    else:
+        logging.warning("SENTRY_DSN configurado pero sentry-sdk no instalado. Ejecuta: pip install sentry-sdk[fastapi]")
+
 app = FastAPI(title="Fuel Optimizer API", version="0.1.0")
+app.state.limiter = limiter
+if _slowapi_available:
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+    )
+
 _refresh_lock = threading.Lock()
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def _log_requests(request: Request, call_next):
+    request_id = str(uuid.uuid4())[:8]
+    start = time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = round((time.monotonic() - start) * 1000)
+    logger.info(
+        "request",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "elapsed_ms": elapsed_ms,
+            "ip": request.client.host if request.client else "unknown",
+        },
+    )
+    return response
+
+
+@app.on_event("startup")
+def _validate_startup() -> None:
+    if not settings.ors_api_key:
+        logging.warning(
+            "ORS_API_KEY no está configurada. "
+            "Geocodificación y rutas reales no estarán disponibles."
+        )
+    if not settings.db_path.exists():
+        raise RuntimeError(
+            f"Base de datos no encontrada en {settings.db_path}. "
+            "Ejecuta scripts/refresh_catalog.py antes de arrancar."
+        )
+
 
 INDEPENDENT_BRAND_LABEL = "Independientes / sin marca"
 INDEPENDENT_BRAND_HINT = "Incluye estaciones independientes o con rótulo no reconocido."
@@ -221,7 +336,9 @@ def _public_geometry(points: list[Coordinates]) -> list[dict[str, float]]:
 
 
 @app.get("/geocode")
+@limiter.limit("30/minute")
 def geocode(
+    request: Request,
     q: str = Query(min_length=3),
     size: int = Query(default=5, ge=1, le=10),
     focus_lat: float | None = Query(default=None, ge=-90.0, le=90.0),
@@ -244,7 +361,9 @@ def geocode(
 
 
 @app.get("/reverse-geocode")
+@limiter.limit("30/minute")
 def reverse_geocode(
+    request: Request,
     lat: float = Query(ge=-90.0, le=90.0),
     lon: float = Query(ge=-180.0, le=180.0),
 ) -> dict[str, Any]:
@@ -258,7 +377,8 @@ def reverse_geocode(
 
 
 @app.post("/route/stopover")
-def route_stopover(payload: RouteStopoverRequest) -> dict[str, Any]:
+@limiter.limit("20/minute")
+def route_stopover(request: Request, payload: RouteStopoverRequest) -> dict[str, Any]:
     origin = Coordinates(payload.origin_lat, payload.origin_lon)
     station = Coordinates(payload.station_lat, payload.station_lon)
     destination = Coordinates(payload.destination_lat, payload.destination_lon)
@@ -287,6 +407,16 @@ def route_stopover(payload: RouteStopoverRequest) -> dict[str, Any]:
 @app.get("/", response_class=HTMLResponse)
 def root() -> str:
     return load_index_html()
+
+
+@app.get("/privacidad", response_class=HTMLResponse)
+def privacy() -> str:
+    return (STATIC_DIR / "privacy.html").read_text(encoding="utf-8")
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots_txt() -> str:
+    return (STATIC_DIR / "robots.txt").read_text(encoding="utf-8")
 
 
 @app.get("/health")
@@ -375,7 +505,8 @@ def catalog_status() -> dict[str, object]:
 
 
 @app.post("/catalog/refresh")
-def refresh_catalog() -> dict[str, object]:
+@limiter.limit("2/minute")
+def refresh_catalog(request: Request) -> dict[str, object]:
     if not _refresh_lock.acquire(blocking=False):
         raise HTTPException(status_code=429, detail="Catalog refresh already in progress.")
     try:
@@ -452,7 +583,8 @@ def stations(
 
 
 @app.post("/optimize")
-def optimize(payload: OptimizeRequest) -> dict[str, Any]:
+@limiter.limit("20/minute")
+def optimize(request: Request, payload: OptimizeRequest) -> dict[str, Any]:
     if payload.fuel_type not in FUEL_FIELDS:
         raise HTTPException(status_code=400, detail=f"Unsupported fuel_type: {payload.fuel_type}")
     input_mode = (payload.input_mode or "liters").strip().lower()

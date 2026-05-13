@@ -1118,3 +1118,16 @@
       .map-panel { width: calc(100vw - 36px); }
       .metrics { grid-template-columns: 1fr; }
     }
+    .legal-footer {
+      margin: 8px 0 0;
+      font-size: 11px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .legal-footer a {
+      color: var(--muted);
+      text-decoration: underline;
+    }
+    .legal-footer a:hover {
+      color: var(--ink);
+    }
