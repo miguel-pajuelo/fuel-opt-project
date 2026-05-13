@@ -1,4 +1,13 @@
     const $ = (id) => document.getElementById(id);
+    function track(eventName, props) {
+      if (typeof window.plausible === 'function') {
+        window.plausible(eventName, props ? { props } : undefined);
+      }
+    }
+    function hideOnboardingHint() {
+      const hint = $('onboarding_hint');
+      if (hint) hint.hidden = true;
+    }
     const fmtEuro = (n) => `${Number(n).toFixed(2)} €`;
     const fmtKm = (n) => `${Number(n).toFixed(2)} km`;
     const fmtPrice = (n) => `${Number(n).toFixed(3)} €/L`;
@@ -397,6 +406,7 @@
         state.userLocationAccuracyCircle = null;
       }
       map.setView(latLng, Math.max(map.getZoom(), 15), { animate: true });
+      track('Geolocalización usada', { precision_m: String(Number.isFinite(accuracy) ? Math.round(accuracy) : -1) });
       if (Number.isFinite(accuracy) && accuracy > LOW_LOCATION_ACCURACY_M) {
         setRouteStatus('Ubicación aproximada: precisión baja.');
       } else {
@@ -724,6 +734,7 @@
     }
 
     function setPoint(point, place) {
+      hideOnboardingHint();
       state[point] = place;
       syncPointUI(point);
       if (state.markers[point]) map.removeLayer(state.markers[point]);
@@ -827,7 +838,10 @@
     desktopSidebarQuery.addEventListener('change', () => setSidebarCollapsed(state.sidebarCollapsed));
     $('refresh_catalog').addEventListener('click', forceCatalogRefresh);
     $('refill_mode_liters').addEventListener('click', () => setInputMode('liters'));
-    $('refill_mode_budget').addEventListener('click', () => setInputMode('budget'));
+    $('refill_mode_budget').addEventListener('click', () => {
+      setInputMode('budget');
+      track('Modo presupuesto activado');
+    });
 
     syncRefuelInputUI();
     syncAllPointUI();
@@ -1182,6 +1196,7 @@
         const { data, fallbackUsed } = await requestOptimization(payload);
         state.resultHasFit = false;
         renderResult(data, 0, false);
+        track('Optimización calculada', { resultados: String(data.returned), fallback: String(fallbackUsed) });
         $('status').textContent = fallbackUsed
           ? `${data.returned} alternativas evaluadas con estimación por distancia`
           : `${data.returned} alternativas evaluadas`;

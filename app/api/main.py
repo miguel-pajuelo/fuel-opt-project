@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from requests import RequestException
@@ -335,14 +335,11 @@ def _public_geometry(points: list[Coordinates]) -> list[dict[str, float]]:
     return [{"lat": point.lat, "lon": point.lon} for point in points]
 
 
-@app.get("/geocode")
-@limiter.limit("30/minute")
 def geocode(
-    request: Request,
-    q: str = Query(min_length=3),
-    size: int = Query(default=5, ge=1, le=10),
-    focus_lat: float | None = Query(default=None, ge=-90.0, le=90.0),
-    focus_lon: float | None = Query(default=None, ge=-180.0, le=180.0),
+    q: str,
+    size: int = 5,
+    focus_lat: float | None = None,
+    focus_lon: float | None = None,
 ) -> dict[str, Any]:
     try:
         return {
@@ -360,13 +357,19 @@ def geocode(
         raise HTTPException(status_code=502, detail=f"Geocoding provider failed: {exc}") from exc
 
 
-@app.get("/reverse-geocode")
+@app.get("/geocode")
 @limiter.limit("30/minute")
-def reverse_geocode(
+def geocode_endpoint(
     request: Request,
-    lat: float = Query(ge=-90.0, le=90.0),
-    lon: float = Query(ge=-180.0, le=180.0),
+    q: str = Query(min_length=3),
+    size: int = Query(default=5, ge=1, le=10),
+    focus_lat: float | None = Query(default=None, ge=-90.0, le=90.0),
+    focus_lon: float | None = Query(default=None, ge=-180.0, le=180.0),
 ) -> dict[str, Any]:
+    return geocode(q=q, size=size, focus_lat=focus_lat, focus_lon=focus_lon)
+
+
+def reverse_geocode(lat: float, lon: float) -> dict[str, Any]:
     try:
         item = reverse_geocode_coordinates(lat=lat, lon=lon, settings=settings)
         return {"item": item}
@@ -376,9 +379,23 @@ def reverse_geocode(
         raise HTTPException(status_code=502, detail=f"Geocoding provider failed: {exc}") from exc
 
 
+@app.get("/reverse-geocode")
+@limiter.limit("30/minute")
+def reverse_geocode_endpoint(
+    request: Request,
+    lat: float = Query(ge=-90.0, le=90.0),
+    lon: float = Query(ge=-180.0, le=180.0),
+) -> dict[str, Any]:
+    return reverse_geocode(lat=lat, lon=lon)
+
+
 @app.post("/route/stopover")
 @limiter.limit("20/minute")
-def route_stopover(request: Request, payload: RouteStopoverRequest) -> dict[str, Any]:
+def route_stopover_endpoint(request: Request, payload: RouteStopoverRequest) -> dict[str, Any]:
+    return route_stopover(payload)
+
+
+def route_stopover(payload: RouteStopoverRequest) -> dict[str, Any]:
     origin = Coordinates(payload.origin_lat, payload.origin_lon)
     station = Coordinates(payload.station_lat, payload.station_lon)
     destination = Coordinates(payload.destination_lat, payload.destination_lon)
@@ -432,13 +449,15 @@ def health() -> dict[str, Any]:
 
 
 @app.get("/fuels")
-def fuels() -> dict[str, Any]:
-    return {
+def fuels() -> JSONResponse:
+    resp = JSONResponse(content={
         "fuels": [
             {"key": key, "source_field": source_field, "label": label}
             for key, (source_field, label) in FUEL_FIELDS.items()
         ]
-    }
+    })
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
 
 
 @app.get("/brands")
@@ -487,7 +506,9 @@ def brands() -> dict[str, Any]:
                 "hint": INDEPENDENT_BRAND_HINT,
             }
         )
-    return {"brands": known_payload, "count": len(known_payload)}
+    resp = JSONResponse(content={"brands": known_payload, "count": len(known_payload)})
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
 
 
 @app.get("/brands/raw")
@@ -584,7 +605,11 @@ def stations(
 
 @app.post("/optimize")
 @limiter.limit("20/minute")
-def optimize(request: Request, payload: OptimizeRequest) -> dict[str, Any]:
+def optimize_endpoint(request: Request, payload: OptimizeRequest) -> dict[str, Any]:
+    return optimize(payload)
+
+
+def optimize(payload: OptimizeRequest) -> dict[str, Any]:
     if payload.fuel_type not in FUEL_FIELDS:
         raise HTTPException(status_code=400, detail=f"Unsupported fuel_type: {payload.fuel_type}")
     input_mode = (payload.input_mode or "liters").strip().lower()
