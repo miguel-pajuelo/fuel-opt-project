@@ -1,7 +1,7 @@
     const $ = (id) => document.getElementById(id);
-    function track(eventName, props) {
-      if (typeof window.plausible === 'function') {
-        window.plausible(eventName, props ? { props } : undefined);
+    function track(eventName, _props) {
+      if (window.goatcounter && typeof window.goatcounter.count === 'function') {
+        window.goatcounter.count({ path: eventName, event: true });
       }
     }
     function hideOnboardingHint() {

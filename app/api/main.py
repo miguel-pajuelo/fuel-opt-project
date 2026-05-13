@@ -19,14 +19,6 @@ from requests import RequestException
 from starlette.middleware.cors import CORSMiddleware
 
 try:
-    import sentry_sdk
-    from sentry_sdk.integrations.fastapi import FastApiIntegration
-    from sentry_sdk.integrations.starlette import StarletteIntegration
-    _sentry_available = True
-except ImportError:
-    _sentry_available = False
-
-try:
     from slowapi import Limiter, _rate_limit_exceeded_handler
     from slowapi.errors import RateLimitExceeded
     from slowapi.util import get_remote_address
@@ -90,17 +82,24 @@ logger = logging.getLogger("fuelopt.api")
 settings = load_settings()
 limiter = Limiter(key_func=get_remote_address)
 
-_sentry_dsn = os.getenv("SENTRY_DSN", "")
-if _sentry_dsn:
-    if _sentry_available:
-        sentry_sdk.init(
-            dsn=_sentry_dsn,
-            integrations=[StarletteIntegration(), FastApiIntegration()],
-            traces_sample_rate=0.1,
-            send_default_pii=False,
-        )
-    else:
-        logging.warning("SENTRY_DSN configurado pero sentry-sdk no instalado. Ejecuta: pip install sentry-sdk[fastapi]")
+def _alert_error(method: str, path: str, status: int, request_id: str) -> None:
+    """Fire-and-forget 5xx alert to ALERT_WEBHOOK_URL (runs in daemon thread)."""
+    webhook_url = os.getenv("ALERT_WEBHOOK_URL", "")
+    if not webhook_url:
+        return
+
+    import urllib.request as _ur
+
+    payload = json.dumps({
+        "text": f"⚠️ *FuelOpt 5xx* `{status}` — `{method} {path}` (req={request_id})",
+    }).encode()
+    req = _ur.Request(webhook_url, data=payload, headers={"Content-Type": "application/json"})
+    try:
+        with _ur.urlopen(req, timeout=5):
+            pass
+    except Exception:
+        pass  # best-effort only
+
 
 app = FastAPI(title="Fuel Optimizer API", version="0.1.0")
 app.state.limiter = limiter
@@ -137,6 +136,12 @@ async def _log_requests(request: Request, call_next):
             "ip": request.client.host if request.client else "unknown",
         },
     )
+    if response.status_code >= 500:
+        threading.Thread(
+            target=_alert_error,
+            args=(request.method, request.url.path, response.status_code, request_id),
+            daemon=True,
+        ).start()
     return response
 
 
