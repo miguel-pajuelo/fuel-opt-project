@@ -128,6 +128,29 @@ def test_app_js_handles_virtual_brand() -> None:
     _assert(".brand-hint" in styles, "Virtual brand hint style missing from CSS.")
 
 
+def test_map_has_user_location_control() -> None:
+    js = _read("static/app.js")
+    styles = _read("static/styles.css")
+    _assert("function initUserLocationControl" in js, "User location Leaflet control missing.")
+    _assert("navigator.geolocation.getCurrentPosition" in js, "User location control should use browser geolocation on click.")
+    _assert("renderUserLocation" in js, "User location marker rendering missing.")
+    _assert("userLocationMarker" in js, "User location marker should be tracked and reused.")
+    _assert("userLocationAccuracyCircle" in js, "User location accuracy circle should be tracked and reused.")
+    _assert("const lat = Number(coords.latitude)" in js, "User location should use latitude returned by Geolocation API.")
+    _assert("const lon = Number(coords.longitude)" in js, "User location should use longitude returned by Geolocation API.")
+    _assert("const accuracy = Number(coords.accuracy)" in js, "User location should use accuracy returned by Geolocation API.")
+    _assert("map.setView(latLng" in js, "Map should center on geolocation coordinates.")
+    _assert("enableHighAccuracy: true" in js, "Geolocation should request high accuracy.")
+    _assert("maximumAge: 0" in js, "Geolocation should not reuse cached positions.")
+    _assert("FuelOpt geolocation result" in js, "Geolocation debug log missing.")
+    _assert("fallback_used: false" in js, "Geolocation logs should state no fallback was used.")
+    _assert("Ubicación aproximada: precisión baja." in js, "Low accuracy location warning missing.")
+    _assert("Permiso de ubicación denegado." in js, "Geolocation permission error copy missing.")
+    _assert("Tu navegador no soporta geolocalización." in js, "Unsupported geolocation copy missing.")
+    _assert(".user-location-control" in styles, "User location control styles missing.")
+    _assert(".user-location-button" in styles, "User location button styles missing.")
+
+
 def run() -> None:
     test_frontend_is_extracted()
     test_dynamic_html_uses_escape_helper()
@@ -139,6 +162,7 @@ def run() -> None:
     test_styles_warning_classes()
     test_stale_price_warning_moves_to_price_metric()
     test_app_js_handles_virtual_brand()
+    test_map_has_user_location_control()
     print("OK: frontend static checks passed")
 
 

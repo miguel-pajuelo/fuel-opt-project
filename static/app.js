@@ -39,7 +39,7 @@
     }
 
     function refreshTimestamp(catalog) {
-      return formatCatalogDate(refreshTimestampValue(catalog));
+      return formatCatalogDate(refreshTimestampValue(catalog), { includeTime: true });
     }
 
     function catalogValue(catalog, key) {
@@ -50,10 +50,17 @@
       if (!value) return '--';
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return '--';
-      const options = includeTime
-        ? { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }
-        : { day: '2-digit', month: '2-digit', year: 'numeric' };
-      return new Intl.DateTimeFormat('es-ES', options).format(date);
+      const dateText = new Intl.DateTimeFormat('es-ES', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      }).format(date);
+      if (!includeTime) return dateText;
+      const timeText = new Intl.DateTimeFormat('es-ES', {
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(date);
+      return `${dateText} ${timeText}`;
     }
 
     function catalogReasons(catalog) {
@@ -240,10 +247,12 @@
       alternativesOpen: false,
       resultHasFit: false,
       sidebarCollapsed: false,
+      userLocationMarker: null,
+      userLocationAccuracyCircle: null,
     };
 
     const map = L.map('map', { zoomControl: false, doubleClickZoom: false }).setView([40.4168, -3.7038], 6);
-    L.control.zoom({ position: 'bottomleft' }).addTo(map);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
@@ -252,6 +261,8 @@
     map.getPane('routePane').style.zIndex = '450';
     map.createPane('selectedStationPane');
     map.getPane('selectedStationPane').style.zIndex = '650';
+    map.createPane('userLocationPane');
+    map.getPane('userLocationPane').style.zIndex = '640';
 
     const icons = {
       origin: L.divIcon({ className: '', html: '<div style="width:18px;height:18px;border-radius:50%;background:#171411;border:3px solid #fbf8f1;box-shadow:0 4px 16px rgba(0,0,0,.32)"></div>', iconSize: [18,18], iconAnchor: [9,9] }),
@@ -260,6 +271,7 @@
     };
 
     const desktopSidebarQuery = window.matchMedia('(min-width: 1001px)');
+    const LOW_LOCATION_ACCURACY_M = 1000;
 
     function refreshMapSize() {
       setTimeout(() => map.invalidateSize({ pan: false }), 340);
@@ -320,6 +332,139 @@
       element.classList.toggle('visible', Boolean(message));
       element.classList.toggle('error', tone === 'error');
     }
+
+    function userLocationErrorMessage(error) {
+      if (!navigator.geolocation) return 'Tu navegador no soporta geolocalización.';
+      if (!error) return 'No se pudo obtener tu ubicación.';
+      if (error.code === error.PERMISSION_DENIED) return 'Permiso de ubicación denegado.';
+      if (error.code === error.POSITION_UNAVAILABLE) return 'Ubicación no disponible.';
+      if (error.code === error.TIMEOUT) return 'La ubicación ha tardado demasiado.';
+      return 'No se pudo obtener tu ubicación.';
+    }
+
+    function renderUserLocation(position) {
+      const coords = position.coords || {};
+      const lat = Number(coords.latitude);
+      const lon = Number(coords.longitude);
+      const accuracy = Number(coords.accuracy);
+      console.info('FuelOpt geolocation result', {
+        latitude: lat,
+        longitude: lon,
+        accuracy_m: Number.isFinite(accuracy) ? accuracy : null,
+        fallback_used: false,
+      });
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        console.warn('FuelOpt geolocation invalid coordinates; map center unchanged.', {
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          fallback_used: false,
+        });
+        setRouteStatus('No se pudo obtener tu ubicación.', 'error');
+        return;
+      }
+      const latLng = L.latLng(lat, lon);
+      if (state.userLocationMarker) {
+        state.userLocationMarker.setLatLng(latLng);
+      } else {
+        state.userLocationMarker = L.circleMarker(latLng, {
+          pane: 'userLocationPane',
+          radius: 7,
+          color: '#fbf8f1',
+          weight: 3,
+          fillColor: '#16849a',
+          fillOpacity: 1,
+          interactive: false,
+        }).addTo(map);
+      }
+      if (Number.isFinite(accuracy) && accuracy > 0) {
+        if (state.userLocationAccuracyCircle) {
+          state.userLocationAccuracyCircle.setLatLng(latLng);
+          state.userLocationAccuracyCircle.setRadius(accuracy);
+        } else {
+          state.userLocationAccuracyCircle = L.circle(latLng, {
+            pane: 'userLocationPane',
+            radius: accuracy,
+            color: '#16849a',
+            weight: 1,
+            opacity: .35,
+            fillColor: '#16849a',
+            fillOpacity: .08,
+            interactive: false,
+          }).addTo(map);
+        }
+      } else if (state.userLocationAccuracyCircle) {
+        map.removeLayer(state.userLocationAccuracyCircle);
+        state.userLocationAccuracyCircle = null;
+      }
+      map.setView(latLng, Math.max(map.getZoom(), 15), { animate: true });
+      if (Number.isFinite(accuracy) && accuracy > LOW_LOCATION_ACCURACY_M) {
+        setRouteStatus('Ubicación aproximada: precisión baja.');
+      } else {
+        setRouteStatus('');
+      }
+    }
+
+    function requestUserLocation(button) {
+      if (!navigator.geolocation) {
+        setRouteStatus(userLocationErrorMessage(), 'error');
+        return;
+      }
+      button.disabled = true;
+      button.classList.add('loading');
+      setRouteStatus('Buscando tu ubicación...');
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          button.disabled = false;
+          button.classList.remove('loading');
+          renderUserLocation(position);
+        },
+        (error) => {
+          console.warn('FuelOpt geolocation failed; map center unchanged.', {
+            code: error?.code,
+            message: error?.message,
+            fallback_used: false,
+          });
+          button.disabled = false;
+          button.classList.remove('loading');
+          setRouteStatus(userLocationErrorMessage(error), 'error');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        },
+      );
+    }
+
+    function initUserLocationControl(mapInstance) {
+      const UserLocationControl = L.Control.extend({
+        options: { position: 'bottomright' },
+        onAdd() {
+          const container = L.DomUtil.create('div', 'leaflet-control user-location-control');
+          const button = L.DomUtil.create('button', 'user-location-button', container);
+          button.type = 'button';
+          button.setAttribute('aria-label', 'Centrar mapa en mi ubicación');
+          button.setAttribute('title', 'Centrar mapa en mi ubicación');
+          button.innerHTML = `
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="6"></circle>
+              <circle cx="12" cy="12" r="2.2"></circle>
+              <path d="M12 2.5v3.2M12 18.3v3.2M2.5 12h3.2M18.3 12h3.2"></path>
+            </svg>
+          `;
+          L.DomEvent.disableClickPropagation(container);
+          L.DomEvent.disableScrollPropagation(container);
+          L.DomEvent.on(button, 'click', (event) => {
+            L.DomEvent.preventDefault(event);
+            requestUserLocation(button);
+          });
+          return container;
+        },
+      });
+      return new UserLocationControl().addTo(mapInstance);
+    }
+
+    initUserLocationControl(map);
 
     function routeCoordKey(point) {
       return `${Number(point.lat).toFixed(6)},${Number(point.lon).toFixed(6)}`;
@@ -797,7 +942,7 @@
         : 'El cálculo usa la última fecha oficial disponible en la fuente.';
       const priceWarning = (missingOfficialDate || staleWarning) ? `
         <span class="price-warning" tabindex="0" aria-label="${escapeHtml(warningTitle)}">
-          <span class="price-warning-icon" aria-hidden="true">!</span>
+          <span class="price-warning-icon" aria-hidden="true"></span>
           <span class="price-warning-tooltip" role="tooltip">
             <strong>${escapeHtml(warningTitle)}</strong>
             <span>${escapeHtml(warningCopy)}</span>

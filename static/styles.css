@@ -70,9 +70,9 @@
       align-items: center;
       gap: 8px;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 11px;
       margin-left: auto;
-      max-width: 260px;
+      max-width: 320px;
     }
     .refresh-copy {
       display: grid;
@@ -587,6 +587,51 @@
     }
     .route-status.visible { display: inline-flex; }
     .route-status.error { color: var(--red); }
+    .user-location-control {
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    .leaflet-right .leaflet-control-zoom {
+      margin-right: 14px;
+    }
+    .user-location-button {
+      width: 42px;
+      height: 42px;
+      border: 1px solid var(--night);
+      border-radius: 50%;
+      background: var(--night);
+      color: var(--paper);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      box-shadow: 0 10px 24px rgba(23, 20, 17, .22);
+      transition: transform .16s ease, background .16s ease, color .16s ease;
+    }
+    .user-location-button:hover {
+      background: #25221e;
+      transform: translateY(-1px);
+    }
+    .user-location-button:disabled {
+      cursor: wait;
+      opacity: .74;
+      transform: none;
+    }
+    .user-location-button svg {
+      width: 22px;
+      height: 22px;
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .user-location-button svg circle:nth-of-type(2) {
+      fill: currentColor;
+    }
+    .user-location-button.loading svg {
+      animation: refresh-spin 1s linear infinite;
+    }
     .map-search-card {
       width: min(560px, calc(100vw - 56px));
       max-width: 560px;
@@ -784,13 +829,14 @@
     }
     .price-warning {
       position: absolute;
-      top: 10px;
-      right: 10px;
+      top: 50%;
+      right: 14px;
       width: 24px;
       height: 22px;
       display: block;
       font-size: 15px;
       cursor: help;
+      transform: translateY(-50%);
     }
     .price-warning-icon {
       width: 24px;
