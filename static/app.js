@@ -261,7 +261,7 @@
     };
 
     const map = L.map('map', { zoomControl: false, doubleClickZoom: false }).setView([40.4168, -3.7038], 6);
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    L.control.zoom({ position: 'bottomleft' }).addTo(map);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap'
@@ -448,7 +448,7 @@
 
     function initUserLocationControl(mapInstance) {
       const UserLocationControl = L.Control.extend({
-        options: { position: 'bottomright' },
+        options: { position: 'bottomleft' },
         onAdd() {
           const container = L.DomUtil.create('div', 'leaflet-control user-location-control');
           const button = L.DomUtil.create('button', 'user-location-button', container);

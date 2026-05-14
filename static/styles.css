@@ -588,11 +588,11 @@
     .route-status.visible { display: inline-flex; }
     .route-status.error { color: var(--red); }
     .user-location-control {
-      margin-right: 10px;
+      margin-left: 14px;
       margin-bottom: 10px;
     }
-    .leaflet-right .leaflet-control-zoom {
-      margin-right: 14px;
+    .leaflet-left .leaflet-control-zoom {
+      margin-left: 14px;
     }
     .user-location-button {
       width: 42px;
