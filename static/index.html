@@ -53,18 +53,9 @@
           <div id="origin_choice" class="selected-place">Sin seleccionar</div>
         </div>
 
-        <div class="block">
-          <div class="switch-row">
-            <label class="label" style="margin:0">Regreso al origen</label>
-            <label class="switch">
-              <input id="return_to_origin" type="checkbox" checked>
-              <span class="slider"></span>
-            </label>
-          </div>
-          <div id="destination_block" class="route-summary" style="display:none">
-            <label class="label">Llegada</label>
-            <div id="destination_choice" class="selected-place">Sin seleccionar</div>
-          </div>
+        <div id="destination_block" class="block route-summary" style="display:none">
+          <label class="label">Llegada</label>
+          <div id="destination_choice" class="selected-place">Sin seleccionar</div>
         </div>
 
         <div class="block">
@@ -115,16 +106,21 @@
 
     <main class="stage">
       <div id="map"></div>
-      <div id="onboarding_hint" class="onboarding-hint" role="status">
-        Selecciona tu punto de salida para empezar
-      </div>
       <div class="map-top">
-        <div id="route_status" class="route-status" aria-live="polite"></div>
         <div class="map-card map-search-card">
           <div class="map-search-head">
-            <div class="point-tabs" style="box-shadow:none;padding:0;background:transparent;border:0;margin-bottom:10px">
-              <button id="tab_origin" class="point-tab active" type="button">Salida</button>
-              <button id="tab_destination" class="point-tab" type="button">Llegada</button>
+            <div class="map-search-nav">
+              <div class="point-tabs">
+                <button id="tab_origin" class="point-tab active" type="button">Salida</button>
+                <button id="tab_destination" class="point-tab" type="button">Llegada</button>
+              </div>
+              <div class="return-toggle-compact">
+                <span>Regreso al origen</span>
+                <label class="switch" style="margin:0">
+                  <input id="return_to_origin" type="checkbox" checked>
+                  <span class="slider"></span>
+                </label>
+              </div>
             </div>
             <label id="map_search_label" class="label" for="map_search">Buscar salida</label>
             <input id="map_search" autocomplete="off" placeholder="Buscar lugar">
@@ -134,6 +130,7 @@
           </div>
           <div id="map_choice" class="choice"></div>
         </div>
+        <div id="route_status" class="route-status" aria-live="polite"></div>
       </div>
       <section id="result" class="result" data-empty="true"></section>
     </main>
