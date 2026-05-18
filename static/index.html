@@ -14,116 +14,172 @@
           async src="//gc.zgo.at/count.js"></script>
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="/static/styles.css?v=demo-ui-20260513-1">
+  <link rel="stylesheet" href="/static/styles.css?v=result-card-20260518-9">
 </head>
 <body>
-  <div class="shell">
-    <aside id="search_sidebar" class="side">
-      <header class="brand">
-        <div class="wordmark">Fuel<span>Opt</span></div>
-        <nav class="nav">
-          <a href="/docs">Docs</a>
-          <a href="/health">Health</a>
-        </nav>
-        <div class="refresh-widget">
-          <button id="refresh_catalog" class="refresh-button" type="button" aria-label="Forzar actualización de datos" title="Forzar actualización de datos">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M20 7.5a7.6 7.6 0 0 0-13.2-3.2L4.5 6.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M4.5 3.2v3.4h3.4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M4 16.5a7.6 7.6 0 0 0 13.2 3.2l2.3-2.3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M19.5 20.8v-3.4h-3.4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <div class="shell app-shell">
+    <header class="app-header" aria-label="Cabecera principal">
+      <div class="brand">
+        <a class="wordmark" href="/" aria-label="FuelOpt">Fuel<span>Opt</span></a>
+        <span class="beta-badge">Beta</span>
+        <a class="header-privacy-link" href="/privacidad">Privacidad</a>
+      </div>
+      <div class="price-chip" aria-live="polite">
+        <span id="catalog_freshness_dot" class="freshness-dot freshness-unknown" aria-hidden="true"></span>
+        <span id="refresh_status">Precios actualizados: --</span>
+      </div>
+      <nav class="nav mini-nav" aria-label="Enlaces">
+        <a class="support-chip" href="https://ko-fi.com/fuelopt" target="_blank" rel="noopener noreferrer" aria-label="Apoyar FuelOpt en Ko-fi">
+          <span class="support-chip__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M6 8h10v4.5a4.5 4.5 0 0 1-4.5 4.5h-1A4.5 4.5 0 0 1 6 12.5V8Z"></path>
+              <path d="M16 9h1.5a2.5 2.5 0 0 1 0 5H16"></path>
+              <path d="M7 19h9"></path>
             </svg>
-          </button>
-          <div class="refresh-copy">
-            <span id="refresh_status">Precios descargados: --</span>
-          </div>
-        </div>
-        <button id="sidebar_toggle" class="sidebar-toggle" type="button" aria-label="Contraer filtros" aria-controls="search_sidebar" aria-expanded="true" title="Contraer filtros">
-        </button>
-      </header>
+          </span>
+          <span class="support-chip__main">Apoyar FuelOpt</span>
+        </a>
+      </nav>
+    </header>
 
-      <section class="headline">
+    <aside id="config_sidebar" class="side floating-sidebar" aria-label="Configuraci&#243;n de repostaje">
+      <section class="headline" aria-label="FuelOpt">
         <div class="eyebrow">Optimizador de repostaje</div>
         <h1>Llena tu depósito sin vaciar tu cartera.</h1>
       </section>
 
       <section class="controls">
-        <div class="block route-summary">
-          <label class="label">Salida</label>
-          <div id="origin_choice" class="selected-place">Sin seleccionar</div>
-        </div>
-
-        <div id="destination_block" class="block route-summary" style="display:none">
-          <label class="label">Llegada</label>
-          <div id="destination_choice" class="selected-place">Sin seleccionar</div>
-        </div>
-
-        <div class="block">
-          <div class="grid">
-            <div>
-              <label class="label" for="fuel_type">Combustible</label>
-              <select id="fuel_type"></select>
+        <div class="config-grid">
+          <div class="config-field">
+            <label class="label" for="fuel_type_trigger">Combustible</label>
+            <div class="pdd" id="fuel_type" data-value="">
+              <button class="pdd-trigger" id="fuel_type_trigger" type="button" aria-expanded="false" aria-haspopup="listbox" aria-label="Combustible">
+                <span class="pdd-selected">Cargando&#8230;</span>
+                <svg class="pdd-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="pdd-menu" role="listbox"></div>
             </div>
-            <div>
-              <label class="label" for="optimization_mode">Objetivo</label>
-              <select id="optimization_mode">
-                <option value="economic">Máximo ahorro</option>
-                <option value="balanced">Equilibrado</option>
-                <option value="minimal_detour">Mínimo desvío</option>
-              </select>
-            </div>
-            <div class="refuel-grid span-2">
-              <div class="refuel-header amount-header">
-                <div class="amount-mode" aria-label="Modo de cantidad">
-                  <button id="refill_mode_liters" class="amount-mode-option active" type="button" aria-pressed="true">Litros</button>
-                  <button id="refill_mode_budget" class="amount-mode-option" type="button" aria-pressed="false">Euros</button>
-                </div>
+          </div>
+
+          <div class="config-field">
+            <label class="label" for="optimization_mode_trigger">Objetivo</label>
+            <div class="pdd" id="optimization_mode" data-value="economic">
+              <button class="pdd-trigger" id="optimization_mode_trigger" type="button" aria-expanded="false" aria-haspopup="listbox" aria-label="Objetivo">
+                <span class="pdd-selected">M&#225;ximo ahorro</span>
+                <svg class="pdd-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="pdd-menu" role="listbox">
+                <div class="pdd-option active" data-value="economic" role="option" aria-selected="true" tabindex="-1">M&#225;ximo ahorro</div>
+                <div class="pdd-option" data-value="balanced" role="option" aria-selected="false" tabindex="-1">Equilibrado</div>
+                <div class="pdd-option" data-value="minimal_detour" role="option" aria-selected="false" tabindex="-1">M&#237;nimo desv&#237;o</div>
               </div>
-              <div class="refuel-header consumption-header">
-                <label class="label" for="consumption_l_100km">Consumo medio</label>
+            </div>
+          </div>
+
+          <div class="config-field amount-field span-2">
+            <label class="label" for="liters">Cantidad</label>
+            <div class="amount-row">
+              <div class="amount-mode" aria-label="Modo de cantidad">
+                <button id="refill_mode_liters" class="amount-mode-option active" type="button" aria-pressed="true">Litros</button>
+                <button id="refill_mode_budget" class="amount-mode-option" type="button" aria-pressed="false">Euros</button>
               </div>
               <input id="liters" inputmode="decimal" value="30" aria-label="Cantidad a repostar">
-              <input id="consumption_l_100km" inputmode="decimal" value="5.5">
-              <div id="refuel_amount_hint" class="input-hint">Cantidad de combustible a repostar.</div>
             </div>
-            <div class="span-2">
-              <div class="brand-tools">
+            <div id="refuel_amount_hint" class="input-hint">Cantidad de combustible a repostar.</div>
+          </div>
+
+          <div class="config-field span-2">
+            <label class="label" for="consumption_l_100km">Consumo medio <span class="label-unit">(l/100km)</span></label>
+            <input id="consumption_l_100km" inputmode="decimal" value="5.5" aria-label="Consumo medio en litros cada 100 kil&#243;metros">
+          </div>
+
+          <div class="brand-section span-2">
+            <div class="brand-tools">
+              <div style="display:flex;align-items:center;gap:6px">
                 <label class="label" style="margin:0">Marcas</label>
-                <button id="select_all_brands" class="link-button active" type="button" aria-pressed="true">Todas</button>
+                <button class="info-icon info-icon--below" type="button" tabindex="0" aria-label="M&#225;s informaci&#243;n sobre el filtro de marcas">
+                  <svg class="info-icon__svg" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M8 7.5v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="5" r="0.85" fill="currentColor"/></svg>
+                  <span class="info-tooltip" role="tooltip">Usa &#8220;Todas&#8221; para buscar en todo el cat&#225;logo, o selecciona hasta 10 marcas concretas. Si desactivas una marca estando en &#8220;Todas&#8221;, quedar&#225; excluida de los resultados.</span>
+                </button>
               </div>
-              <div id="brand_checks" class="brand-grid"></div>
+              <button id="select_all_brands" class="link-button active" type="button" aria-pressed="true">Todas</button>
             </div>
+            <div id="brand_checks" class="brand-grid"></div>
           </div>
         </div>
       </section>
 
-      <footer>
-        <button class="primary" id="submit" type="button">Calcular mejor repostaje</button>
-        <div id="status" class="status"></div>
-        <p class="legal-footer"><a href="/privacidad">Pol&#237;tica de privacidad</a></p>
+      <footer class="side-footer">
+        <button class="primary" id="submit" type="button">
+          <span>Calcular mejor repostaje</span>
+          <span class="primary-arrow" aria-hidden="true">&#8594;</span>
+        </button>
+        <div id="status" class="status" aria-live="polite"></div>
       </footer>
     </aside>
 
-    <main class="stage">
+    <main class="stage map-stage">
       <div id="map"></div>
-      <div class="map-top">
-        <div class="map-card map-search-card">
+
+      <section class="map-top floating-search-shell" aria-label="B&#250;squeda de ruta">
+        <div class="map-card map-search-card floating-search">
           <div class="map-search-head">
-            <div class="map-search-nav">
-              <div class="point-tabs">
-                <button id="tab_origin" class="point-tab active" type="button">Salida</button>
-                <button id="tab_destination" class="point-tab" type="button">Llegada</button>
+            <div class="route-search-bar">
+              <div id="tab_origin" class="point-tab route-point active" role="button" tabindex="0">
+                <span class="point-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="6"></circle>
+                    <circle cx="12" cy="12" r="2"></circle>
+                    <path d="M12 3v3M12 18v3M3 12h3M18 12h3"></path>
+                  </svg>
+                </span>
+                <span class="point-copy">
+                  <span class="point-label">Salida</span>
+                  <span id="origin_choice" class="selected-place">¿Desde dónde sales?</span>
+                  <span id="origin_input_slot" class="route-input-slot">
+                    <span class="map-search-input">
+                      <label id="map_search_label" class="label" for="map_search" hidden>Salida</label>
+                      <input id="map_search" autocomplete="off" placeholder="¿Desde dónde sales?" aria-label="Salida">
+                    </span>
+                  </span>
+                </span>
               </div>
-              <div class="return-toggle-compact">
+
+              <span class="route-divider" aria-hidden="true"></span>
+
+              <label class="return-toggle-compact" for="return_to_origin">
                 <span>Regreso al origen</span>
-                <label class="switch" style="margin:0">
+                <span class="switch">
                   <input id="return_to_origin" type="checkbox" checked>
                   <span class="slider"></span>
-                </label>
+                </span>
+              </label>
+
+              <span class="route-divider destination-divider" aria-hidden="true"></span>
+
+              <div id="destination_block" class="route-point-wrap" style="display:none">
+                <div id="tab_destination" class="point-tab route-point" role="button" tabindex="0">
+                  <span class="point-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M7 7h10M17 7l-3-3M17 7l-3 3"></path>
+                      <path d="M17 17H7M7 17l3-3M7 17l3 3"></path>
+                    </svg>
+                  </span>
+                  <span class="point-copy">
+                    <span class="point-label">Llegada</span>
+                    <span id="destination_choice" class="selected-place">¿A dónde vas?</span>
+                    <span id="destination_input_slot" class="route-input-slot"></span>
+                  </span>
+                </div>
               </div>
+
+              <button id="search_trigger" class="search-trigger" type="button" aria-label="Buscar lugar" title="Buscar lugar">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="11" cy="11" r="6.5"></circle>
+                  <path d="m16 16 4 4"></path>
+                </svg>
+              </button>
             </div>
-            <label id="map_search_label" class="label" for="map_search">Buscar salida</label>
-            <input id="map_search" autocomplete="off" placeholder="Buscar lugar">
           </div>
           <div class="map-search-results">
             <div id="map_suggestions" class="suggestions"></div>
@@ -131,12 +187,13 @@
           <div id="map_choice" class="choice"></div>
         </div>
         <div id="route_status" class="route-status" aria-live="polite"></div>
-      </div>
+      </section>
+
       <section id="result" class="result" data-empty="true"></section>
     </main>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/static/app.js?v=demo-ui-20260513-1"></script>
+  <script src="/static/app.js?v=result-card-20260518-9"></script>
 </body>
 </html>
