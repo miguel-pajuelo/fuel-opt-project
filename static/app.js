@@ -442,10 +442,10 @@
             pane: 'userLocationPane',
             radius: accuracy,
             color: '#16849a',
-            weight: 1,
-            opacity: .35,
+            weight: 1.5,
+            opacity: .55,
             fillColor: '#16849a',
-            fillOpacity: .08,
+            fillOpacity: .20,
             interactive: false,
           }).addTo(map);
         }
@@ -1497,7 +1497,7 @@
     });
 
     // Mobile tap toggle for info tooltips — sidebar icons
-    $('search_sidebar').addEventListener('click', (e) => {
+    $('config_sidebar').addEventListener('click', (e) => {
       const icon = e.target.closest('.info-icon');
       if (!icon) return;
       e.stopPropagation();
