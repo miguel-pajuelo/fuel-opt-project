@@ -1724,7 +1724,7 @@
           <div class="metric saving">
             <span class="metric-icon" aria-hidden="true">${METRIC_ICONS.trendingDown}</span>
             <span class="metric-label">Ahorro por litro</span>
-            <strong>${formattedSignedPrice(perLiterSaving)}</strong>
+            <strong${perLiterSaving !== null && perLiterSaving <= 0 ? ' style="color:#6B6560"' : ''}>${formattedSignedPrice(perLiterSaving)}</strong>
           </div>
         ` : ''}
         <div class="metric">
@@ -1837,7 +1837,7 @@
           <div class="result-main-metric">
             <span class="result-main-label-row">Ahorro estimado ${infoIconHtml('ahorro', 'below')}</span>
             <div class="result-main-value">
-              <strong>${fmtEuro(saving)}</strong>
+              <strong${saving <= 0 ? ' style="color:#6B6560"' : ''}>${fmtEuro(saving)}</strong>
             </div>
           </div>
           <div class="metrics result-metric-list">${metrics}</div>
