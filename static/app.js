@@ -1831,10 +1831,15 @@
       const resultWarnings = data.warnings || [];
       const warningsHtml = renderWarnings(resultWarnings);
       const metrics = renderResultMetricRows(selected, resultWarnings, saving);
+      const _savingIntensity = Math.min(Math.abs(saving), 5) / 5;
+      const _savingOpacity = _savingIntensity * 0.15;
+      const _savingGradient = saving === 0
+        ? 'transparent'
+        : `linear-gradient(to bottom, rgba(${saving > 0 ? '45,122,79' : '192,57,43'},${_savingOpacity}) 0%, transparent 100%)`;
       resultElement.innerHTML = `
         <section class="result-summary-card">
           ${resultCloseButton()}
-          <div class="result-main-metric">
+          <div class="result-main-metric" style="background:${_savingGradient}">
             <span class="result-main-label-row">Ahorro estimado ${infoIconHtml('ahorro', 'below')}</span>
             <div class="result-main-value">
               <strong style="color:${saving > 0 ? '#2D7A4F' : saving < 0 ? '#C0392B' : '#6B6560'}">${fmtEuro(saving)}</strong>
