@@ -21,11 +21,7 @@ from app.data_sources.minetur import (
     quality_report,
     save_minetur_snapshot,
 )
-from app.data_sources.public_access import filter_publicly_eligible_catalog
 from app.storage.database import replace_catalog
-
-
-_PUBLIC_ACCESS_REPORT: dict[str, object] = {"excluded_count": 0, "examples": []}
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,21 +58,7 @@ def _build_minetur_catalog(items: list[dict], args: argparse.Namespace, source_l
         source_label = f"{source_label}[{','.join(args.brands)}]"
     else:
         stations, prices = build_catalog_from_minetur(items)
-    return _apply_public_access_filter((stations, prices)), source_label
-
-
-def _apply_public_access_filter(catalog):
-    global _PUBLIC_ACCESS_REPORT
-    stations, prices = catalog
-    stations, prices, _PUBLIC_ACCESS_REPORT = filter_publicly_eligible_catalog(stations, prices)
-    return stations, prices
-
-
-def public_access_report() -> dict[str, object]:
-    return {
-        "excluded_count": int(_PUBLIC_ACCESS_REPORT.get("excluded_count") or 0),
-        "examples": list(_PUBLIC_ACCESS_REPORT.get("examples") or []),
-    }
+    return (stations, prices), source_label
 
 
 def load_catalog(args: argparse.Namespace, snapshot_write_path: Path | None = None):
@@ -111,13 +93,13 @@ def load_catalog(args: argparse.Namespace, snapshot_write_path: Path | None = No
         if args.source == "auto":
             warnings.append("Using PRICE_CACHE fallback; brand/address metadata is degraded.")
             print(warnings[-1], file=sys.stderr)
-        return _apply_public_access_filter(load_prices_cache_as_catalog(args.prices_cache)), "PRICE_CACHE", warnings
+        return load_prices_cache_as_catalog(args.prices_cache), "PRICE_CACHE", warnings
 
     if args.source in {"ballenoil-cache", "auto"}:
         if args.source == "auto":
             warnings.append("Using BALLENOIL_CACHE fallback; catalog coverage is partial.")
             print(warnings[-1], file=sys.stderr)
-        return _apply_public_access_filter(load_ballenoil_result_cache(args.ballenoil_cache)), "BALLENOIL_CACHE", warnings
+        return load_ballenoil_result_cache(args.ballenoil_cache), "BALLENOIL_CACHE", warnings
 
     raise FileNotFoundError("No usable source found for station catalog rebuild.")
 
@@ -174,7 +156,6 @@ def main() -> int:
     report.update(metadata)
     report["source"] = source
     report["warnings"] = warnings
-    report["public_access"] = public_access_report()
     report["db"] = str(args.db)
     if args.write_report:
         args.write_report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

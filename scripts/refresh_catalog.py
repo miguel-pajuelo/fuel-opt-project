@@ -18,7 +18,7 @@ REPORT_DIR = ROOT / "data" / "reports"
 from app.config import load_settings
 from app.storage.publish import cleanup_old_backups, cleanup_sqlite_sidecars, publish_sqlite_candidate
 from app.storage.validation import CatalogValidationRules, validate_catalog_db
-from scripts.rebuild_station_catalog import _build_metadata, load_catalog, public_access_report
+from scripts.rebuild_station_catalog import _build_metadata, load_catalog
 from app.storage.database import replace_catalog
 
 
@@ -105,28 +105,6 @@ def _publish_snapshot_candidate(candidate_snapshot: Path, active_snapshot: Path)
     return True
 
 
-def _notify_if_failed(report: dict[str, object]) -> None:
-    status = str(report.get("refresh_status", ""))
-    if status in ("ok", "skipped", "running"):
-        return
-    webhook_url = os.getenv("ALERT_WEBHOOK_URL", "")
-    if not webhook_url:
-        return
-    import urllib.request as _urllib
-    payload = json.dumps({
-        "text": (
-            f"[FuelOpt] Refresco de catálogo: {status}. "
-            f"Error: {report.get('refresh_error', 'sin detalle')}"
-        )
-    }).encode()
-    try:
-        req = _urllib.Request(webhook_url, data=payload, method="POST")
-        req.add_header("Content-Type", "application/json")
-        _urllib.urlopen(req, timeout=10)
-    except Exception:
-        pass
-
-
 def _brand_coverage_report(stations: list, limit: int = 20) -> dict[str, object]:
     total = len(stations)
     known = sum(1 for station in stations if getattr(station, "brand_confidence", None) == 1.0)
@@ -198,7 +176,6 @@ def main() -> int:
                 "validation_errors": validation.errors,
                 "validation_warnings": validation.warnings,
                 "validation_status": validation.status,
-                "public_access": public_access_report(),
                 **_brand_coverage_report(stations),
             }
         )
@@ -233,7 +210,6 @@ def main() -> int:
         _write_report(args.write_report, report)
         _release_lock(args.lock_file)
         print(json.dumps(report, ensure_ascii=False, indent=2))
-        _notify_if_failed(report)
 
 
 if __name__ == "__main__":

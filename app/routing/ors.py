@@ -12,7 +12,6 @@ from app.models import Coordinates, Station
 ORS_MATRIX_URL = "https://api.openrouteservice.org/v2/matrix/driving-car"
 ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions/driving-car/geojson"
 ORS_GEOCODE_URL = "https://api.openrouteservice.org/geocode/search"
-ORS_GEOCODE_AUTOCOMPLETE_URL = "https://api.openrouteservice.org/geocode/autocomplete"
 ORS_REVERSE_GEOCODE_URL = "https://api.openrouteservice.org/geocode/reverse"
 
 
@@ -39,7 +38,36 @@ def _distinct_nonempty(parts: list[Any]) -> list[str]:
     return result
 
 
-def _parse_geocode_candidates(payload: dict[str, Any], address: str) -> list[dict[str, Any]]:
+def geocode_candidates(
+    address: str,
+    settings: Settings | None = None,
+    country: str = "ESP",
+    size: int = 5,
+    focus_lat: float | None = None,
+    focus_lon: float | None = None,
+) -> list[dict[str, Any]]:
+    cfg = settings or load_settings()
+    api_key = require_ors_api_key(cfg)
+    params: dict[str, Any] = {
+        "api_key": api_key,
+        "text": address,
+        "boundary.country": country,
+        "size": size,
+        "layers": "venue,address,street,locality,localadmin,county,region,country",
+    }
+    if focus_lat is not None and focus_lon is not None:
+        params["focus.point.lat"] = focus_lat
+        params["focus.point.lon"] = focus_lon
+    try:
+        response = requests.get(
+            ORS_GEOCODE_URL,
+            params=params,
+            timeout=20,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"ORS geocoding failed: {exc}") from exc
+    response.raise_for_status()
+    payload = response.json()
     candidates: list[dict[str, Any]] = []
     seen_labels: set[str] = set()
     for rank, feature in enumerate(payload.get("features") or []):
@@ -82,71 +110,6 @@ def _parse_geocode_candidates(payload: dict[str, Any], address: str) -> list[dic
             }
         )
     return candidates
-
-
-def _request_geocode_candidates(
-    address: str,
-    url: str,
-    params: dict[str, Any],
-) -> list[dict[str, Any]]:
-    try:
-        response = requests.get(
-            url,
-            params=params,
-            timeout=20,
-        )
-    except OSError as exc:
-        raise RuntimeError(f"ORS geocoding failed: {exc}") from exc
-    response.raise_for_status()
-    return _parse_geocode_candidates(response.json(), address)
-
-
-def geocode_candidates(
-    address: str,
-    settings: Settings | None = None,
-    country: str = "ESP",
-    size: int = 5,
-    focus_lat: float | None = None,
-    focus_lon: float | None = None,
-) -> list[dict[str, Any]]:
-    cfg = settings or load_settings()
-    api_key = require_ors_api_key(cfg)
-    params: dict[str, Any] = {
-        "api_key": api_key,
-        "text": address,
-        "boundary.country": country,
-        "size": size,
-        "lang": "es",
-        "layers": "venue,address,street,locality,localadmin,county,region,country",
-    }
-    if focus_lat is not None and focus_lon is not None:
-        params["focus.point.lat"] = focus_lat
-        params["focus.point.lon"] = focus_lon
-    return _request_geocode_candidates(address, ORS_GEOCODE_URL, params)
-
-
-def geocode_candidates_autocomplete(
-    address: str,
-    settings: Settings | None = None,
-    country: str = "ESP",
-    size: int = 5,
-    focus_lat: float | None = None,
-    focus_lon: float | None = None,
-) -> list[dict[str, Any]]:
-    cfg = settings or load_settings()
-    api_key = require_ors_api_key(cfg)
-    params: dict[str, Any] = {
-        "api_key": api_key,
-        "text": address,
-        "boundary.country": country,
-        "size": min(size, 10),
-        "lang": "es",
-        "layers": "venue,address,street,locality,localadmin,county,region,country",
-    }
-    if focus_lat is not None and focus_lon is not None:
-        params["focus.point.lat"] = focus_lat
-        params["focus.point.lon"] = focus_lon
-    return _request_geocode_candidates(address, ORS_GEOCODE_AUTOCOMPLETE_URL, params)
 
 
 def geocode_address(address: str, settings: Settings | None = None, country: str = "ESP") -> Coordinates:

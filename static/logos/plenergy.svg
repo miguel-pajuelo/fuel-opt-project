@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
-  <title id="title">Plenergy</title>
-  <rect width="128" height="128" rx="8" fill="#073a7c"/>
-  <path fill="#ffdf1f" d="M15 52C24 24 50 9 78 9c28 0 47 14 50 38 2 17-10 34-29 50 5-29-10-49-33-69-20 3-38 10-51 24Z"/>
-  <path fill="#ff8708" d="M17 70c11-27 31-44 55-57-24 30-28 63-7 77 18 12 45 8 64-11-6 28-33 47-69 46-28-1-47-15-43-55Z"/>
-  <path fill="#073a7c" d="M67 27c25 21 34 42 25 62-9 11-28 12-44 3-19-10-16-38 19-65Z"/>
-</svg>

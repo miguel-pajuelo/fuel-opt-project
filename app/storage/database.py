@@ -8,10 +8,6 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from app.data_sources.brand_catalog import NORMALIZATION_VERSION
-from app.data_sources.public_access import (
-    CURATED_PUBLIC_ACCESS_STATION_IDS,
-    is_publicly_eligible,
-)
 from app.models import Price, Station
 
 
@@ -304,39 +300,24 @@ def row_to_station(row: sqlite3.Row) -> Station:
     )
 
 
-def _eligible_station_from_row(row: sqlite3.Row) -> Station | None:
-    station = row_to_station(row)
-    return station if is_publicly_eligible(station) else None
-
-
-def _curated_public_access_exclusion_sql(alias: str, params: list[object]) -> str:
-    if not CURATED_PUBLIC_ACCESS_STATION_IDS:
-        return ""
-    excluded_ids = sorted(CURATED_PUBLIC_ACCESS_STATION_IDS)
-    params.extend(excluded_ids)
-    placeholders = ", ".join("?" for _ in excluded_ids)
-    return f" AND {alias}.station_id NOT IN ({placeholders})"
-
-
 def list_stations(db_path: Path, brand: str | None = None, limit: int = 100, offset: int = 0) -> list[Station]:
     sql = "SELECT * FROM stations WHERE active = 1"
     params: list[object] = []
     if brand:
         sql += " AND brand_canonical = ?"
         params.append(brand.upper())
-    sql += _curated_public_access_exclusion_sql("stations", params)
-    sql += " ORDER BY brand_canonical, municipality, name"
+    sql += " ORDER BY brand_canonical, municipality, name LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
     with open_db(db_path) as conn:
         rows = conn.execute(sql, params).fetchall()
-    stations = [station for row in rows if (station := _eligible_station_from_row(row)) is not None]
-    return stations[offset : offset + limit]
+    return [row_to_station(row) for row in rows]
 
 
 def list_brands(db_path: Path) -> list[str]:
     with open_db(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT *
+            SELECT DISTINCT brand_canonical AS brand
             FROM stations
             WHERE active = 1
               AND brand_canonical <> ''
@@ -345,58 +326,49 @@ def list_brands(db_path: Path) -> list[str]:
             ORDER BY brand_canonical
             """
         ).fetchall()
-    brands = {
-        row["brand_canonical"]
-        for row in rows
-        if row["brand_canonical"] and is_publicly_eligible(row_to_station(row))
-    }
-    return sorted(brands)
+    return [row["brand"] for row in rows]
 
 
 def canonical_brand_counts(db_path: Path) -> dict[str, int]:
     with open_db(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT *
+            SELECT brand_canonical AS brand, COUNT(*) AS station_count
             FROM stations
             WHERE active = 1
               AND brand_canonical <> ''
               AND brand_canonical <> 'UNKNOWN'
               AND COALESCE(brand_confidence, 0) >= 1.0
+            GROUP BY brand_canonical
+            ORDER BY station_count DESC, brand_canonical
             """
         ).fetchall()
-    counts: dict[str, int] = {}
-    for row in rows:
-        if not is_publicly_eligible(row_to_station(row)):
-            continue
-        brand = row["brand_canonical"]
-        counts[brand] = counts.get(brand, 0) + 1
-    return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+    return {row["brand"]: int(row["station_count"]) for row in rows}
 
 
 def raw_brand_label_counts(db_path: Path, limit: int = 500, offset: int = 0) -> list[dict[str, object]]:
     with open_db(db_path) as conn:
         rows = conn.execute(
             """
-            SELECT *
+            SELECT
+                brand_label_raw AS label,
+                brand_canonical AS canonical,
+                COUNT(*) AS station_count
             FROM stations
             WHERE active = 1
+            GROUP BY brand_label_raw, brand_canonical
+            ORDER BY station_count DESC, label
+            LIMIT ? OFFSET ?
             """,
+            [limit, offset],
         ).fetchall()
-    counts: dict[tuple[str, str], int] = {}
-    for row in rows:
-        if not is_publicly_eligible(row_to_station(row)):
-            continue
-        key = (row["brand_label_raw"], row["brand_canonical"])
-        counts[key] = counts.get(key, 0) + 1
-    items = sorted(counts.items(), key=lambda item: (-item[1], item[0][0]))
     return [
         {
-            "label": label,
-            "canonical": canonical,
-            "station_count": station_count,
+            "label": row["label"],
+            "canonical": row["canonical"],
+            "station_count": int(row["station_count"]),
         }
-        for (label, canonical), station_count in items[offset : offset + limit]
+        for row in rows
     ]
 
 
@@ -456,53 +428,11 @@ def _brand_filter_sql(brands: str | Iterable[str] | None, params: list[object]) 
     return " AND 0 = 1"
 
 
-def _brand_exclusion_sql(excluded_brands: str | Iterable[str] | None, params: list[object]) -> str:
-    excluded = _normalize_brand_filters(excluded_brands)
-    if not excluded:
-        return ""
-    real_brands = [brand for brand in excluded if brand != INDEPENDENT_BRAND_SENTINEL]
-    clauses: list[str] = []
-    if real_brands:
-        brand_clauses: list[str] = []
-        for brand in real_brands:
-            brand_clauses.append(
-                """
-                (
-                    s.brand_canonical = ?
-                    OR s.brand_group = ?
-                    OR s.brand_label_raw = ?
-                    OR s.brand_canonical LIKE ?
-                    OR s.brand_group LIKE ?
-                    OR s.brand_label_raw LIKE ?
-                    OR s.brand_canonical LIKE ?
-                    OR s.brand_group LIKE ?
-                    OR s.brand_label_raw LIKE ?
-                )
-                """
-            )
-            params.extend([
-                brand,
-                brand,
-                brand,
-                f"{brand} %",
-                f"{brand} %",
-                f"{brand} %",
-                f"% {brand}%",
-                f"% {brand}%",
-                f"% {brand}%",
-            ])
-        clauses.append(f"NOT ({' OR '.join(brand_clauses)})")
-    if INDEPENDENT_BRAND_SENTINEL in excluded:
-        clauses.append(f"NOT {_independent_predicate_sql()}")
-    return f" AND {' AND '.join(clauses)}" if clauses else ""
-
-
 def get_candidates_with_price(
     db_path: Path,
     fuel_type: str,
     brand: str | None = None,
     brands: Iterable[str] | None = None,
-    excluded_brands: Iterable[str] | None = None,
     limit: int | None = None,
 ) -> list[tuple[Station, float]]:
     sql = """
@@ -512,21 +442,14 @@ def get_candidates_with_price(
         WHERE s.active = 1 AND p.fuel_type = ?
     """
     params: list[object] = [fuel_type]
-    sql += _curated_public_access_exclusion_sql("s", params)
     sql += _brand_filter_sql(brands if brands is not None else brand, params)
-    sql += _brand_exclusion_sql(excluded_brands, params)
     sql += " ORDER BY p.price_eur_l ASC"
     if limit is not None:
         sql += " LIMIT ?"
         params.append(limit)
     with open_db(db_path) as conn:
         rows = conn.execute(sql, params).fetchall()
-    candidates: list[tuple[Station, float]] = []
-    for row in rows:
-        station = _eligible_station_from_row(row)
-        if station is not None:
-            candidates.append((station, float(row["price_eur_l"])))
-    return candidates
+    return [(row_to_station(row), float(row["price_eur_l"])) for row in rows]
 
 
 def get_candidates_with_price_in_bbox(
@@ -538,7 +461,6 @@ def get_candidates_with_price_in_bbox(
     max_lon: float,
     brand: str | None = None,
     brands: Iterable[str] | None = None,
-    excluded_brands: Iterable[str] | None = None,
 ) -> list[tuple[Station, float]]:
     sql = """
         SELECT s.*, p.price_eur_l
@@ -555,18 +477,11 @@ def get_candidates_with_price_in_bbox(
     else:
         sql += " AND (s.lon >= ? OR s.lon <= ?)"
         params.extend([min_lon, max_lon])
-    sql += _curated_public_access_exclusion_sql("s", params)
     sql += _brand_filter_sql(brands if brands is not None else brand, params)
-    sql += _brand_exclusion_sql(excluded_brands, params)
     sql += " ORDER BY p.price_eur_l ASC"
     with open_db(db_path) as conn:
         rows = conn.execute(sql, params).fetchall()
-    candidates: list[tuple[Station, float]] = []
-    for row in rows:
-        station = _eligible_station_from_row(row)
-        if station is not None:
-            candidates.append((station, float(row["price_eur_l"])))
-    return candidates
+    return [(row_to_station(row), float(row["price_eur_l"])) for row in rows]
 
 
 def _parse_metadata_value(key: str, value: str) -> Any:
@@ -695,35 +610,25 @@ def price_status(db_path: Path) -> dict[str, object]:
 def coverage_snapshot(db_path: Path) -> dict[str, object]:
     try:
         with open_db(db_path) as conn:
-            price_rows = conn.execute(
+            fuel_rows = conn.execute(
                 """
-                SELECT s.*, p.fuel_type
-                FROM prices p
-                JOIN stations s ON s.station_id = p.station_id
-                WHERE s.active = 1
-                ORDER BY p.fuel_type
+                SELECT fuel_type, COUNT(*) AS count
+                FROM prices
+                GROUP BY fuel_type
+                ORDER BY fuel_type
                 """
             ).fetchall()
-            independent_rows = conn.execute(
+            independent_count = conn.execute(
                 f"""
-                SELECT *
+                SELECT COUNT(*)
                 FROM stations s
                 WHERE active = 1
                   AND {_independent_predicate_sql()}
                 """
-            ).fetchall()
+            ).fetchone()[0]
     except sqlite3.Error:
         return {"fuel_counts": {}, "independent_count": 0}
-    fuel_counts: dict[str, int] = {}
-    for row in price_rows:
-        if not is_publicly_eligible(row_to_station(row)):
-            continue
-        fuel_type = row["fuel_type"]
-        fuel_counts[fuel_type] = fuel_counts.get(fuel_type, 0) + 1
-    independent_count = sum(
-        1 for row in independent_rows if is_publicly_eligible(row_to_station(row))
-    )
     return {
-        "fuel_counts": dict(sorted(fuel_counts.items())),
-        "independent_count": independent_count,
+        "fuel_counts": {row["fuel_type"]: int(row["count"]) for row in fuel_rows},
+        "independent_count": int(independent_count or 0),
     }

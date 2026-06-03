@@ -1,6 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /docs
-Disallow: /openapi.json
-
-Sitemap: https://fuelopt.es/sitemap.xml
