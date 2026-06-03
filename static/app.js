@@ -7,7 +7,10 @@
     const fmtEuro = (n) => `${Number(n).toFixed(2)} €`;
     const fmtKm = (n) => `${Number(n).toFixed(2)} km`;
     const fmtPrice = (n) => `${Number(n).toFixed(3)} €/L`;
-    const fmtLiters = (n) => `${Number(n).toFixed(2)} L`;
+    const fmtLiters = (n) => {
+      const value = Number(n);
+      return Number.isFinite(value) ? `${value.toFixed(2)} L` : '—';
+    };
     const parsePositiveDecimal = (id) => {
       const value = Number($(id).value.replace(',', '.'));
       return Number.isFinite(value) && value > 0 ? value : null;
@@ -16,6 +19,15 @@
     let lastCatalogRefreshValue = null;
     let lastCatalogStatus = null;
     let catalogStatusPoller = null;
+    const OPTIMIZE_LOADING_MESSAGES = [
+      'Buscando gasolineras cercanas...',
+      'Comparando precios disponibles...',
+      'Estimando desvíos de ruta...',
+      'Ordenando mejores alternativas...',
+      'Preparando resultado...',
+    ];
+    let optimizeLoadingTimer = null;
+    let optimizeLoadingMessageIndex = 0;
     function formatRefreshDate(value) {
       if (!value) return '--';
       const date = new Date(value);
@@ -324,8 +336,10 @@
 
     const desktopSidebarQuery = window.matchMedia('(min-width: 1001px)');
     const LOW_LOCATION_ACCURACY_M = 1000;
-    const USER_LOCATION_ZOOM_BOOST = 2;
-    const USER_LOCATION_MIN_ZOOM = 16;
+    const USER_LOCATION_PADDING = [80, 80];
+    const USER_LOCATION_MAX_ZOOM = 17;
+    const USER_LOCATION_MIN_GOOD_ACCURACY_ZOOM = 16;
+    const DESTINATION_FOCUS_ZOOM = 16;
     let mapResizeTimer = null;
 
     function refreshMapSize() {
@@ -394,9 +408,40 @@
       return 'No se pudo obtener tu ubicación.';
     }
 
-    function userLocationTargetZoom() {
+    function focusUserLocation(latLng, accuracyMeters) {
+      const accuracy = Number.isFinite(accuracyMeters) ? accuracyMeters : 0;
       const maxZoom = typeof map.getMaxZoom === 'function' ? map.getMaxZoom() : 19;
-      return Math.min(maxZoom, Math.max(map.getZoom() + USER_LOCATION_ZOOM_BOOST, USER_LOCATION_MIN_ZOOM));
+
+      if (accuracy > 0) {
+        const bounds = L.latLng(latLng).toBounds(accuracy * 2);
+        map.fitBounds(bounds, {
+          padding: USER_LOCATION_PADDING,
+          maxZoom: Math.min(maxZoom, USER_LOCATION_MAX_ZOOM),
+          animate: true,
+        });
+        return;
+      }
+
+      map.flyTo(latLng, Math.min(maxZoom, USER_LOCATION_MIN_GOOD_ACCURACY_ZOOM), {
+        duration: .6,
+      });
+    }
+
+    function focusDestination(latLng) {
+      const maxZoom = typeof map.getMaxZoom === 'function' ? map.getMaxZoom() : 19;
+      const targetZoom = Math.min(maxZoom, DESTINATION_FOCUS_ZOOM);
+      map.flyTo(latLng, targetZoom, { duration: .6 });
+    }
+
+    function focusClickedLocation(latLng) {
+      const currentZoom = map.getZoom();
+      const maxZoom = typeof map.getMaxZoom === 'function' ? map.getMaxZoom() : 19;
+      const targetZoom = Math.min(maxZoom, DESTINATION_FOCUS_ZOOM);
+      if (currentZoom >= targetZoom) {
+        map.panTo(latLng, { animate: true, duration: .45 });
+        return;
+      }
+      map.flyTo(latLng, targetZoom, { duration: .45 });
     }
 
     function renderUserLocation(position) {
@@ -453,8 +498,7 @@
         map.removeLayer(state.userLocationAccuracyCircle);
         state.userLocationAccuracyCircle = null;
       }
-      const targetZoom = userLocationTargetZoom();
-      map.setView(latLng, targetZoom, { animate: true });
+      focusUserLocation(latLng, accuracy);
       track('Geolocalización usada', { precision_m: String(Number.isFinite(accuracy) ? Math.round(accuracy) : -1) });
       if (Number.isFinite(accuracy) && accuracy > LOW_LOCATION_ACCURACY_M) {
         setRouteStatus('Ubicación aproximada: precisión baja.');
@@ -910,6 +954,8 @@
 
     const INFO_TOOLTIP_TEXTS = {
       ahorro: 'Compara el precio de esta estación con la alternativa de referencia y descuenta el coste real del desvío, según los litros a repostar, tu consumo medio y la distancia extra.',
+      litrosExtra: 'Litros útiles adicionales frente a la opción de referencia, descontando el combustible consumido por el desvío.',
+      litrosUtiles: 'Litros comprados con tu presupuesto menos el combustible estimado para llegar a esta estación.',
       precio: 'Precios oficiales del Ministerio para la Transición Ecológica. Pueden no ser 100% precisos.',
     };
 
@@ -962,7 +1008,7 @@
       clearSuggestions();
     }
 
-    async function reverseGeocodePoint(point, lat, lon) {
+    async function reverseGeocodePoint(point, lat, lon, options = {}) {
       const requestId = state.reverseGeocodeRequestId + 1;
       state.reverseGeocodeRequestId = requestId;
       try {
@@ -985,33 +1031,46 @@
           label: resolvedLabel,
           lat: current.lat,
           lon: current.lon,
-        });
+        }, options);
       } catch (_) {
       }
     }
 
-    function setPoint(point, place) {
+    function setPoint(point, place, options = {}) {
       state[point] = place;
       syncPointUI(point);
       if (state.markers[point]) map.removeLayer(state.markers[point]);
       state.markers[point] = L.marker([place.lat, place.lon], { icon: icons[point] }).addTo(map);
+      const shouldFocusDestination = point === 'destination' && !$('return_to_origin').checked;
+      const focusSelectedPoint = options.fromMapClick ? focusClickedLocation : focusDestination;
       if ($('return_to_origin').checked && point === 'origin') {
         mirrorDestinationToOrigin();
         if (state.selectedStation && state.origin && state.destination) {
           refreshSelectedRoute({ fitBounds: true });
         } else {
           clearSelectedRoute();
-          const group = Object.values(state.markers).filter(Boolean);
-          if (group.length) fitBoundsToVisibleArea(L.featureGroup(group).getBounds().pad(.35));
+          if (options.fromMapClick && state.markers.origin) {
+            focusClickedLocation(state.markers.origin.getLatLng());
+          } else {
+            const group = Object.values(state.markers).filter(Boolean);
+            if (group.length) fitBoundsToVisibleArea(L.featureGroup(group).getBounds().pad(.35));
+          }
         }
         return;
       }
       if (state.selectedStation && state.origin && state.destination) {
-        refreshSelectedRoute({ fitBounds: true });
+        refreshSelectedRoute({ fitBounds: !shouldFocusDestination });
+        if (shouldFocusDestination) focusSelectedPoint(state.markers.destination.getLatLng());
       } else {
         clearSelectedRoute();
-        const group = Object.values(state.markers).filter(Boolean);
-        if (group.length) fitBoundsToVisibleArea(L.featureGroup(group).getBounds().pad(.35));
+        if (shouldFocusDestination) {
+          focusSelectedPoint(state.markers.destination.getLatLng());
+        } else if (options.fromMapClick && state.markers[point]) {
+          focusClickedLocation(state.markers[point].getLatLng());
+        } else {
+          const group = Object.values(state.markers).filter(Boolean);
+          if (group.length) fitBoundsToVisibleArea(L.featureGroup(group).getBounds().pad(.35));
+        }
       }
     }
 
@@ -1275,8 +1334,8 @@
         label: mapSelectedLabel(point),
         lat,
         lon,
-      });
-      reverseGeocodePoint(point, lat, lon);
+      }, { fromMapClick: true });
+      reverseGeocodePoint(point, lat, lon, { fromMapClick: true });
     });
     map.on('click', (event) => {
       if (!dismissSearchSuggestions()) return;
@@ -1564,6 +1623,11 @@
       return budget && Number.isFinite(price) && price > 0 ? budget / price : 0;
     }
 
+    function numericMetric(value) {
+      const amount = Number(value);
+      return Number.isFinite(amount) ? amount : null;
+    }
+
     function routeSourceNote(data, selected) {
       const routeSource = String(data.route_source || selected.route_source || '').toLowerCase();
       if (!routeSource) return '';
@@ -1661,6 +1725,76 @@
       return [station.address, station.municipality].filter(Boolean).join(' · ');
     }
 
+    function hasValidCoords(place) {
+      if (!place) return false;
+      const lat = Number(place.lat);
+      const lon = Number(place.lon);
+      return Number.isFinite(lat) && Number.isFinite(lon);
+    }
+
+    function formatMapsPlace(place) {
+      if (!place) return '';
+      const lat = Number(place.lat);
+      const lon = Number(place.lon);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        return `${lat},${lon}`;
+      }
+      const label = place.label || place.title || place.name;
+      if (label) return label;
+      return [place.address, place.municipality, place.province]
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    function buildGoogleMapsDirectionsUrl({ origin, destination, station, returnToOrigin }) {
+      const stationPlace = formatMapsPlace(station);
+      if (!stationPlace) return '';
+      const originPlace = formatMapsPlace(origin);
+      const finalDestination = returnToOrigin ? originPlace : formatMapsPlace(destination);
+      const params = ['api=1'];
+      const addParam = (key, value) => {
+        if (value) params.push(`${key}=${encodeURIComponent(value)}`);
+      };
+      if (originPlace) {
+        addParam('origin', originPlace);
+      }
+      if (originPlace && finalDestination) {
+        addParam('destination', finalDestination);
+        addParam('waypoints', stationPlace);
+      } else {
+        addParam('destination', stationPlace);
+      }
+      params.push('travelmode=driving');
+      return `https://www.google.com/maps/dir/?${params.join('&')}`;
+    }
+
+    function hasMapsTarget(station) {
+      return Boolean(formatMapsPlace(station));
+    }
+
+    function mapsButtonHtml(station) {
+      const mapsUrl = buildGoogleMapsDirectionsUrl({
+        origin: state.origin,
+        destination: state.destination,
+        station,
+        returnToOrigin: $('return_to_origin').checked,
+      });
+      if (!mapsUrl) return '';
+      const stationName = station.name || 'la estacion seleccionada';
+      return `
+        <button class="station-maps-button" type="button" data-open-maps data-maps-url="${escapeHtml(mapsUrl)}" aria-label="Abrir ruta en Maps para ${escapeHtml(stationName)}">
+          <span aria-hidden="true">&#8599;</span>
+          <span>Abrir en Maps</span>
+        </button>
+      `;
+    }
+
+    function handleOpenMaps(event) {
+      const mapsUrl = event.currentTarget.dataset.mapsUrl || '';
+      if (!mapsUrl) return;
+      window.open(mapsUrl, '_blank', 'noopener,noreferrer');
+    }
+
     function stationLogoHtml(station, className = 'result-station-logo') {
       const logoSrc = brandLogoFor(station.brand_canonical || station.brand || station.name || '');
       const alt = station.brand_canonical || station.brand || station.name || 'Gasolinera';
@@ -1676,9 +1810,17 @@
       return amount >= 0 ? fmtEuro(amount) : `-${fmtEuro(Math.abs(amount))}`;
     }
 
+    function formattedSignedLiters(value) {
+      const amount = numericMetric(value);
+      if (amount === null) return '— L';
+      if (Math.abs(amount) < 0.005) return fmtLiters(0);
+      return amount > 0 ? fmtLiters(amount) : `-${fmtLiters(Math.abs(amount))}`;
+    }
+
     function savingsPerLiter(item, saving) {
+      if (saving === null || saving === undefined) return null;
       const liters = candidateGrossLiters(item);
-      const amount = Number(saving || 0);
+      const amount = Number(saving);
       return liters > 0 && Number.isFinite(amount) ? amount / liters : null;
     }
 
@@ -1704,14 +1846,40 @@
             <span class="result-section-label">Estación seleccionada</span>
             <h2>${stationName}</h2>
             ${stationMeta ? `<p class="result-station-location">${stationMeta}</p>` : ''}
+            ${mapsButtonHtml(station)}
           </div>
           ${stationLogoHtml(station)}
         </div>
       `;
     }
 
-    function renderResultMetricRows(selected, warnings, saving) {
+    function renderResultMetricRows(selected, warnings, saving, isBudgetMode) {
       const perLiterSaving = savingsPerLiter(selected, saving);
+      const grossLiters = numericMetric(selected.gross_refuel_liters);
+      const netLiters = numericMetric(selected.net_liters);
+      const budgetLiterRows = isBudgetMode ? `
+        ${grossLiters !== null ? `
+          <div class="metric">
+            <span class="metric-icon" aria-hidden="true">${METRIC_ICONS.fuel}</span>
+            <span class="metric-label">Litros comprados</span>
+            <strong>${fmtLiters(grossLiters)}</strong>
+          </div>
+        ` : ''}
+        ${netLiters !== null ? `
+          <div class="metric">
+            <span class="metric-icon" aria-hidden="true">${METRIC_ICONS.trendingDown}</span>
+            <span class="metric-label">Litros útiles estimados</span>
+            <strong>${fmtLiters(netLiters)}</strong>
+          </div>
+        ` : ''}
+      ` : '';
+      const costRow = isBudgetMode ? '' : `
+        <div class="metric">
+          <span class="metric-icon" aria-hidden="true">${METRIC_ICONS.receipt}</span>
+          <span class="metric-label">Coste total estimado</span>
+          <strong>${fmtEuro(selected.effective_total_cost_eur)}</strong>
+        </div>
+      `;
       return `
         <div class="metric">
           <span class="metric-icon" aria-hidden="true">${METRIC_ICONS.detour}</span>
@@ -1727,31 +1895,56 @@
             <strong${perLiterSaving !== null ? ` style="color:${perLiterSaving > 0 ? '#2D7A4F' : perLiterSaving < 0 ? '#C0392B' : '#6B6560'}"` : ''}>${formattedSignedPrice(perLiterSaving)}</strong>
           </div>
         ` : ''}
-        <div class="metric">
-          <span class="metric-icon" aria-hidden="true">${METRIC_ICONS.receipt}</span>
-          <span class="metric-label">Coste total estimado</span>
-          <strong>${fmtEuro(selected.effective_total_cost_eur)}</strong>
-        </div>
+        ${budgetLiterRows}
+        ${costRow}
       `;
     }
 
-    function renderAlternativesList(alternatives) {
+    function resultInputMode(data, selected) {
+      return String(selected.input_mode || data.input_mode || state.inputMode || 'liters').toLowerCase();
+    }
+
+    function resultMainMetric(data, selected) {
+      if (resultInputMode(data, selected) === 'budget') {
+        const litersDelta = numericMetric(selected.net_liters_vs_reference);
+        return {
+          label: `Litros extra estimados ${infoIconHtml('litrosExtra', 'below')}`,
+          value: formattedSignedLiters(selected.net_liters_vs_reference),
+          color: litersDelta > 0 ? '#2D7A4F' : litersDelta < 0 ? '#C0392B' : '#6B6560',
+          gradient: 'transparent',
+        };
+      }
+      const savingValue = numericMetric(selected.net_savings_vs_reference_eur) || 0;
+      const savingIntensity = Math.min(Math.abs(savingValue), 5) / 5;
+      const savingOpacity = savingIntensity * 0.28;
+      return {
+        label: `Ahorro estimado ${infoIconHtml('ahorro', 'below')}`,
+        value: fmtEuro(savingValue),
+        color: savingValue > 0 ? '#2D7A4F' : savingValue < 0 ? '#C0392B' : '#6B6560',
+        gradient: 'transparent',
+        saving: savingValue,
+      };
+    }
+
+    function renderAlternativesList(alternatives, selectedIndex, isBudgetMode) {
       if (!alternatives.length) return '';
       return alternatives.map(({ item, index }) => {
         const altStation = item.station || {};
         const altLocation = stationDetailLine(altStation);
+        const selected = index === selectedIndex;
+        const rankMetric = isBudgetMode ? fmtLiters(item.net_liters) : fmtEuro(item.effective_total_cost_eur);
         const subParts = [
           fmtPrice(item.price_eur_l),
           `+${fmtKm(item.extra_detour_km)}`,
           altLocation ? escapeHtml(altLocation) : '',
         ].filter(Boolean);
         return `
-          <button class="rank" type="button" data-result-index="${index}">
+          <button class="rank${selected ? ' selected' : ''}" type="button" data-result-index="${index}" aria-current="${selected ? 'true' : 'false'}">
             <div class="rank-num">${index + 1}</div>
             <div class="rank-body">
               <div class="rank-main-row">
                 <span class="rank-name">${escapeHtml(altStation.name || 'Estación')}</span>
-                <span class="rank-cost">${fmtEuro(item.effective_total_cost_eur)}</span>
+                <span class="rank-cost">${rankMetric}</span>
               </div>
               <div class="rank-sub">${subParts.join(' · ')}</div>
             </div>
@@ -1813,14 +2006,18 @@
       const selected = data.items[selectedIndex] || data.best || data.items[0];
       const station = selected.station;
       state.selectedStation = station;
-      const saving = selected.net_savings_vs_reference_eur || 0;
+      const isBudgetMode = resultInputMode(data, selected) === 'budget';
+      const mainMetric = resultMainMetric(data, selected);
+      const saving = isBudgetMode ? null : mainMetric.saving;
       renderSelectedStationMarker(station);
       const canDrawRoute = Boolean(state.origin && state.destination && state.selectedStation);
       const alternatives = data.items
-        .map((item, index) => ({ item, index }))
-        .filter(row => row.index !== selectedIndex);
-      const rows = renderAlternativesList(alternatives);
+        .map((item, index) => ({ item, index }));
+      const rows = renderAlternativesList(alternatives, selectedIndex, isBudgetMode);
       const alternativesLabel = alternatives.length === 1 ? 'Ver 1 alternativa' : `Ver ${alternatives.length} alternativas`;
+      const alternativesSubtitle = isBudgetMode
+        ? 'Ordenadas por litros útiles estimados'
+        : 'Ordenadas por coste efectivo neto';
       const alternativesOpen = alternatives.length > 0 && keepAlternativesOpen;
       const panelClass = alternativesOpen ? 'ranking' : 'ranking collapsed';
       resultElement.classList.toggle('result-panel--expanded', alternativesOpen);
@@ -1830,19 +2027,14 @@
       const routeNote = routeSourceNote(data, selected);
       const resultWarnings = data.warnings || [];
       const warningsHtml = renderWarnings(resultWarnings);
-      const metrics = renderResultMetricRows(selected, resultWarnings, saving);
-      const _savingIntensity = Math.min(Math.abs(saving), 5) / 5;
-      const _savingOpacity = _savingIntensity * 0.15;
-      const _savingGradient = saving === 0
-        ? 'transparent'
-        : `linear-gradient(to bottom, rgba(${saving > 0 ? '45,122,79' : '192,57,43'},${_savingOpacity}) 0%, transparent 100%)`;
+      const metrics = renderResultMetricRows(selected, resultWarnings, saving, isBudgetMode);
       resultElement.innerHTML = `
         <section class="result-summary-card">
           ${resultCloseButton()}
-          <div class="result-main-metric" style="background:${_savingGradient}">
-            <span class="result-main-label-row">Ahorro estimado ${infoIconHtml('ahorro', 'below')}</span>
+          <div class="result-main-metric" style="background:${mainMetric.gradient}">
+            <span class="result-main-label-row">${mainMetric.label}</span>
             <div class="result-main-value">
-              <strong style="color:${saving > 0 ? '#2D7A4F' : saving < 0 ? '#C0392B' : '#6B6560'}">${fmtEuro(saving)}</strong>
+              <strong style="color:${mainMetric.color}">${mainMetric.value}</strong>
             </div>
           </div>
           <div class="metrics result-metric-list">${metrics}</div>
@@ -1853,13 +2045,16 @@
           <button id="toggle_alternatives" class="alternatives-toggle" type="button" aria-expanded="${String(alternativesOpen)}">
             <span class="alternatives-toggle-text">
               <span class="toggle-label">Otras alternativas</span>
-              <span class="toggle-sublabel">Ordenadas por coste efectivo neto</span>
+              <span class="toggle-sublabel">${alternativesSubtitle}</span>
             </span>
             <span class="chevron" aria-hidden="true"></span>
           </button>
           <div id="alternatives_panel" class="${panelClass}" aria-hidden="${String(!alternativesOpen)}">${rows}</div>
         </section>
       `;
+      resultElement.querySelectorAll('[data-open-maps]').forEach(button => {
+        button.addEventListener('click', handleOpenMaps);
+      });
       bindResultCloseButton();
       if (canDrawRoute) {
         // Remove the previous route polyline immediately (before the async
@@ -1884,7 +2079,14 @@
         });
         panel.querySelectorAll('[data-result-index]').forEach(button => {
           button.addEventListener('click', () => {
+            const alternativesScrollTop = panel.scrollTop || 0;
             renderResult(data, Number(button.dataset.resultIndex), true);
+            requestAnimationFrame(() => {
+              const restoredPanel = $('alternatives_panel');
+              if (restoredPanel) {
+                restoredPanel.scrollTop = alternativesScrollTop;
+              }
+            });
           });
         });
       }
@@ -1925,6 +2127,30 @@
       throw new Error(detail);
     }
 
+    function startOptimizeLoadingMessages() {
+      stopOptimizeLoadingMessages();
+      optimizeLoadingMessageIndex = 0;
+      $('status').textContent = OPTIMIZE_LOADING_MESSAGES[0];
+      optimizeLoadingTimer = window.setInterval(() => {
+        optimizeLoadingMessageIndex = Math.min(
+          optimizeLoadingMessageIndex + 1,
+          OPTIMIZE_LOADING_MESSAGES.length - 1,
+        );
+        $('status').textContent = OPTIMIZE_LOADING_MESSAGES[optimizeLoadingMessageIndex];
+      }, 1100);
+    }
+
+    function stopOptimizeLoadingMessages(finalMessage) {
+      if (optimizeLoadingTimer) {
+        window.clearInterval(optimizeLoadingTimer);
+        optimizeLoadingTimer = null;
+      }
+      optimizeLoadingMessageIndex = 0;
+      if (finalMessage !== undefined) {
+        $('status').textContent = finalMessage;
+      }
+    }
+
     async function optimize() {
       if (!state.origin) {
         $('status').textContent = 'Selecciona una salida.';
@@ -1956,7 +2182,7 @@
         const shouldExcludeBrands = state.brandFilterMode === 'all_except' && excluded.length > 0
           || shouldUseBrandExclusions(brands, excluded);
         const shouldFilterByBrands = !shouldExcludeBrands && brands.length > 0 && !allBrandsSelected();
-        if (shouldFilterByBrands && brands.length > 10) {
+        if (shouldFilterByBrands && selectedBrands().length > 10) {
           $('status').textContent = 'Puedes elegir hasta 10 marcas concretas. Usa "Todas" para buscar en todo el catalogo.';
           return;
         }
@@ -1987,8 +2213,10 @@
         if (shouldExcludeBrands) {
           payload.excluded_brands = excluded;
         }
+        startOptimizeLoadingMessages();
         const { data, fallbackUsed } = await requestOptimization(payload);
         state.resultHasFit = false;
+        stopOptimizeLoadingMessages();
         renderResult(data, 0, false);
         track('Optimización calculada', { resultados: String(data.returned), fallback: String(fallbackUsed) });
         $('status').textContent = fallbackUsed
@@ -2001,11 +2229,101 @@
         resultElement.innerHTML = `<h2>Error</h2><p class="error">${escapeHtml(error.message)}</p>`;
         resultElement.insertAdjacentHTML('afterbegin', resultCloseButton());
         bindResultCloseButton();
-        $('status').textContent = '';
+        stopOptimizeLoadingMessages('');
       } finally {
         button.disabled = false;
       }
     }
+
+    // ── FeedbackModal ────────────────────────────────────────────────
+    (function initFeedbackModal() {
+      const overlay  = $('feedback_overlay');
+      const trigger  = $('feedback_trigger');
+      const closeBtn = $('feedback_close');
+      const submitBtn = $('feedback_submit');
+      const successMsg = $('feedback_success');
+
+      function openModal() {
+        overlay.hidden = false;
+        closeBtn.focus();
+      }
+
+      function closeModal() {
+        overlay.hidden = true;
+        successMsg.hidden = true;
+        $('feedback_email').value = '';
+        $('feedback_message').value = '';
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '';
+        submitBtn.textContent = 'Enviar idea →';
+      }
+
+      trigger.addEventListener('click', openModal);
+      closeBtn.addEventListener('click', closeModal);
+
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closeModal();
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !overlay.hidden) closeModal();
+      });
+
+      submitBtn.addEventListener('click', async () => {
+        const emailValue   = $('feedback_email').value.trim();
+        const messageValue = $('feedback_message').value.trim();
+
+        successMsg.hidden = true;
+        successMsg.style.color = '#2D7A4F';
+
+        submitBtn.disabled = true;
+        submitBtn.style.opacity = '0.7';
+        submitBtn.textContent = 'Enviando...';
+
+        try {
+          const res = await fetch('/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailValue, message: messageValue }),
+          });
+
+          if (res.ok) {
+            successMsg.textContent = '¡Gracias! Hemos recibido tu mensaje.';
+            successMsg.style.color = '#2D7A4F';
+            successMsg.hidden = false;
+            setTimeout(() => { closeModal(); }, 2000);
+          } else {
+            let errorMsg = 'Algo salió mal. Inténtalo de nuevo.';
+            if (res.status === 422) {
+              try {
+                const data = await res.json();
+                if (typeof data.detail === 'string') {
+                  errorMsg = data.detail;
+                } else if (Array.isArray(data.detail)) {
+                  const fieldMap = { email: 'El correo electrónico no es válido.', message: 'El mensaje debe tener al menos 10 caracteres.' };
+                  const first = data.detail[0];
+                  const field = first?.loc?.[first.loc.length - 1];
+                  errorMsg = fieldMap[field] || errorMsg;
+                }
+              } catch (_) {}
+            }
+            successMsg.textContent = errorMsg;
+            successMsg.style.color = '#C0392B';
+            successMsg.hidden = false;
+            submitBtn.disabled = false;
+            submitBtn.style.opacity = '';
+            submitBtn.textContent = 'Enviar idea →';
+          }
+        } catch (_err) {
+          successMsg.textContent = 'Algo salió mal. Inténtalo de nuevo.';
+          successMsg.style.color = '#C0392B';
+          successMsg.hidden = false;
+          submitBtn.disabled = false;
+          submitBtn.style.opacity = '';
+          submitBtn.textContent = 'Enviar idea →';
+        }
+      });
+    })();
 
     initPDD('fuel_type');
     initPDD('optimization_mode');

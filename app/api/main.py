@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
 import time
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Any
@@ -46,7 +48,13 @@ from app.data_sources.brand_catalog import canonical_brand_id, ui_brand_catalog
 from app.models import Coordinates, FUEL_FIELDS, OptimizationInput
 from app.optimizer.ranking import HaversineEstimateProvider, optimize_from_db_with_context
 from app.api.ui import STATIC_DIR, load_index_html
-from app.routing.ors import ORSRouteProvider, geocode_address, geocode_candidates, reverse_geocode_coordinates
+from app.routing.ors import (
+    ORSRouteProvider,
+    geocode_address,
+    geocode_candidates,
+    geocode_candidates_autocomplete,
+    reverse_geocode_coordinates,
+)
 from app.storage.database import (
     INDEPENDENT_BRAND_SENTINEL,
     canonical_brand_counts,
@@ -241,6 +249,7 @@ class OptimizeRequest(BaseModel):
     result_limit: int = Field(default=20, gt=0, le=100)
     brand: str | None = None
     brands: list[str] | None = None
+    excluded_brands: list[str] | None = None
     use_ors: bool = False
 
     def effective_local_search_radius_km(self) -> float:
@@ -315,12 +324,7 @@ def _resolve_coordinates(address: str | None, lat: float | None, lon: float | No
     raise HTTPException(status_code=400, detail=f"{label} requires address or lat/lon.")
 
 
-def _selected_brands(payload: OptimizeRequest) -> list[str] | None:
-    raw_values: list[str] = []
-    if payload.brands:
-        raw_values.extend(payload.brands)
-    if payload.brand:
-        raw_values.append(payload.brand)
+def _normalize_brand_values(raw_values: list[str]) -> list[str]:
     selected: list[str] = []
     seen: set[str] = set()
     for value in raw_values:
@@ -328,33 +332,139 @@ def _selected_brands(payload: OptimizeRequest) -> list[str] | None:
         if brand and brand not in seen:
             selected.append(brand)
             seen.add(brand)
+    return selected
+
+
+def _selected_brands(payload: OptimizeRequest) -> list[str] | None:
+    raw_values: list[str] = []
+    if payload.brands:
+        raw_values.extend(payload.brands)
+    if payload.brand:
+        raw_values.append(payload.brand)
+    selected = _normalize_brand_values(raw_values)
     if len(selected) > settings.max_brands_per_request:
         raise HTTPException(
             status_code=400,
-            detail=f"Too many brands selected. Maximum is {settings.max_brands_per_request}.",
+            detail=f"Puedes elegir hasta {settings.max_brands_per_request} marcas concretas. Usa 'Todas' para buscar en todo el catalogo.",
         )
     return selected or None
+
+
+def _excluded_brands(payload: OptimizeRequest) -> list[str] | None:
+    excluded = _normalize_brand_values(list(payload.excluded_brands or []))
+    if excluded and (payload.brands or payload.brand):
+        raise HTTPException(
+            status_code=400,
+            detail="No combines brands con excluded_brands en la misma busqueda.",
+        )
+    return excluded or None
 
 
 def _public_geometry(points: list[Coordinates]) -> list[dict[str, float]]:
     return [{"lat": point.lat, "lon": point.lon} for point in points]
 
 
+_TRAILING_HOUSE_NUMBER_RE = re.compile(r"(?:,\s*|\s+)\d+[a-zA-Z]?\s*$")
+_SPACES_RE = re.compile(r"\s+")
+
+
+def _normalize_geocode_query(value: str) -> str:
+    text = unicodedata.normalize("NFD", value.casefold())
+    text = "".join(char for char in text if unicodedata.category(char) != "Mn")
+    return _SPACES_RE.sub(" ", text).strip()
+
+
+def _dedupe_texts(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        clean = _SPACES_RE.sub(" ", value.replace(" ,", ",")).strip(" ,")
+        key = _normalize_geocode_query(clean)
+        if clean and key not in seen:
+            result.append(clean)
+            seen.add(key)
+    return result
+
+
+def _geocode_query_variants(q: str) -> list[str]:
+    """Return fast, quality-oriented ORS search variants for precise Spanish addresses."""
+    base = _SPACES_RE.sub(" ", q).strip()
+    without_number = _TRAILING_HOUSE_NUMBER_RE.sub("", base).strip(" ,")
+    candidates: list[str] = []
+    normalized = _normalize_geocode_query(without_number or base)
+    if re.search(r"\btravesia\b", normalized):
+        candidates.extend(
+            [
+                re.sub(r"(?i)\btravesia\s+de\s+", "Traves\u00eda ", without_number or base),
+                re.sub(r"(?i)\btravesia\b", "Traves\u00eda", without_number or base),
+                re.sub(r"(?i)\btravesia\b", "Trv.", without_number or base),
+                re.sub(r"(?i)\btravesia\s+de\s+", "Trv. ", without_number or base),
+            ]
+        )
+    candidates.append(without_number or base)
+    candidates.append(base)
+    return _dedupe_texts(candidates)
+
+
+def _merge_geocode_items(items: list[dict[str, Any]], additions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen = {
+        _normalize_geocode_query(str(item.get("label") or item.get("title") or ""))
+        for item in items
+    }
+    for item in additions:
+        key = _normalize_geocode_query(str(item.get("label") or item.get("title") or ""))
+        if key and key not in seen:
+            items.append(item)
+            seen.add(key)
+    return items
+
+
+def _geocode_search_variants(
+    q: str,
+    size: int,
+    focus_lat: float | None,
+    focus_lon: float | None,
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    target_count = min(max(size, 1), 15)
+    for query in _geocode_query_variants(q):
+        additions = geocode_candidates(
+            query,
+            settings=settings,
+            size=target_count,
+            focus_lat=focus_lat,
+            focus_lon=focus_lon,
+        )
+        _merge_geocode_items(items, additions)
+        if len(items) >= target_count:
+            break
+    return items[:target_count]
+
+
 def geocode(
     q: str,
-    size: int = 5,
+    size: int = 10,
     focus_lat: float | None = None,
     focus_lon: float | None = None,
+    autocomplete: bool = True,
 ) -> dict[str, Any]:
     try:
+        if autocomplete:
+            try:
+                items = geocode_candidates_autocomplete(
+                    q,
+                    settings=settings,
+                    size=size,
+                    focus_lat=focus_lat,
+                    focus_lon=focus_lon,
+                )
+            except (RuntimeError, RequestException):
+                items = []
+            if items:
+                return {"items": items}
+
         return {
-            "items": geocode_candidates(
-                q,
-                settings=settings,
-                size=size,
-                focus_lat=focus_lat,
-                focus_lon=focus_lon,
-            )
+            "items": _geocode_search_variants(q, size=size, focus_lat=focus_lat, focus_lon=focus_lon)
         }
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -367,11 +477,12 @@ def geocode(
 def geocode_endpoint(
     request: Request,
     q: str = Query(min_length=3),
-    size: int = Query(default=5, ge=1, le=10),
+    size: int = Query(default=10, ge=1, le=15),
+    autocomplete: bool = Query(default=True),
     focus_lat: float | None = Query(default=None, ge=-90.0, le=90.0),
     focus_lon: float | None = Query(default=None, ge=-180.0, le=180.0),
 ) -> dict[str, Any]:
-    return geocode(q=q, size=size, focus_lat=focus_lat, focus_lon=focus_lon)
+    return geocode(q=q, size=size, focus_lat=focus_lat, focus_lon=focus_lon, autocomplete=autocomplete)
 
 
 def reverse_geocode(lat: float, lon: float) -> dict[str, Any]:
@@ -434,6 +545,54 @@ def root() -> str:
 @app.get("/privacidad", response_class=HTMLResponse)
 def privacy() -> str:
     return (STATIC_DIR / "privacy.html").read_text(encoding="utf-8")
+
+
+@app.get("/como-funciona", response_class=HTMLResponse)
+def how_it_works() -> str:
+    return (STATIC_DIR / "como-funciona.html").read_text(encoding="utf-8")
+
+
+class FeedbackPayload(BaseModel):
+    email: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=10)
+
+
+@app.post("/feedback")
+def submit_feedback(payload: FeedbackPayload) -> dict[str, bool]:
+    import re as _re
+    import smtplib
+    from email.mime.text import MIMEText
+
+    if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", payload.email):
+        raise HTTPException(status_code=422, detail="Correo electrónico no válido.")
+
+    gmail_user = os.getenv("GMAIL_USER", "")
+    gmail_password = os.getenv("GMAIL_APP_PASSWORD", "")
+    recipient = os.getenv("FEEDBACK_RECIPIENT", gmail_user)
+
+    if not gmail_user or not gmail_password:
+        logger.error("GMAIL_USER o GMAIL_APP_PASSWORD no configurados")
+        raise HTTPException(status_code=500, detail={"error": "No se pudo enviar el mensaje"})
+
+    subject = f"[FuelOpt Feedback] Nueva idea de {payload.email}"
+    body = f"Remitente: {payload.email}\n\n{payload.message}"
+
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = gmail_user
+    msg["To"] = recipient
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.login(gmail_user, gmail_password)
+            smtp.sendmail(gmail_user, [recipient], msg.as_string())
+    except Exception as exc:
+        logger.error("feedback_smtp_error: %s", exc)
+        raise HTTPException(status_code=500, detail={"error": "No se pudo enviar el mensaje"})
+
+    return {"ok": True}
 
 
 @app.get("/robots.txt", response_class=PlainTextResponse)
@@ -624,6 +783,7 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="budget_amount_eur is required when input_mode is 'budget'.")
     _reject_conflicting_radius_aliases(payload)
     selected_brands = _selected_brands(payload)
+    excluded_brands = _excluded_brands(payload)
     origin = _resolve_coordinates(payload.origin_address, payload.origin_lat, payload.origin_lon, "origin")
     destination = _resolve_coordinates(
         payload.destination_address,
@@ -666,6 +826,7 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
             settings.db_path,
             request,
             brands=selected_brands,
+            excluded_brands=excluded_brands,
             route_provider=route_provider,
         )
     except ValueError as exc:
@@ -685,7 +846,10 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
     fuel_counts = coverage.get("fuel_counts") if isinstance(coverage.get("fuel_counts"), dict) else {}
     fuel_coverage_count = int(fuel_counts.get(payload.fuel_type, 0) or 0)
     independent_count = int(coverage.get("independent_count", 0) or 0)
-    independent_included = INDEPENDENT_BRAND_SENTINEL in (selected_brands or [])
+    independent_included = (
+        INDEPENDENT_BRAND_SENTINEL in (selected_brands or [])
+        or (not selected_brands and INDEPENDENT_BRAND_SENTINEL not in (excluded_brands or []))
+    )
     warning_route_source = results[0].route_source if results else getattr(route_provider, "route_source", None)
     warnings_list = build_optimize_warnings(
         fuel_type=payload.fuel_type,
@@ -708,6 +872,7 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
         "optimization_mode": search_context.get("optimization_mode", payload.optimization_mode),
         "warnings": [warning.to_dict() for warning in warnings_list],
         "brand_filter": selected_brands or [],
+        "brand_exclusions": excluded_brands or [],
         "search": search_context,
         "count": len(results),
         "returned": len(items),

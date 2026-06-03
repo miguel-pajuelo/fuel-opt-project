@@ -381,6 +381,7 @@ def _radial_candidates(
     radius_km: float,
     brand: str | None,
     brands: list[str] | None,
+    excluded_brands: list[str] | None,
 ) -> tuple[list[tuple[Station, float]], dict[str, Any]]:
     max_extent = max(radius_km, request.max_search_extent_km)
     min_lat, max_lat, min_lon, max_lon = _bounding_box(request.origin, max_extent)
@@ -393,6 +394,7 @@ def _radial_candidates(
         max_lon,
         brand=brand,
         brands=brands,
+        excluded_brands=excluded_brands,
     )
     scored = [
         (station, price, haversine_km(request.origin, Coordinates(station.lat, station.lon)))
@@ -409,6 +411,7 @@ def _corridor_candidates(
     request: OptimizationInput,
     brand: str | None,
     brands: list[str] | None,
+    excluded_brands: list[str] | None,
     route_geometry: list[Coordinates] | None,
 ) -> tuple[list[tuple[Station, float]], dict[str, Any]]:
     geometry = route_geometry or _line_geometry(request.origin, request.destination)
@@ -424,6 +427,7 @@ def _corridor_candidates(
         max_lon,
         brand=brand,
         brands=brands,
+        excluded_brands=excluded_brands,
     )
     scored = [
         (station, price, _distance_to_geometry_km(Coordinates(station.lat, station.lon), geometry))
@@ -440,6 +444,7 @@ def prefilter_candidates(
     request: OptimizationInput,
     brand: str | None = None,
     brands: list[str] | None = None,
+    excluded_brands: list[str] | None = None,
     route_geometry: list[Coordinates] | None = None,
 ) -> list[tuple[Station, float]]:
     candidates, _ = prefilter_candidates_with_trace(
@@ -447,6 +452,7 @@ def prefilter_candidates(
         request,
         brand=brand,
         brands=brands,
+        excluded_brands=excluded_brands,
         route_geometry=route_geometry,
     )
     return candidates
@@ -457,6 +463,7 @@ def prefilter_candidates_with_trace(
     request: OptimizationInput,
     brand: str | None = None,
     brands: list[str] | None = None,
+    excluded_brands: list[str] | None = None,
     route_geometry: list[Coordinates] | None = None,
 ) -> tuple[list[tuple[Station, float]], dict[str, Any]]:
     if request.fuel_type not in FUEL_FIELDS:
@@ -470,6 +477,7 @@ def prefilter_candidates_with_trace(
             radius_km=preferred,
             brand=brand,
             brands=brands,
+            excluded_brands=excluded_brands,
         )
     else:
         candidates, trace = _corridor_candidates(
@@ -477,11 +485,18 @@ def prefilter_candidates_with_trace(
             request,
             brand=brand,
             brands=brands,
+            excluded_brands=excluded_brands,
             route_geometry=route_geometry,
         )
 
     if not candidates:
-        all_candidates = get_candidates_with_price(db_path, request.fuel_type, brand=brand, brands=brands)
+        all_candidates = get_candidates_with_price(
+            db_path,
+            request.fuel_type,
+            brand=brand,
+            brands=brands,
+            excluded_brands=excluded_brands,
+        )
         if not all_candidates:
             trace["fallback_used"] = True
             trace["candidate_universe_size"] = 0
@@ -633,6 +648,7 @@ def optimize_from_db(
     request: OptimizationInput,
     brand: str | None = None,
     brands: list[str] | None = None,
+    excluded_brands: list[str] | None = None,
     route_provider: RouteProvider | None = None,
 ) -> list[CandidateResult]:
     results, _ = optimize_from_db_with_context(
@@ -640,6 +656,7 @@ def optimize_from_db(
         request,
         brand=brand,
         brands=brands,
+        excluded_brands=excluded_brands,
         route_provider=route_provider,
     )
     return results
@@ -650,6 +667,7 @@ def optimize_from_db_with_context(
     request: OptimizationInput,
     brand: str | None = None,
     brands: list[str] | None = None,
+    excluded_brands: list[str] | None = None,
     route_provider: RouteProvider | None = None,
 ) -> tuple[list[CandidateResult], dict[str, Any]]:
     route_geometry = None
@@ -662,6 +680,7 @@ def optimize_from_db_with_context(
         request,
         brand=brand,
         brands=brands,
+        excluded_brands=excluded_brands,
         route_geometry=route_geometry,
     )
     results = optimize_candidates(candidates, request, route_provider=route_provider)

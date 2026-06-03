@@ -1,5 +1,7 @@
 .env
 data/
+data/reports/
+.claude/
 __pycache__/
 *.pyc
 *.pyo
@@ -8,6 +10,8 @@ dist/
 build/
 tests/
 *.log
+*.err.log
+*.out.log
 *.egg-info/
 .venv/
 venv/

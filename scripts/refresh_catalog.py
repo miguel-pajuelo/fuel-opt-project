@@ -18,7 +18,7 @@ REPORT_DIR = ROOT / "data" / "reports"
 from app.config import load_settings
 from app.storage.publish import cleanup_old_backups, cleanup_sqlite_sidecars, publish_sqlite_candidate
 from app.storage.validation import CatalogValidationRules, validate_catalog_db
-from scripts.rebuild_station_catalog import _build_metadata, load_catalog
+from scripts.rebuild_station_catalog import _build_metadata, load_catalog, public_access_report
 from app.storage.database import replace_catalog
 
 
@@ -198,6 +198,7 @@ def main() -> int:
                 "validation_errors": validation.errors,
                 "validation_warnings": validation.warnings,
                 "validation_status": validation.status,
+                "public_access": public_access_report(),
                 **_brand_coverage_report(stations),
             }
         )
