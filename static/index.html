@@ -3,131 +3,231 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FuelOpt</title>
+  <title>FuelOpt &#8212; Encuentra la gasolinera m&#225;s barata en tu ruta</title>
+  <meta name="description" content="Calcula qu&#233; gasolinera te sale m&#225;s barata teniendo en cuenta el precio del combustible y el desv&#237;o de tu ruta. Gratis, sin registro.">
+  <meta property="og:title" content="FuelOpt &#8212; Optimizador de repostaje">
+  <meta property="og:description" content="Encuentra la gasolinera m&#225;s econ&#243;mica en tu ruta por Espa&#241;a. Compara precio real incluyendo el coste del desv&#237;o.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://fuelopt.es">
+  <meta name="theme-color" content="#171411">
+  <script data-goatcounter="https://fuelopt.goatcounter.com/count"
+          async src="//gc.zgo.at/count.js"></script>
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="/static/styles.css?v=demo-ui-20260507-6">
+  <link rel="stylesheet" href="/static/styles.css?v=feedback-modal-20260519-10">
 </head>
 <body>
-  <div class="shell">
-    <aside id="search_sidebar" class="side">
-      <header class="brand">
-        <div class="wordmark">Fuel<span>Opt</span></div>
-        <nav class="nav">
-          <a href="/docs">Docs</a>
-          <a href="/health">Health</a>
-        </nav>
-        <div class="refresh-widget">
-          <button id="refresh_catalog" class="refresh-button" type="button" aria-label="Forzar actualización de datos" title="Forzar actualización de datos">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M20 7.5a7.6 7.6 0 0 0-13.2-3.2L4.5 6.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M4.5 3.2v3.4h3.4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M4 16.5a7.6 7.6 0 0 0 13.2 3.2l2.3-2.3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M19.5 20.8v-3.4h-3.4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-          <div class="refresh-copy">
-            <span id="refresh_status">Precios descargados: --</span>
-          </div>
-        </div>
-        <button id="sidebar_toggle" class="sidebar-toggle" type="button" aria-label="Contraer filtros" aria-controls="search_sidebar" aria-expanded="true" title="Contraer filtros">
+  <div class="shell app-shell">
+    <header class="app-header" aria-label="Cabecera principal">
+      <div class="brand">
+        <a class="wordmark" href="/" aria-label="FuelOpt">Fuel<span>Opt</span></a>
+        <span class="beta-badge">Beta</span>
+        <a class="header-privacy-link" href="/privacidad">Privacidad</a>
+        <a class="header-privacy-link" href="/como-funciona">¿Cómo funciona?</a>
+      </div>
+      <div class="price-chip" aria-live="polite">
+        <span id="catalog_freshness_dot" class="freshness-dot freshness-unknown" aria-hidden="true"></span>
+        <span id="refresh_status">Precios actualizados: --</span>
+      </div>
+      <nav class="nav mini-nav" aria-label="Enlaces">
+        <button class="feedback-chip" id="feedback_trigger" type="button">
+          <span class="feedback-chip__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+          </span>
+          <span class="feedback-chip__main">Mándanos tu idea</span>
         </button>
-      </header>
+        <a class="support-chip" href="https://ko-fi.com/fuelopt" target="_blank" rel="noopener noreferrer" aria-label="Apoyar FuelOpt en Ko-fi">
+          <span class="support-chip__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M6 8h10v4.5a4.5 4.5 0 0 1-4.5 4.5h-1A4.5 4.5 0 0 1 6 12.5V8Z"></path>
+              <path d="M16 9h1.5a2.5 2.5 0 0 1 0 5H16"></path>
+              <path d="M7 19h9"></path>
+            </svg>
+          </span>
+          <span class="support-chip__main">Apoyar FuelOpt</span>
+        </a>
+      </nav>
+    </header>
 
-      <section class="headline">
+    <aside id="config_sidebar" class="side floating-sidebar" aria-label="Configuraci&#243;n de repostaje">
+      <section class="headline" aria-label="FuelOpt">
         <div class="eyebrow">Optimizador de repostaje</div>
         <h1>Llena tu depósito sin vaciar tu cartera.</h1>
       </section>
 
       <section class="controls">
-        <div class="block route-summary">
-          <label class="label">Salida</label>
-          <div id="origin_choice" class="selected-place">Sin seleccionar</div>
-        </div>
-
-        <div class="block">
-          <div class="switch-row">
-            <label class="label" style="margin:0">Regreso al origen</label>
-            <label class="switch">
-              <input id="return_to_origin" type="checkbox" checked>
-              <span class="slider"></span>
-            </label>
-          </div>
-          <div id="destination_block" class="route-summary" style="display:none">
-            <label class="label">Llegada</label>
-            <div id="destination_choice" class="selected-place">Sin seleccionar</div>
-          </div>
-        </div>
-
-        <div class="block">
-          <div class="grid">
-            <div>
-              <label class="label" for="fuel_type">Combustible</label>
-              <select id="fuel_type"></select>
+        <div class="config-grid">
+          <div class="config-field">
+            <label class="label" for="fuel_type_trigger">Combustible</label>
+            <div class="pdd" id="fuel_type" data-value="">
+              <button class="pdd-trigger" id="fuel_type_trigger" type="button" aria-expanded="false" aria-haspopup="listbox" aria-label="Combustible">
+                <span class="pdd-selected">Cargando&#8230;</span>
+                <svg class="pdd-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="pdd-menu" role="listbox"></div>
             </div>
-            <div>
-              <label class="label" for="optimization_mode">Objetivo</label>
-              <select id="optimization_mode">
-                <option value="economic">Máximo ahorro</option>
-                <option value="balanced">Equilibrado</option>
-                <option value="minimal_detour">Mínimo desvío</option>
-              </select>
-            </div>
-            <div class="refuel-grid span-2">
-              <div class="refuel-header amount-header">
-                <div class="amount-mode" aria-label="Modo de cantidad">
-                  <button id="refill_mode_liters" class="amount-mode-option active" type="button" aria-pressed="true">Litros</button>
-                  <button id="refill_mode_budget" class="amount-mode-option" type="button" aria-pressed="false">Euros</button>
-                </div>
+          </div>
+
+          <div class="config-field">
+            <label class="label" for="optimization_mode_trigger">Objetivo</label>
+            <div class="pdd" id="optimization_mode" data-value="economic">
+              <button class="pdd-trigger" id="optimization_mode_trigger" type="button" aria-expanded="false" aria-haspopup="listbox" aria-label="Objetivo">
+                <span class="pdd-selected">M&#225;ximo ahorro</span>
+                <svg class="pdd-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <div class="pdd-menu" role="listbox">
+                <div class="pdd-option active" data-value="economic" role="option" aria-selected="true" tabindex="-1">M&#225;ximo ahorro</div>
+                <div class="pdd-option" data-value="balanced" role="option" aria-selected="false" tabindex="-1">Equilibrado</div>
+                <div class="pdd-option" data-value="minimal_detour" role="option" aria-selected="false" tabindex="-1">M&#237;nimo desv&#237;o</div>
               </div>
-              <div class="refuel-header consumption-header">
-                <label class="label" for="consumption_l_100km">Consumo medio</label>
+            </div>
+          </div>
+
+          <div class="config-field amount-field span-2">
+            <label class="label" for="liters">Cantidad</label>
+            <div class="amount-row">
+              <div class="amount-mode" aria-label="Modo de cantidad">
+                <button id="refill_mode_liters" class="amount-mode-option active" type="button" aria-pressed="true">Litros</button>
+                <button id="refill_mode_budget" class="amount-mode-option" type="button" aria-pressed="false">Euros</button>
               </div>
               <input id="liters" inputmode="decimal" value="30" aria-label="Cantidad a repostar">
-              <input id="consumption_l_100km" inputmode="decimal" value="5.5">
-              <div id="refuel_amount_hint" class="input-hint">Cantidad de combustible a repostar.</div>
             </div>
-            <div class="span-2">
-              <div class="brand-tools">
+            <div id="refuel_amount_hint" class="input-hint">Cantidad de combustible a repostar.</div>
+          </div>
+
+          <div class="config-field span-2">
+            <label class="label" for="consumption_l_100km">Consumo medio <span class="label-unit">(l/100km)</span></label>
+            <input id="consumption_l_100km" inputmode="decimal" value="5.5" aria-label="Consumo medio en litros cada 100 kil&#243;metros">
+          </div>
+
+          <div class="brand-section span-2">
+            <div class="brand-tools">
+              <div style="display:flex;align-items:center;gap:6px">
                 <label class="label" style="margin:0">Marcas</label>
-                <button id="select_all_brands" class="link-button active" type="button" aria-pressed="true">Todas</button>
+                <button class="info-icon info-icon--below" type="button" tabindex="0" aria-label="M&#225;s informaci&#243;n sobre el filtro de marcas">
+                  <svg class="info-icon__svg" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M8 7.5v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="5" r="0.85" fill="currentColor"/></svg>
+                  <span class="info-tooltip" role="tooltip">Pulsa &#8220;Todas&#8221; para buscar sin l&#237;mite de marcas. Manualmente, puedes seleccionar hasta 10 a la vez.</span>
+                </button>
               </div>
-              <div id="brand_checks" class="brand-grid"></div>
+              <button id="select_all_brands" class="link-button active" type="button" aria-pressed="true">Todas</button>
             </div>
+            <div id="brand_checks" class="brand-grid"></div>
           </div>
         </div>
       </section>
 
-      <footer>
-        <button class="primary" id="submit" type="button">Calcular mejor repostaje</button>
-        <div id="status" class="status"></div>
+      <footer class="side-footer">
+        <button class="primary" id="submit" type="button">
+          <span>Calcular mejor repostaje</span>
+          <span class="primary-arrow" aria-hidden="true">&#8594;</span>
+        </button>
+        <div id="status" class="status" aria-live="polite"></div>
       </footer>
     </aside>
 
-    <main class="stage">
+    <main class="stage map-stage">
       <div id="map"></div>
-      <div class="map-top">
-        <div id="route_status" class="route-status" aria-live="polite"></div>
-        <div class="map-card map-search-card">
+
+      <section class="map-top floating-search-shell" aria-label="B&#250;squeda de ruta">
+        <div class="map-card map-search-card floating-search">
           <div class="map-search-head">
-            <div class="point-tabs" style="box-shadow:none;padding:0;background:transparent;border:0;margin-bottom:10px">
-              <button id="tab_origin" class="point-tab active" type="button">Salida</button>
-              <button id="tab_destination" class="point-tab" type="button">Llegada</button>
+            <div class="route-search-bar">
+              <div id="tab_origin" class="point-tab route-point active" role="button" tabindex="0">
+                <span class="point-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="6"></circle>
+                    <circle cx="12" cy="12" r="2"></circle>
+                    <path d="M12 3v3M12 18v3M3 12h3M18 12h3"></path>
+                  </svg>
+                </span>
+                <span class="point-copy">
+                  <span class="point-label">Salida</span>
+                  <span id="origin_choice" class="selected-place">¿Desde dónde sales?</span>
+                  <span id="origin_input_slot" class="route-input-slot">
+                    <span class="map-search-input">
+                      <label id="map_search_label" class="label" for="map_search" hidden>Salida</label>
+                      <input id="map_search" autocomplete="off" placeholder="¿Desde dónde sales?" aria-label="Salida">
+                    </span>
+                  </span>
+                </span>
+              </div>
+
+              <span class="route-divider" aria-hidden="true"></span>
+
+              <label class="return-toggle-compact" for="return_to_origin">
+                <span>Regreso al origen</span>
+                <span class="switch">
+                  <input id="return_to_origin" type="checkbox" checked>
+                  <span class="slider"></span>
+                </span>
+              </label>
+
+              <span class="route-divider destination-divider" aria-hidden="true"></span>
+
+              <div id="destination_block" class="route-point-wrap" style="display:none">
+                <div id="tab_destination" class="point-tab route-point" role="button" tabindex="0">
+                  <span class="point-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24">
+                      <path d="M7 7h10M17 7l-3-3M17 7l-3 3"></path>
+                      <path d="M17 17H7M7 17l3-3M7 17l3 3"></path>
+                    </svg>
+                  </span>
+                  <span class="point-copy">
+                    <span class="point-label">Llegada</span>
+                    <span id="destination_choice" class="selected-place">¿A dónde vas?</span>
+                    <span id="destination_input_slot" class="route-input-slot"></span>
+                  </span>
+                </div>
+              </div>
+
+              <button id="search_trigger" class="search-trigger" type="button" aria-label="Buscar lugar" title="Buscar lugar">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <circle cx="11" cy="11" r="6.5"></circle>
+                  <path d="m16 16 4 4"></path>
+                </svg>
+              </button>
             </div>
-            <label id="map_search_label" class="label" for="map_search">Buscar salida</label>
-            <input id="map_search" autocomplete="off" placeholder="Buscar lugar">
           </div>
           <div class="map-search-results">
             <div id="map_suggestions" class="suggestions"></div>
           </div>
           <div id="map_choice" class="choice"></div>
         </div>
-      </div>
+        <div id="route_status" class="route-status" aria-live="polite"></div>
+      </section>
+
       <section id="result" class="result" data-empty="true"></section>
     </main>
   </div>
 
+  <div id="feedback_overlay" class="feedback-overlay" role="dialog" aria-modal="true" aria-label="Enviar idea" hidden>
+    <div class="feedback-modal">
+      <div class="feedback-modal__head">
+        <div class="feedback-modal__head-top">
+          <span class="feedback-modal__icon-circle" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+          </span>
+          <button class="feedback-modal__close" id="feedback_close" type="button" aria-label="Cerrar">&#10005;</button>
+        </div>
+        <p class="feedback-modal__title">¿Tienes una idea para mejorar FuelOpt?</p>
+        <p class="feedback-modal__subtitle">Cuéntanosla. Leemos cada sugerencia.</p>
+      </div>
+      <div class="feedback-modal__body">
+        <div class="feedback-field">
+          <label class="feedback-label" for="feedback_email">Correo electrónico</label>
+          <input class="feedback-input" id="feedback_email" type="email" autocomplete="email" placeholder="tu@correo.com">
+        </div>
+        <div class="feedback-field">
+          <label class="feedback-label" for="feedback_message">Cuéntanos tu idea</label>
+          <textarea class="feedback-input feedback-textarea" id="feedback_message" placeholder="Escribe aquí tu idea, sugerencia o mejora…"></textarea>
+        </div>
+        <p id="feedback_success" class="feedback-success" hidden>¡Gracias! Hemos recibido tu mensaje.</p>
+        <button class="feedback-submit" id="feedback_submit" type="button">Enviar idea &#8594;</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/static/app.js?v=demo-ui-20260507-6"></script>
+  <script src="/static/app.js?v=feedback-modal-20260519-11"></script>
 </body>
 </html>

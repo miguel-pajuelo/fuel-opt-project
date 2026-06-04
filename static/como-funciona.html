@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>&iquest;C&oacute;mo funciona FuelOpt? &mdash; FuelOpt</title>
+  <style>
+    :root {
+      --bg: #f4f0e8; --paper: #fbf8f1; --ink: #171411; --muted: #6f675d;
+      --line: #c8bcaa; --green: #285848;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg); color: var(--ink); line-height: 1.65;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 80px; }
+    header { margin-bottom: 48px; }
+    .wordmark { font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
+    .wordmark span { color: var(--green); }
+    h1 { font-size: 28px; font-weight: 600; margin: 16px 0 8px; }
+    .lead { color: var(--muted); margin: 0 0 40px; }
+    h2 { font-size: 16px; font-weight: 600; margin: 32px 0 8px; text-transform: uppercase;
+         letter-spacing: .06em; color: var(--green); }
+    h3 { font-size: 15px; font-weight: 650; margin: 24px 0 8px; color: var(--ink); }
+    p, ul, pre { margin: 0 0 16px; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 6px; }
+    pre {
+      padding: 12px 14px; border: 1px solid var(--line); background: var(--paper);
+      color: var(--ink); font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 14px; line-height: 1.55; white-space: pre-wrap;
+    }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 12px; border: 1px solid var(--line); }
+    th { background: var(--paper); font-weight: 600; }
+    a { color: var(--green); text-decoration: underline; }
+    footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--line);
+             font-size: 13px; color: var(--muted); }
+    .back { display: inline-block; margin-bottom: 32px; font-size: 14px; color: var(--green); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="wordmark">Fuel<span>Opt</span></div>
+  </header>
+
+  <a class="back" href="/">&#8592; Volver a FuelOpt</a>
+
+  <h1>&iquest;C&oacute;mo funciona FuelOpt?</h1>
+  <p class="lead">&Uacute;ltima actualizaci&oacute;n: 2026-05-20</p>
+
+  <h2>1. Qu&eacute; hace FuelOpt</h2>
+  <p>
+    FuelOpt compara estaciones de servicio cercanas a tu ruta para estimar cu&aacute;l puede
+    resultarte m&aacute;s conveniente econ&oacute;micamente.
+  </p>
+  <p>
+    La app no se limita a buscar el precio por litro m&aacute;s bajo. Tambi&eacute;n tiene en cuenta
+    el desv&iacute;o necesario para llegar a cada gasolinera, el consumo medio de tu veh&iacute;culo
+    y la cantidad de combustible o presupuesto que quieres usar.
+  </p>
+  <p>El objetivo es responder a una pregunta pr&aacute;ctica:</p>
+  <p>
+    <strong>&iquest;Compensa desviarme hasta esta gasolinera o el ahorro del precio se pierde
+    por el combustible consumido en el trayecto?</strong>
+  </p>
+
+  <h2>2. Origen, destino y regreso al origen</h2>
+  <p>FuelOpt parte de los puntos que introduces en la barra de b&uacute;squeda:</p>
+  <ul>
+    <li><strong>Origen:</strong> punto desde el que sales.</li>
+    <li><strong>Destino:</strong> punto al que quieres ir.</li>
+    <li><strong>Regreso al origen:</strong> modo en el que se calcula una ruta de ida y vuelta desde el origen hasta la gasolinera.</li>
+  </ul>
+  <p>
+    Si activas <strong>Regreso al origen</strong>, FuelOpt entiende que quieres salir de un
+    punto, repostar y volver a ese mismo punto.
+  </p>
+  <p>
+    Si introduces origen y destino, FuelOpt eval&uacute;a estaciones que pueden encajar como
+    parada dentro de tu trayecto.
+  </p>
+
+  <h2>3. De d&oacute;nde salen los precios</h2>
+  <p>
+    Los precios de carburantes proceden de fuentes oficiales del Ministerio para la
+    Transici&oacute;n Ecol&oacute;gica y el Reto Demogr&aacute;fico, a trav&eacute;s del Geoportal de
+    Hidrocarburos / Geoportal de Gasolineras.
+  </p>
+  <p>
+    Las estaciones de servicio comunican sus precios y FuelOpt trabaja con una copia local
+    actualizada de esos datos.
+  </p>
+  <p>
+    FuelOpt muestra la fecha de actualizaci&oacute;n disponible para que puedas saber cu&aacute;ndo
+    se descargaron o refrescaron los precios.
+  </p>
+  <p>
+    <strong>Aviso importante:</strong> los precios pueden cambiar y pueden existir retrasos,
+    errores de comunicaci&oacute;n o diferencias puntuales respecto al precio visible en la
+    estaci&oacute;n. FuelOpt debe entenderse como una herramienta de estimaci&oacute;n y comparaci&oacute;n,
+    no como una garant&iacute;a absoluta de precio final.
+  </p>
+
+  <h2>4. C&oacute;mo se buscan gasolineras candidatas</h2>
+  <p>Cuando lanzas una b&uacute;squeda, FuelOpt filtra estaciones candidatas seg&uacute;n varios criterios:</p>
+  <ul>
+    <li>tipo de combustible seleccionado;</li>
+    <li>zona relevante respecto a tu ruta;</li>
+    <li>marcas incluidas o excluidas;</li>
+    <li>disponibilidad de precio para ese carburante;</li>
+    <li>distancia y desv&iacute;o respecto al trayecto;</li>
+    <li>datos m&iacute;nimos necesarios para calcular la ruta o estimaci&oacute;n.</li>
+  </ul>
+  <p>
+    Despu&eacute;s de ese filtrado inicial, FuelOpt eval&uacute;a cada estaci&oacute;n candidata y calcula
+    si realmente compensa.
+  </p>
+
+  <h2>5. C&oacute;mo funciona el filtro de marcas</h2>
+  <p>El filtro de marcas tiene tres comportamientos distintos:</p>
+
+  <h3>Todas</h3>
+  <p>
+    Cuando seleccionas <strong>Todas</strong>, FuelOpt no env&iacute;a una lista gigante de marcas
+    al algoritmo. Simplemente no aplica filtro de marca.
+  </p>
+  <p>Conceptualmente:</p>
+  <pre>buscar en todo el cat&aacute;logo</pre>
+
+  <h3>Selecci&oacute;n manual de marcas</h3>
+  <p>Si eliges marcas concretas, FuelOpt busca solo estaciones de esas marcas.</p>
+  <p>Ejemplo:</p>
+  <pre>Repsol + Cepsa</pre>
+  <p>significa:</p>
+  <pre>buscar solo estaciones Repsol o Cepsa</pre>
+  <p>
+    La selecci&oacute;n manual est&aacute; limitada a un n&uacute;mero m&aacute;ximo de marcas para evitar filtros
+    demasiado ambiguos o pesados.
+  </p>
+
+  <h3>Todas excepto algunas</h3>
+  <p>Si partes de <strong>Todas</strong> y desactivas una marca, FuelOpt interpreta:</p>
+  <pre>buscar en todas excepto esa marca</pre>
+  <p>Por ejemplo:</p>
+  <pre>Todas excepto Alcampo</pre>
+  <p>
+    Esto evita convertir una exclusi&oacute;n simple en una lista enorme de marcas seleccionadas
+    manualmente.
+  </p>
+
+  <h2>6. C&oacute;mo se calcula el desv&iacute;o</h2>
+  <p>FuelOpt compara dos rutas:</p>
+  <p><strong>1. Ruta directa:</strong></p>
+  <pre>origen &rarr; destino</pre>
+  <p><strong>2. Ruta pasando por una gasolinera:</strong></p>
+  <pre>origen &rarr; gasolinera &rarr; destino</pre>
+  <p>La diferencia entre ambas es el desv&iacute;o adicional:</p>
+  <pre>desv&iacute;o extra = ruta pasando por gasolinera - ruta directa</pre>
+  <p>Si est&aacute; activado <strong>Regreso al origen</strong>, la comparaci&oacute;n se adapta al caso:</p>
+  <pre>origen &rarr; gasolinera &rarr; origen</pre>
+  <p>
+    Cuando hay una ruta real disponible, FuelOpt puede utilizar el motor de rutas configurado.
+    Si no lo hay, puede recurrir a estimaciones aproximadas por distancia.
+  </p>
+
+  <h2>7. Coste del desv&iacute;o</h2>
+  <p>El desv&iacute;o no es gratis: si conduces m&aacute;s kil&oacute;metros para repostar, consumes combustible.</p>
+  <p>FuelOpt estima ese consumo usando el consumo medio que introduces:</p>
+  <pre>litros consumidos por el desv&iacute;o =
+  desv&iacute;o extra en km x consumo medio / 100</pre>
+  <p>
+    Despu&eacute;s, ese consumo se convierte en coste estimado usando un precio de referencia del
+    combustible.
+  </p>
+  <p>
+    La idea es evitar recomendar una gasolinera barata si llegar hasta ella consume m&aacute;s de
+    lo que realmente ahorras.
+  </p>
+
+  <h2>8. Modo Litros: ahorro estimado en euros</h2>
+  <p>En modo <strong>Litros</strong>, t&uacute; fijas cu&aacute;ntos litros quieres repostar.</p>
+  <p>Ejemplo:</p>
+  <pre>Quiero repostar 30 L</pre>
+  <p>Para cada gasolinera, FuelOpt calcula:</p>
+  <pre>coste de repostaje = litros x precio por litro</pre>
+  <p>y suma el coste estimado del desv&iacute;o:</p>
+  <pre>coste efectivo =
+  coste de repostaje + coste estimado del desv&iacute;o</pre>
+  <p>
+    Luego compara ese coste efectivo contra una referencia razonable, normalmente una
+    alternativa cercana o de menor desv&iacute;o.
+  </p>
+  <p>El ahorro estimado se calcula as&iacute;:</p>
+  <pre>ahorro estimado =
+  coste efectivo de referencia - coste efectivo de la opci&oacute;n elegida</pre>
+  <p>
+    Si el valor es positivo, la opci&oacute;n elegida ahorra dinero frente a la referencia. Si el
+    valor es negativo, la opci&oacute;n elegida no compensa econ&oacute;micamente frente a la referencia.
+  </p>
+
+  <h2>9. Modo Euros: litros extra estimados</h2>
+  <p>En modo <strong>Euros</strong>, t&uacute; fijas cu&aacute;nto dinero quieres gastar en surtidor.</p>
+  <p>Ejemplo:</p>
+  <pre>Quiero echar 30 &euro;</pre>
+  <p>
+    En este modo, todas las alternativas parten del mismo presupuesto. Por eso no tiene
+    sentido decir que una estaci&oacute;n "cuesta" m&aacute;s en surtidor: el usuario ha fijado el gasto.
+  </p>
+  <p>FuelOpt calcula cu&aacute;ntos litros compras con ese presupuesto:</p>
+  <pre>litros comprados = presupuesto / precio por litro</pre>
+  <p>Despu&eacute;s descuenta los litros consumidos por el desv&iacute;o:</p>
+  <pre>litros &uacute;tiles estimados =
+  litros comprados - litros consumidos en desv&iacute;o</pre>
+  <p>La m&eacute;trica principal en modo Euros debe expresar la ventaja en litros frente a la referencia:</p>
+  <pre>litros extra estimados =
+  litros &uacute;tiles de la opci&oacute;n elegida - litros &uacute;tiles de la referencia</pre>
+  <p>As&iacute;, FuelOpt responde a la pregunta correcta:</p>
+  <p>
+    <strong>Con el mismo dinero, &iquest;qu&eacute; opci&oacute;n me deja m&aacute;s combustible &uacute;til despu&eacute;s del desv&iacute;o?</strong>
+  </p>
+
+  <h2>10. C&oacute;mo se elige la mejor opci&oacute;n</h2>
+  <p>FuelOpt ordena las estaciones seg&uacute;n el modo seleccionado.</p>
+
+  <h3>En modo Litros</h3>
+  <p>Prioriza la opci&oacute;n con menor coste efectivo:</p>
+  <pre>coste de repostaje + coste estimado del desv&iacute;o</pre>
+
+  <h3>En modo Euros</h3>
+  <p>Prioriza la opci&oacute;n con m&aacute;s litros &uacute;tiles estimados:</p>
+  <pre>litros comprados - litros consumidos en desv&iacute;o</pre>
+  <p>
+    En caso de empate, puede tener en cuenta criterios secundarios como menor desv&iacute;o o
+    mejor precio.
+  </p>
+
+  <h2>11. Qu&eacute; son las alternativas</h2>
+  <p>El bloque <strong>Otras alternativas</strong> muestra opciones que tambi&eacute;n han sido evaluadas.</p>
+  <p>
+    Sirve para entender por qu&eacute; la recomendaci&oacute;n principal es la mejor seg&uacute;n el criterio
+    elegido y para comparar otras estaciones cercanas o econ&oacute;micamente competitivas.
+  </p>
+  <p>En modo Litros, las alternativas se comparan principalmente por coste efectivo.</p>
+  <p>En modo Euros, las alternativas deben interpretarse por litros &uacute;tiles estimados.</p>
+
+  <h2>12. Por qu&eacute; no siempre gana el precio m&aacute;s bajo</h2>
+  <p>
+    Una estaci&oacute;n puede tener el precio por litro m&aacute;s bajo y aun as&iacute; no ser la mejor opci&oacute;n.
+  </p>
+  <p>Ejemplo:</p>
+  <ul>
+    <li>Gasolinera A: barata, pero muy lejos.</li>
+    <li>Gasolinera B: algo m&aacute;s cara, pero casi en tu ruta.</li>
+  </ul>
+  <p>
+    Si el desv&iacute;o hasta la gasolinera barata consume demasiado combustible, FuelOpt puede
+    elegir la opci&oacute;n aparentemente m&aacute;s cara porque su coste efectivo o su combustible
+    &uacute;til final es mejor.
+  </p>
+
+  <h2>13. Limitaciones del c&aacute;lculo</h2>
+  <p>FuelOpt trabaja con estimaciones. El resultado puede variar por:</p>
+  <ul>
+    <li>cambios recientes de precios;</li>
+    <li>precisi&oacute;n de los datos oficiales;</li>
+    <li>ubicaci&oacute;n aproximada de origen o destino;</li>
+    <li>disponibilidad del servicio de rutas;</li>
+    <li>consumo real del veh&iacute;culo;</li>
+    <li>tr&aacute;fico, pendientes, conducci&oacute;n y condiciones de circulaci&oacute;n;</li>
+    <li>errores o inconsistencias en la marca o r&oacute;tulo de una estaci&oacute;n.</li>
+  </ul>
+  <p>
+    La app busca dar una recomendaci&oacute;n &uacute;til y transparente, pero no sustituye la
+    comprobaci&oacute;n final del precio en la estaci&oacute;n.
+  </p>
+
+  <h2>14. Privacidad y datos de uso</h2>
+  <p>
+    FuelOpt procesa los datos que introduces para calcular la recomendaci&oacute;n en tiempo real.
+  </p>
+  <p>
+    La app no necesita almacenar tu historial de b&uacute;squedas para funcionar. Los puntos de
+    origen, destino y par&aacute;metros de b&uacute;squeda se utilizan para calcular la ruta y la
+    comparaci&oacute;n, y se descartan despu&eacute;s de responder.
+  </p>
+  <p>Para m&aacute;s informaci&oacute;n, consulta la <a href="/privacidad">pol&iacute;tica de privacidad</a>.</p>
+
+  <h2>15. Abrir la ruta en Google Maps</h2>
+  <p>
+    Cuando pulsas <strong>Abrir en Maps</strong>, FuelOpt genera un enlace hacia Google Maps
+    con la estaci&oacute;n seleccionada.
+  </p>
+  <p>Si hay origen y destino, la gasolinera puede abrirse como parada dentro de la ruta:</p>
+  <pre>origen &rarr; gasolinera &rarr; destino</pre>
+  <p>Si est&aacute; activado <strong>Regreso al origen</strong>, se intenta representar:</p>
+  <pre>origen &rarr; gasolinera &rarr; origen</pre>
+  <p>
+    Google Maps se abre en una pesta&ntilde;a externa y aplica sus propias reglas de navegaci&oacute;n,
+    tr&aacute;fico y rutas.
+  </p>
+
+  <h2>Si has llegado hasta aqu&iacute;</h2>
+  <p>
+    Te doy las gracias por el gran inter&eacute;s en este peque&ntilde;o proyecto que me ha llevado
+    tanto trabajo. Si tienes alguna sugerencia, cambio o idea, no te olvides de que hay
+    un bot&oacute;n en la esquina superior derecha mediante el cual nos puedes mandar tu idea
+    directamente a nosotros para hacer que esta plataforma crezca y sea cada d&iacute;a mejor.
+  </p>
+  <p>Miguel Pajuelo G&oacute;mez</p>
+
+  <footer>
+    <p>FuelOpt &mdash; Optimizador de repostaje para Espa&ntilde;a &mdash; <a href="/">Volver al inicio</a></p>
+  </footer>
+</div>
+</body>
+</html>

@@ -124,6 +124,22 @@ def _brand_coverage_report(stations: list, limit: int = 20) -> dict[str, object]
     }
 
 
+def _validation_is_degraded(validation_status: dict[str, object]) -> bool:
+    catalog = validation_status.get("catalog")
+    catalog_status = catalog if isinstance(catalog, dict) else {}
+    refresh_status = str(
+        catalog_status.get("refresh_status")
+        or validation_status.get("refresh_status")
+        or ""
+    ).lower()
+    degraded = str(
+        catalog_status.get("degraded")
+        or validation_status.get("degraded")
+        or ""
+    ).lower()
+    return refresh_status == "degraded" or degraded in {"1", "true", "yes", "on"}
+
+
 def main() -> int:
     args = parse_args()
     started_at = datetime.now(timezone.utc).isoformat()
@@ -187,9 +203,10 @@ def main() -> int:
         backup_path = publish_sqlite_candidate(candidate, args.db)
         snapshot_replaced = _publish_snapshot_candidate(candidate_snapshot, args.snapshot)
         removed_backups = cleanup_old_backups(args.db, keep=args.backup_retention)
+        refresh_status = "degraded" if _validation_is_degraded(validation.status) else "ok"
         report.update(
             {
-                "refresh_status": "ok",
+                "refresh_status": refresh_status,
                 "backup_db": str(backup_path) if backup_path else "",
                 "removed_backups": [str(path) for path in removed_backups],
                 "snapshot_replaced": snapshot_replaced,

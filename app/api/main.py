@@ -1,18 +1,46 @@
 from __future__ import annotations
 
 import json
+import logging
+import hmac
 import os
+import re
 import subprocess
 import sys
 import threading
+import time
+import unicodedata
+import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from requests import RequestException
+from starlette.middleware.cors import CORSMiddleware
+
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.util import get_remote_address
+    _slowapi_available = True
+except ImportError:
+    _slowapi_available = False
+    RateLimitExceeded = Exception  # type: ignore[assignment,misc]
+
+    class Limiter:  # type: ignore[no-redef]
+        def __init__(self, **_: object) -> None:
+            pass
+        def limit(self, *_: object, **__: object):
+            return lambda f: f
+
+    def get_remote_address(_: object) -> str:  # type: ignore[misc]
+        return "unknown"
+
+    def _rate_limit_exceeded_handler(_req: object, _exc: object) -> None:  # type: ignore[misc]
+        pass
 
 from app.config import load_settings
 from app.config import PROJECT_ROOT
@@ -21,7 +49,13 @@ from app.data_sources.brand_catalog import canonical_brand_id, ui_brand_catalog
 from app.models import Coordinates, FUEL_FIELDS, OptimizationInput
 from app.optimizer.ranking import HaversineEstimateProvider, optimize_from_db_with_context
 from app.api.ui import STATIC_DIR, load_index_html
-from app.routing.ors import ORSRouteProvider, geocode_address, geocode_candidates, reverse_geocode_coordinates
+from app.routing.ors import (
+    ORSRouteProvider,
+    geocode_address,
+    geocode_candidates,
+    geocode_candidates_autocomplete,
+    reverse_geocode_coordinates,
+)
 from app.storage.database import (
     INDEPENDENT_BRAND_SENTINEL,
     canonical_brand_counts,
@@ -34,10 +68,111 @@ from app.storage.database import (
 )
 
 
+class _JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        data: dict[str, object] = {
+            "time": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "msg": record.getMessage(),
+        }
+        for key in ("request_id", "method", "path", "status", "elapsed_ms", "ip"):
+            if hasattr(record, key):
+                data[key] = getattr(record, key)
+        if record.exc_info:
+            data["exc"] = self.formatException(record.exc_info)
+        return json.dumps(data, ensure_ascii=False, default=str)
+
+
+_log_handler = logging.StreamHandler()
+_log_handler.setFormatter(_JsonFormatter())
+logging.basicConfig(handlers=[_log_handler], level=logging.INFO, force=True)
+logger = logging.getLogger("fuelopt.api")
+
 settings = load_settings()
-app = FastAPI(title="Fuel Optimizer API", version="0.1.0")
+limiter = Limiter(key_func=get_remote_address)
+
+def _alert_error(method: str, path: str, status: int, request_id: str) -> None:
+    """Fire-and-forget 5xx alert to ALERT_WEBHOOK_URL (runs in daemon thread)."""
+    webhook_url = os.getenv("ALERT_WEBHOOK_URL", "")
+    if not webhook_url:
+        return
+
+    import urllib.request as _ur
+
+    payload = json.dumps({
+        "text": f"⚠️ *FuelOpt 5xx* `{status}` — `{method} {path}` (req={request_id})",
+    }).encode()
+    req = _ur.Request(webhook_url, data=payload, headers={"Content-Type": "application/json"})
+    try:
+        with _ur.urlopen(req, timeout=5):
+            pass
+    except Exception:
+        pass  # best-effort only
+
+
+app = FastAPI(
+    title="Fuel Optimizer API",
+    version="0.1.0",
+    docs_url="/docs" if settings.enable_api_docs else None,
+    redoc_url="/redoc" if settings.enable_api_docs else None,
+    openapi_url="/openapi.json" if settings.enable_api_docs else None,
+)
+app.state.limiter = limiter
+if _slowapi_available:
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+_cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "Authorization", "X-FuelOpt-Admin-Token"],
+    )
+
 _refresh_lock = threading.Lock()
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def _log_requests(request: Request, call_next):
+    request_id = str(uuid.uuid4())[:8]
+    start = time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = round((time.monotonic() - start) * 1000)
+    logger.info(
+        "request",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "elapsed_ms": elapsed_ms,
+            "ip": request.client.host if request.client else "unknown",
+        },
+    )
+    if response.status_code >= 500:
+        threading.Thread(
+            target=_alert_error,
+            args=(request.method, request.url.path, response.status_code, request_id),
+            daemon=True,
+        ).start()
+    return response
+
+
+@app.on_event("startup")
+def _validate_startup() -> None:
+    if not settings.ors_api_key:
+        logging.warning(
+            "ORS_API_KEY no está configurada. "
+            "Geocodificación y rutas reales no estarán disponibles."
+        )
+    if not settings.db_path.exists():
+        raise RuntimeError(
+            f"Base de datos no encontrada en {settings.db_path}. "
+            "Ejecuta scripts/refresh_catalog.py antes de arrancar."
+        )
+
 
 INDEPENDENT_BRAND_LABEL = "Independientes / sin marca"
 INDEPENDENT_BRAND_HINT = "Incluye estaciones independientes o con rótulo no reconocido."
@@ -46,7 +181,7 @@ INDEPENDENT_BRAND_HINT = "Incluye estaciones independientes o con rótulo no rec
 def _catalog_refresh_command(report_path: Path) -> list[str]:
     args = [
         "--source",
-        "auto",
+        "minetur",
         "--write-report",
         str(report_path),
     ]
@@ -61,6 +196,28 @@ def _catalog_refresh_env() -> dict[str, str]:
     if getattr(sys, "frozen", False):
         env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     return env
+
+
+def _bearer_token(value: str | None) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    scheme, _, token = value.partition(" ")
+    if scheme.lower() != "bearer":
+        return ""
+    return token.strip()
+
+
+def _require_catalog_refresh_auth(
+    x_fuelopt_admin_token: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> None:
+    expected = (settings.admin_token or "").strip()
+    if not expected:
+        raise HTTPException(status_code=403, detail="Catalog refresh is not configured for public use.")
+    header_token = x_fuelopt_admin_token.strip() if isinstance(x_fuelopt_admin_token, str) else ""
+    supplied = header_token or _bearer_token(authorization)
+    if not supplied or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(status_code=401, detail="Valid admin token required.")
 
 
 def _snapshot_fetched_at() -> str:
@@ -121,6 +278,7 @@ class OptimizeRequest(BaseModel):
     result_limit: int = Field(default=20, gt=0, le=100)
     brand: str | None = None
     brands: list[str] | None = None
+    excluded_brands: list[str] | None = None
     use_ors: bool = False
 
     def effective_local_search_radius_km(self) -> float:
@@ -195,12 +353,7 @@ def _resolve_coordinates(address: str | None, lat: float | None, lon: float | No
     raise HTTPException(status_code=400, detail=f"{label} requires address or lat/lon.")
 
 
-def _selected_brands(payload: OptimizeRequest) -> list[str] | None:
-    raw_values: list[str] = []
-    if payload.brands:
-        raw_values.extend(payload.brands)
-    if payload.brand:
-        raw_values.append(payload.brand)
+def _normalize_brand_values(raw_values: list[str]) -> list[str]:
     selected: list[str] = []
     seen: set[str] = set()
     for value in raw_values:
@@ -208,34 +361,139 @@ def _selected_brands(payload: OptimizeRequest) -> list[str] | None:
         if brand and brand not in seen:
             selected.append(brand)
             seen.add(brand)
+    return selected
+
+
+def _selected_brands(payload: OptimizeRequest) -> list[str] | None:
+    raw_values: list[str] = []
+    if payload.brands:
+        raw_values.extend(payload.brands)
+    if payload.brand:
+        raw_values.append(payload.brand)
+    selected = _normalize_brand_values(raw_values)
     if len(selected) > settings.max_brands_per_request:
         raise HTTPException(
             status_code=400,
-            detail=f"Too many brands selected. Maximum is {settings.max_brands_per_request}.",
+            detail=f"Puedes elegir hasta {settings.max_brands_per_request} marcas concretas. Usa 'Todas' para buscar en todo el catalogo.",
         )
     return selected or None
+
+
+def _excluded_brands(payload: OptimizeRequest) -> list[str] | None:
+    excluded = _normalize_brand_values(list(payload.excluded_brands or []))
+    if excluded and (payload.brands or payload.brand):
+        raise HTTPException(
+            status_code=400,
+            detail="No combines brands con excluded_brands en la misma busqueda.",
+        )
+    return excluded or None
 
 
 def _public_geometry(points: list[Coordinates]) -> list[dict[str, float]]:
     return [{"lat": point.lat, "lon": point.lon} for point in points]
 
 
-@app.get("/geocode")
+_TRAILING_HOUSE_NUMBER_RE = re.compile(r"(?:,\s*|\s+)\d+[a-zA-Z]?\s*$")
+_SPACES_RE = re.compile(r"\s+")
+
+
+def _normalize_geocode_query(value: str) -> str:
+    text = unicodedata.normalize("NFD", value.casefold())
+    text = "".join(char for char in text if unicodedata.category(char) != "Mn")
+    return _SPACES_RE.sub(" ", text).strip()
+
+
+def _dedupe_texts(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        clean = _SPACES_RE.sub(" ", value.replace(" ,", ",")).strip(" ,")
+        key = _normalize_geocode_query(clean)
+        if clean and key not in seen:
+            result.append(clean)
+            seen.add(key)
+    return result
+
+
+def _geocode_query_variants(q: str) -> list[str]:
+    """Return fast, quality-oriented ORS search variants for precise Spanish addresses."""
+    base = _SPACES_RE.sub(" ", q).strip()
+    without_number = _TRAILING_HOUSE_NUMBER_RE.sub("", base).strip(" ,")
+    candidates: list[str] = []
+    normalized = _normalize_geocode_query(without_number or base)
+    if re.search(r"\btravesia\b", normalized):
+        candidates.extend(
+            [
+                re.sub(r"(?i)\btravesia\s+de\s+", "Traves\u00eda ", without_number or base),
+                re.sub(r"(?i)\btravesia\b", "Traves\u00eda", without_number or base),
+                re.sub(r"(?i)\btravesia\b", "Trv.", without_number or base),
+                re.sub(r"(?i)\btravesia\s+de\s+", "Trv. ", without_number or base),
+            ]
+        )
+    candidates.append(without_number or base)
+    candidates.append(base)
+    return _dedupe_texts(candidates)
+
+
+def _merge_geocode_items(items: list[dict[str, Any]], additions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen = {
+        _normalize_geocode_query(str(item.get("label") or item.get("title") or ""))
+        for item in items
+    }
+    for item in additions:
+        key = _normalize_geocode_query(str(item.get("label") or item.get("title") or ""))
+        if key and key not in seen:
+            items.append(item)
+            seen.add(key)
+    return items
+
+
+def _geocode_search_variants(
+    q: str,
+    size: int,
+    focus_lat: float | None,
+    focus_lon: float | None,
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    target_count = min(max(size, 1), 15)
+    for query in _geocode_query_variants(q):
+        additions = geocode_candidates(
+            query,
+            settings=settings,
+            size=target_count,
+            focus_lat=focus_lat,
+            focus_lon=focus_lon,
+        )
+        _merge_geocode_items(items, additions)
+        if len(items) >= target_count:
+            break
+    return items[:target_count]
+
+
 def geocode(
-    q: str = Query(min_length=3),
-    size: int = Query(default=5, ge=1, le=10),
-    focus_lat: float | None = Query(default=None, ge=-90.0, le=90.0),
-    focus_lon: float | None = Query(default=None, ge=-180.0, le=180.0),
+    q: str,
+    size: int = 10,
+    focus_lat: float | None = None,
+    focus_lon: float | None = None,
+    autocomplete: bool = True,
 ) -> dict[str, Any]:
     try:
+        if autocomplete:
+            try:
+                items = geocode_candidates_autocomplete(
+                    q,
+                    settings=settings,
+                    size=size,
+                    focus_lat=focus_lat,
+                    focus_lon=focus_lon,
+                )
+            except (RuntimeError, RequestException):
+                items = []
+            if items:
+                return {"items": items}
+
         return {
-            "items": geocode_candidates(
-                q,
-                settings=settings,
-                size=size,
-                focus_lat=focus_lat,
-                focus_lon=focus_lon,
-            )
+            "items": _geocode_search_variants(q, size=size, focus_lat=focus_lat, focus_lon=focus_lon)
         }
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -243,11 +501,20 @@ def geocode(
         raise HTTPException(status_code=502, detail=f"Geocoding provider failed: {exc}") from exc
 
 
-@app.get("/reverse-geocode")
-def reverse_geocode(
-    lat: float = Query(ge=-90.0, le=90.0),
-    lon: float = Query(ge=-180.0, le=180.0),
+@app.get("/geocode")
+@limiter.limit("30/minute")
+def geocode_endpoint(
+    request: Request,
+    q: str = Query(min_length=3),
+    size: int = Query(default=10, ge=1, le=15),
+    autocomplete: bool = Query(default=True),
+    focus_lat: float | None = Query(default=None, ge=-90.0, le=90.0),
+    focus_lon: float | None = Query(default=None, ge=-180.0, le=180.0),
 ) -> dict[str, Any]:
+    return geocode(q=q, size=size, focus_lat=focus_lat, focus_lon=focus_lon, autocomplete=autocomplete)
+
+
+def reverse_geocode(lat: float, lon: float) -> dict[str, Any]:
     try:
         item = reverse_geocode_coordinates(lat=lat, lon=lon, settings=settings)
         return {"item": item}
@@ -257,7 +524,22 @@ def reverse_geocode(
         raise HTTPException(status_code=502, detail=f"Geocoding provider failed: {exc}") from exc
 
 
+@app.get("/reverse-geocode")
+@limiter.limit("30/minute")
+def reverse_geocode_endpoint(
+    request: Request,
+    lat: float = Query(ge=-90.0, le=90.0),
+    lon: float = Query(ge=-180.0, le=180.0),
+) -> dict[str, Any]:
+    return reverse_geocode(lat=lat, lon=lon)
+
+
 @app.post("/route/stopover")
+@limiter.limit("20/minute")
+def route_stopover_endpoint(request: Request, payload: RouteStopoverRequest) -> dict[str, Any]:
+    return route_stopover(payload)
+
+
 def route_stopover(payload: RouteStopoverRequest) -> dict[str, Any]:
     origin = Coordinates(payload.origin_lat, payload.origin_lon)
     station = Coordinates(payload.station_lat, payload.station_lon)
@@ -289,6 +571,64 @@ def root() -> str:
     return load_index_html()
 
 
+@app.get("/privacidad", response_class=HTMLResponse)
+def privacy() -> str:
+    return (STATIC_DIR / "privacy.html").read_text(encoding="utf-8")
+
+
+@app.get("/como-funciona", response_class=HTMLResponse)
+def how_it_works() -> str:
+    return (STATIC_DIR / "como-funciona.html").read_text(encoding="utf-8")
+
+
+class FeedbackPayload(BaseModel):
+    email: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=10)
+
+
+@app.post("/feedback")
+def submit_feedback(payload: FeedbackPayload) -> dict[str, bool]:
+    import re as _re
+    import smtplib
+    from email.mime.text import MIMEText
+
+    if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", payload.email):
+        raise HTTPException(status_code=422, detail="Correo electrónico no válido.")
+
+    gmail_user = os.getenv("GMAIL_USER", "")
+    gmail_password = os.getenv("GMAIL_APP_PASSWORD", "")
+    recipient = os.getenv("FEEDBACK_RECIPIENT", gmail_user)
+
+    if not gmail_user or not gmail_password:
+        logger.error("GMAIL_USER o GMAIL_APP_PASSWORD no configurados")
+        raise HTTPException(status_code=500, detail={"error": "No se pudo enviar el mensaje"})
+
+    subject = f"[FuelOpt Feedback] Nueva idea de {payload.email}"
+    body = f"Remitente: {payload.email}\n\n{payload.message}"
+
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = gmail_user
+    msg["To"] = recipient
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.login(gmail_user, gmail_password)
+            smtp.sendmail(gmail_user, [recipient], msg.as_string())
+    except Exception as exc:
+        logger.error("feedback_smtp_error: %s", exc)
+        raise HTTPException(status_code=500, detail={"error": "No se pudo enviar el mensaje"})
+
+    return {"ok": True}
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse)
+def robots_txt() -> str:
+    return (STATIC_DIR / "robots.txt").read_text(encoding="utf-8")
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     try:
@@ -302,13 +642,15 @@ def health() -> dict[str, Any]:
 
 
 @app.get("/fuels")
-def fuels() -> dict[str, Any]:
-    return {
+def fuels() -> JSONResponse:
+    resp = JSONResponse(content={
         "fuels": [
             {"key": key, "source_field": source_field, "label": label}
             for key, (source_field, label) in FUEL_FIELDS.items()
         ]
-    }
+    })
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
 
 
 @app.get("/brands")
@@ -357,7 +699,9 @@ def brands() -> dict[str, Any]:
                 "hint": INDEPENDENT_BRAND_HINT,
             }
         )
-    return {"brands": known_payload, "count": len(known_payload)}
+    resp = JSONResponse(content={"brands": known_payload, "count": len(known_payload)})
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
 
 
 @app.get("/brands/raw")
@@ -375,7 +719,8 @@ def catalog_status() -> dict[str, object]:
 
 
 @app.post("/catalog/refresh")
-def refresh_catalog() -> dict[str, object]:
+@limiter.limit("2/minute")
+def refresh_catalog(request: Request, _: None = Depends(_require_catalog_refresh_auth)) -> dict[str, object]:
     if not _refresh_lock.acquire(blocking=False):
         raise HTTPException(status_code=429, detail="Catalog refresh already in progress.")
     try:
@@ -452,6 +797,11 @@ def stations(
 
 
 @app.post("/optimize")
+@limiter.limit("20/minute")
+def optimize_endpoint(request: Request, payload: OptimizeRequest) -> dict[str, Any]:
+    return optimize(payload)
+
+
 def optimize(payload: OptimizeRequest) -> dict[str, Any]:
     if payload.fuel_type not in FUEL_FIELDS:
         raise HTTPException(status_code=400, detail=f"Unsupported fuel_type: {payload.fuel_type}")
@@ -462,6 +812,7 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="budget_amount_eur is required when input_mode is 'budget'.")
     _reject_conflicting_radius_aliases(payload)
     selected_brands = _selected_brands(payload)
+    excluded_brands = _excluded_brands(payload)
     origin = _resolve_coordinates(payload.origin_address, payload.origin_lat, payload.origin_lon, "origin")
     destination = _resolve_coordinates(
         payload.destination_address,
@@ -504,6 +855,7 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
             settings.db_path,
             request,
             brands=selected_brands,
+            excluded_brands=excluded_brands,
             route_provider=route_provider,
         )
     except ValueError as exc:
@@ -523,7 +875,10 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
     fuel_counts = coverage.get("fuel_counts") if isinstance(coverage.get("fuel_counts"), dict) else {}
     fuel_coverage_count = int(fuel_counts.get(payload.fuel_type, 0) or 0)
     independent_count = int(coverage.get("independent_count", 0) or 0)
-    independent_included = INDEPENDENT_BRAND_SENTINEL in (selected_brands or [])
+    independent_included = (
+        INDEPENDENT_BRAND_SENTINEL in (selected_brands or [])
+        or (not selected_brands and INDEPENDENT_BRAND_SENTINEL not in (excluded_brands or []))
+    )
     warning_route_source = results[0].route_source if results else getattr(route_provider, "route_source", None)
     warnings_list = build_optimize_warnings(
         fuel_type=payload.fuel_type,
@@ -546,6 +901,7 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
         "optimization_mode": search_context.get("optimization_mode", payload.optimization_mode),
         "warnings": [warning.to_dict() for warning in warnings_list],
         "brand_filter": selected_brands or [],
+        "brand_exclusions": excluded_brands or [],
         "search": search_context,
         "count": len(results),
         "returned": len(items),

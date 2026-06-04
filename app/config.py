@@ -30,6 +30,13 @@ def load_dotenv(path: Path = DEFAULT_ENV_PATH) -> None:
             os.environ[key] = value
 
 
+def env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     db_path: Path = DEFAULT_DB_PATH
@@ -48,6 +55,8 @@ class Settings:
     same_place_threshold_km: float = 1.0
     default_brand_filter: list[str] | None = None
     max_brands_per_request: int = 10
+    admin_token: str | None = None
+    enable_api_docs: bool = False
 
 
 def load_settings() -> Settings:
@@ -69,6 +78,8 @@ def load_settings() -> Settings:
         same_place_threshold_km=float(os.getenv("SAME_PLACE_THRESHOLD_KM", "1.0")),
         default_brand_filter=None,
         max_brands_per_request=int(os.getenv("MAX_BRANDS_PER_REQUEST", "10")),
+        admin_token=os.getenv("FUELOPT_ADMIN_TOKEN"),
+        enable_api_docs=env_flag("FUELOPT_ENABLE_API_DOCS", False),
     )
 
 

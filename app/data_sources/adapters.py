@@ -92,7 +92,7 @@ class MineturFilterAdapter(BrandAdapter):
                 )
             )
 
-            updated_at = get_any(item, "Fecha", "FechaActualizacion", "Fecha Actualizacion", "FechaActualizaciÃ³n")
+            updated_at = get_any(item, "Fecha", "FechaActualizacion", "Fecha Actualizacion", "FechaActualización")
             for fuel_type, (source_field, _) in FUEL_FIELDS.items():
                 price_val = to_float_es(item.get(source_field))
                 if price_val is None:

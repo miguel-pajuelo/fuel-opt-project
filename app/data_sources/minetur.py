@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 import time
 import unicodedata
 from pathlib import Path
@@ -103,6 +105,38 @@ def parse_minetur_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in items if isinstance(item, dict)]
 
 
+def _fetch_minetur_items_with_curl(timeout_sec: int) -> list[dict[str, Any]]:
+    curl_path = shutil.which("curl.exe") or shutil.which("curl")
+    if not curl_path:
+        raise RuntimeError("curl is not available for MINETUR fallback.")
+    command = [
+        curl_path,
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--compressed",
+        "--max-time",
+        str(timeout_sec),
+        "-A",
+        BROWSER_HEADERS["User-Agent"],
+        "-H",
+        f"Accept: {BROWSER_HEADERS['Accept']}",
+        MINETUR_URL,
+    ]
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        check=False,
+        timeout=timeout_sec + 10,
+    )
+    if completed.returncode != 0:
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"curl exited with {completed.returncode}: {stderr}")
+    payload = json.loads(completed.stdout.decode("utf-8-sig", errors="replace"))
+    return parse_minetur_payload(payload)
+
+
 def fetch_minetur_items(timeout_sec: int = 30, retries: int = 4, backoff_sec: float = 4.0) -> list[dict[str, Any]]:
     session = requests.Session()
     session.headers.update(BROWSER_HEADERS)
@@ -127,7 +161,13 @@ def fetch_minetur_items(timeout_sec: int = 30, retries: int = 4, backoff_sec: fl
                 time.sleep(backoff_sec * attempt)
     finally:
         session.close()
-    raise RuntimeError(f"Could not fetch MINETUR data with verified TLS: {last_error}") from last_error
+    try:
+        return _fetch_minetur_items_with_curl(timeout_sec)
+    except Exception as curl_error:
+        raise RuntimeError(
+            f"Could not fetch MINETUR data with requests or curl fallback. "
+            f"requests_error={last_error}; curl_error={curl_error}"
+        ) from curl_error
 
 
 def save_minetur_snapshot(path: Path, items: list[dict[str, Any]]) -> None:
