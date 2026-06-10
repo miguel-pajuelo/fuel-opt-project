@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import hmac
@@ -89,7 +90,60 @@ logging.basicConfig(handlers=[_log_handler], level=logging.INFO, force=True)
 logger = logging.getLogger("fuelopt.api")
 
 settings = load_settings()
-limiter = Limiter(key_func=get_remote_address)
+
+
+def _first_forwarded_ip(forwarded_for: str) -> str | None:
+    """Return the left-most valid IP from an X-Forwarded-For header value.
+
+    The left-most entry is the original client as recorded by a trusting edge
+    proxy. Entries are validated as real IPs (an optional ``:port`` suffix on
+    IPv4 is tolerated) so malformed/spoofed garbage is ignored.
+    """
+    for part in forwarded_for.split(","):
+        candidate = part.strip()
+        if not candidate:
+            continue
+        try:
+            ipaddress.ip_address(candidate)
+            return candidate
+        except ValueError:
+            if candidate.count(":") == 1 and "." in candidate:
+                host = candidate.rsplit(":", 1)[0]
+                try:
+                    ipaddress.ip_address(host)
+                    return host
+                except ValueError:
+                    continue
+    return None
+
+
+def _client_identity(request: Request) -> str:
+    """Rate-limit key: direct peer IP, or the forwarded client IP behind a
+    trusted proxy.
+
+    X-Forwarded-For is only honored when ``settings.trust_proxy_headers`` is
+    explicitly enabled (FUELOPT_TRUST_PROXY_HEADERS), so untrusted/local
+    deployments cannot be spoofed into mis-attributing clients.
+    """
+    direct = request.client.host if request.client else "127.0.0.1"
+    if settings.trust_proxy_headers:
+        forwarded = _first_forwarded_ip(request.headers.get("x-forwarded-for", ""))
+        if forwarded:
+            return forwarded
+    return direct
+
+
+def _anonymize_ip(ip: str) -> str:
+    """Coarsely anonymize an IP for logging (IPv4 -> /24, IPv6 -> /48)."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return "unknown"
+    prefix = 24 if isinstance(addr, ipaddress.IPv4Address) else 48
+    return str(ipaddress.ip_network(f"{ip}/{prefix}", strict=False).network_address)
+
+
+limiter = Limiter(key_func=_client_identity)
 
 def _alert_error(method: str, path: str, status: int, request_id: str) -> None:
     """Fire-and-forget 5xx alert to ALERT_WEBHOOK_URL (runs in daemon thread)."""
@@ -134,23 +188,46 @@ _refresh_lock = threading.Lock()
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
+# Baseline security headers applied to every response (H6). No CSP is set:
+# the UI loads Leaflet + OSM tiles from unpkg/CDN, GoatCounter, and uses inline
+# event handlers/styles, so a strict CSP would break current behavior. The
+# Permissions-Policy keeps geolocation enabled for same-origin (the map uses it)
+# while disabling camera/microphone.
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy": "geolocation=(self), camera=(), microphone=()",
+}
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for header, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    return response
+
+
 @app.middleware("http")
 async def _log_requests(request: Request, call_next):
     request_id = str(uuid.uuid4())[:8]
     start = time.monotonic()
     response = await call_next(request)
     elapsed_ms = round((time.monotonic() - start) * 1000)
-    logger.info(
-        "request",
-        extra={
-            "request_id": request_id,
-            "method": request.method,
-            "path": request.url.path,
-            "status": response.status_code,
-            "elapsed_ms": elapsed_ms,
-            "ip": request.client.host if request.client else "unknown",
-        },
-    )
+    # H8: avoid logging raw client IPs (PII) by default; log a coarsely
+    # anonymized IP instead, and the raw value only when explicitly enabled
+    # (FUELOPT_LOG_CLIENT_IP) for local/debug diagnostics.
+    raw_ip = request.client.host if request.client else "unknown"
+    log_extra = {
+        "request_id": request_id,
+        "method": request.method,
+        "path": request.url.path,
+        "status": response.status_code,
+        "elapsed_ms": elapsed_ms,
+        "ip": raw_ip if settings.log_client_ip else _anonymize_ip(raw_ip),
+    }
+    logger.info("request", extra=log_extra)
     if response.status_code >= 500:
         threading.Thread(
             target=_alert_error,

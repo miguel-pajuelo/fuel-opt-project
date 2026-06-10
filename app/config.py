@@ -57,6 +57,13 @@ class Settings:
     max_brands_per_request: int = 10
     admin_token: str | None = None
     enable_api_docs: bool = False
+    # Only trust X-Forwarded-For when running behind a known/trusted reverse
+    # proxy (e.g. a public PaaS edge). Off by default so local/untrusted
+    # deployments cannot be fooled by spoofed forwarded headers.
+    trust_proxy_headers: bool = False
+    # Log the raw client IP in access logs. Off by default to avoid storing PII;
+    # when off, a coarsely anonymized IP is logged instead.
+    log_client_ip: bool = False
 
 
 def load_settings() -> Settings:
@@ -80,6 +87,8 @@ def load_settings() -> Settings:
         max_brands_per_request=int(os.getenv("MAX_BRANDS_PER_REQUEST", "10")),
         admin_token=os.getenv("FUELOPT_ADMIN_TOKEN"),
         enable_api_docs=env_flag("FUELOPT_ENABLE_API_DOCS", False),
+        trust_proxy_headers=env_flag("FUELOPT_TRUST_PROXY_HEADERS", False),
+        log_client_ip=env_flag("FUELOPT_LOG_CLIENT_IP", False),
     )
 
 
