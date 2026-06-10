@@ -43,7 +43,7 @@ echo   FuelOptApp\...
 exit /b 0
 
 :copy_dir
-robocopy "%~1" "%APP_DIR%\%~1" /E /XD "__pycache__" ".pytest_cache" /XF "*.pyc" "*.sqlite-wal" "*.sqlite-shm" "*.next.sqlite" "*.previous-*.sqlite" "launcher.log" "launcher_server.log" "launcher_refresh.log" "catalog_refresh.log" >nul
+robocopy "%~1" "%APP_DIR%\%~1" /E /XD "__pycache__" ".pytest_cache" /XF ".env" ".env.local" "*.pyc" "*.sqlite-wal" "*.sqlite-shm" "*.next.sqlite" "*.previous-*.sqlite" "launcher.log" "launcher_server.log" "launcher_refresh.log" "catalog_refresh.log" >nul
 if errorlevel 8 (
   echo Failed to copy %~1
   exit /b 1

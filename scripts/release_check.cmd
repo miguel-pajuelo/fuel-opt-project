@@ -20,6 +20,9 @@ if errorlevel 1 exit /b 1
 python tests\sanity_check.py
 if errorlevel 1 exit /b 1
 
+python tests\secrets_check.py
+if errorlevel 1 exit /b 1
+
 echo.
 echo Release checks passed.
 endlocal
