@@ -764,8 +764,29 @@ def test_brand_logos_implemented() -> None:
     )
 
 
+def test_external_leaflet_has_sri() -> None:
+    """H4: any Leaflet asset still loaded from a CDN must carry an SRI
+    integrity hash and crossorigin. Locally vendored Leaflet is also accepted
+    (those tags are same-origin and exempt from the SRI requirement)."""
+    html = _read("static/index.html")
+    _assert("leaflet" in html.lower(), "Leaflet does not appear to be loaded by index.html.")
+    tag_re = re.compile(r"<(?:link|script)\b[^>]*leaflet[^>]*>", re.IGNORECASE)
+    external_re = re.compile(r'(?:href|src)\s*=\s*"(?:https?:)?//', re.IGNORECASE)
+    for tag in tag_re.findall(html):
+        if external_re.search(tag):
+            _assert(
+                "integrity=" in tag and "sha" in tag,
+                f"External Leaflet tag must include an SRI integrity hash: {tag}",
+            )
+            _assert(
+                "crossorigin" in tag,
+                f"External Leaflet tag must include crossorigin for SRI to apply: {tag}",
+            )
+
+
 def run() -> None:
     test_frontend_is_extracted()
+    test_external_leaflet_has_sri()
     test_dynamic_html_uses_escape_helper()
     test_frontend_has_no_visible_mojibake()
     test_result_metrics_are_rendered_once()
