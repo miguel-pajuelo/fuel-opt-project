@@ -349,7 +349,8 @@ def _resolve_coordinates(address: str | None, lat: float | None, lon: float | No
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RequestException as exc:
-            raise HTTPException(status_code=502, detail=f"Geocoding provider failed: {exc}") from exc
+            logger.warning("geocode_provider_error: %s", exc)
+            raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
     raise HTTPException(status_code=400, detail=f"{label} requires address or lat/lon.")
 
 
@@ -498,7 +499,8 @@ def geocode(
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Geocoding provider failed: {exc}") from exc
+        logger.warning("geocode_provider_error: %s", exc)
+        raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
 
 
 @app.get("/geocode")
@@ -521,7 +523,8 @@ def reverse_geocode(lat: float, lon: float) -> dict[str, Any]:
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Geocoding provider failed: {exc}") from exc
+        logger.warning("reverse_geocode_provider_error: %s", exc)
+        raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
 
 
 @app.get("/reverse-geocode")
@@ -587,7 +590,8 @@ class FeedbackPayload(BaseModel):
 
 
 @app.post("/feedback")
-def submit_feedback(payload: FeedbackPayload) -> dict[str, bool]:
+@limiter.limit("5/minute")
+def submit_feedback(request: Request, payload: FeedbackPayload) -> dict[str, bool]:
     import re as _re
     import smtplib
     from email.mime.text import MIMEText
