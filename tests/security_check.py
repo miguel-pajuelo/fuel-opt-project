@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import inspect
+import logging
 import sys
 from pathlib import Path
 
+import pytest
 import requests
 from fastapi import HTTPException
 
@@ -14,83 +16,127 @@ if str(ROOT) not in sys.path:
 import app.api.main as api_main
 
 
-def _assert(condition: bool, message: object) -> None:
-    if not condition:
-        raise AssertionError(message)
-
-
-_FAKE_ORS_KEY = "FAKE_ORS_KEY_DO_NOT_LEAK"
+# A fake ORS error message carrying everything that must never reach a client
+# response *or* the server logs: the secret value, the `api_key` parameter name
+# and the raw OpenRouteService URL.
+_FAKE_ORS_KEY = "SECRET123"
 _FAKE_ORS_ERROR = (
     "403 Client Error: Forbidden for url: "
     f"https://api.openrouteservice.org/geocode/search?api_key={_FAKE_ORS_KEY}&text=x"
 )
+_SENSITIVE_TOKENS = (_FAKE_ORS_KEY, "api_key", "openrouteservice.org")
 
 
-def test_geocode_error_does_not_leak_ors_key() -> None:
-    """H1: an ORS HTTP error must not surface the api_key to the client."""
-    previous = (api_main.geocode_candidates, api_main.geocode_candidates_autocomplete)
+def _boom(*_args, **_kwargs):
+    raise requests.HTTPError(_FAKE_ORS_ERROR)
 
-    def _boom(*_args, **_kwargs):
-        raise requests.HTTPError(_FAKE_ORS_ERROR)
 
-    api_main.geocode_candidates = _boom
-    api_main.geocode_candidates_autocomplete = _boom
-    try:
-        try:
+def test_geocode_error_does_not_leak_ors_key(monkeypatch, caplog) -> None:
+    """H1: an ORS HTTP error must not surface secrets to the client or the logs."""
+    monkeypatch.setattr(api_main, "geocode_candidates", _boom)
+    monkeypatch.setattr(api_main, "geocode_candidates_autocomplete", _boom)
+
+    with caplog.at_level(logging.WARNING, logger="fuelopt.api"):
+        with pytest.raises(HTTPException) as excinfo:
             api_main.geocode(q="madrid centro")
-        except HTTPException as exc:
-            detail = str(exc.detail)
-            _assert(exc.status_code == 502, f"expected 502, got {exc.status_code}")
-            _assert(_FAKE_ORS_KEY not in detail, f"ORS key leaked to client: {detail!r}")
-            _assert("api_key" not in detail, f"api_key reference leaked to client: {detail!r}")
-        else:
-            raise AssertionError("geocode() should have raised HTTPException on provider error")
-    finally:
-        api_main.geocode_candidates, api_main.geocode_candidates_autocomplete = previous
+
+    exc = excinfo.value
+    assert exc.status_code == 502
+    assert str(exc.detail) == "Geocoding provider unavailable."
+
+    detail = str(exc.detail)
+    for token in _SENSITIVE_TOKENS:
+        assert token not in detail, f"client response leaked {token!r}: {detail!r}"
+        assert token not in caplog.text, f"server log leaked {token!r}: {caplog.text!r}"
+
+    # The log must still tell us which path failed.
+    assert "geocode_provider_error" in caplog.text
 
 
-def test_reverse_geocode_error_does_not_leak_ors_key() -> None:
-    """H1: same protection on the reverse-geocode path."""
-    previous = api_main.reverse_geocode_coordinates
+def test_reverse_geocode_error_does_not_leak_ors_key(monkeypatch, caplog) -> None:
+    """H1: same protection on the reverse-geocode path (client + logs)."""
+    monkeypatch.setattr(api_main, "reverse_geocode_coordinates", _boom)
 
-    def _boom(*_args, **_kwargs):
-        raise requests.HTTPError(_FAKE_ORS_ERROR)
-
-    api_main.reverse_geocode_coordinates = _boom
-    try:
-        try:
+    with caplog.at_level(logging.WARNING, logger="fuelopt.api"):
+        with pytest.raises(HTTPException) as excinfo:
             api_main.reverse_geocode(lat=40.4, lon=-3.7)
-        except HTTPException as exc:
-            detail = str(exc.detail)
-            _assert(exc.status_code == 502, f"expected 502, got {exc.status_code}")
-            _assert(_FAKE_ORS_KEY not in detail, f"ORS key leaked to client: {detail!r}")
-            _assert("api_key" not in detail, f"api_key reference leaked to client: {detail!r}")
-        else:
-            raise AssertionError("reverse_geocode() should have raised HTTPException on provider error")
-    finally:
-        api_main.reverse_geocode_coordinates = previous
+
+    exc = excinfo.value
+    assert exc.status_code == 502
+    assert str(exc.detail) == "Geocoding provider unavailable."
+
+    detail = str(exc.detail)
+    for token in _SENSITIVE_TOKENS:
+        assert token not in detail, f"client response leaked {token!r}: {detail!r}"
+        assert token not in caplog.text, f"server log leaked {token!r}: {caplog.text!r}"
+
+    assert "reverse_geocode_provider_error" in caplog.text
 
 
-def test_feedback_endpoint_is_rate_limited() -> None:
-    """H2: the feedback endpoint must carry a per-IP rate limit.
-
-    slowapi only applies a limit when the decorated function exposes a
-    `request: Request` parameter, so its presence is the structural guarantee
-    that the limit is wired. When slowapi is installed the limit also enforces
-    at runtime; without it the app intentionally degrades to a no-op.
+def test_feedback_endpoint_has_rate_limit_marker() -> None:
+    """H2 (structural): slowapi only wires a limit when the endpoint exposes a
+    `request: Request` parameter. This is a static guarantee that the decorator
+    is in place; it does NOT prove runtime enforcement (see the functional test).
     """
     params = inspect.signature(api_main.submit_feedback).parameters
-    _assert("request" in params, "submit_feedback must accept `request` for rate limiting to apply")
-    if not api_main._slowapi_available:
-        print("  note: slowapi not installed; rate limiting is a no-op in this interpreter")
+    assert "request" in params, "submit_feedback must accept `request` for rate limiting to apply"
 
 
-def run() -> None:
-    test_geocode_error_does_not_leak_ors_key()
-    test_reverse_geocode_error_does_not_leak_ors_key()
-    test_feedback_endpoint_is_rate_limited()
-    print("OK: security checks passed")
+class _FakeSMTP:
+    """No-op SMTP stand-in so the functional test never sends real email."""
+
+    def __init__(self, *_args, **_kwargs) -> None:
+        pass
+
+    def __enter__(self) -> "_FakeSMTP":
+        return self
+
+    def __exit__(self, *_args) -> bool:
+        return False
+
+    def ehlo(self, *_args, **_kwargs) -> None:
+        pass
+
+    def starttls(self, *_args, **_kwargs) -> None:
+        pass
+
+    def login(self, *_args, **_kwargs) -> None:
+        pass
+
+    def sendmail(self, *_args, **_kwargs) -> None:
+        pass
+
+
+@pytest.mark.skipif(
+    not api_main._slowapi_available,
+    reason="slowapi not installed: limiter is a no-op, runtime 429 cannot be enforced",
+)
+def test_feedback_rate_limit_enforced_returns_429(monkeypatch) -> None:
+    """H2 (functional): exceeding 5/minute on /feedback must yield a 429.
+
+    Only runs when slowapi is actually installed; otherwise it is skipped (never
+    falsely passed). Email sending is stubbed so no SMTP traffic occurs.
+    """
+    try:
+        from fastapi.testclient import TestClient
+    except Exception as exc:  # pragma: no cover - environment dependent
+        pytest.skip(f"TestClient unavailable (httpx not installed): {exc}")
+
+    monkeypatch.setenv("GMAIL_USER", "test@example.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "dummy-not-a-real-secret")
+    monkeypatch.setenv("FEEDBACK_RECIPIENT", "test@example.com")
+    monkeypatch.setattr("smtplib.SMTP", _FakeSMTP)
+
+    client = TestClient(api_main.app)
+    statuses = [
+        client.post(
+            "/feedback",
+            json={"email": "user@example.com", "message": "functional rate-limit probe"},
+        ).status_code
+        for _ in range(7)
+    ]
+    assert 429 in statuses, f"expected a 429 after exceeding 5/minute, got {statuses}"
 
 
 if __name__ == "__main__":
-    run()
+    raise SystemExit(pytest.main([__file__, "-v"]))

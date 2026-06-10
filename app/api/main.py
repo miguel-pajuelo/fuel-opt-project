@@ -349,7 +349,7 @@ def _resolve_coordinates(address: str | None, lat: float | None, lon: float | No
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RequestException as exc:
-            logger.warning("geocode_provider_error: %s", exc)
+            logger.warning("geocode_provider_error: %s", exc.__class__.__name__)
             raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
     raise HTTPException(status_code=400, detail=f"{label} requires address or lat/lon.")
 
@@ -499,7 +499,7 @@ def geocode(
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RequestException as exc:
-        logger.warning("geocode_provider_error: %s", exc)
+        logger.warning("geocode_provider_error: %s", exc.__class__.__name__)
         raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
 
 
@@ -523,7 +523,7 @@ def reverse_geocode(lat: float, lon: float) -> dict[str, Any]:
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RequestException as exc:
-        logger.warning("reverse_geocode_provider_error: %s", exc)
+        logger.warning("reverse_geocode_provider_error: %s", exc.__class__.__name__)
         raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
 
 
