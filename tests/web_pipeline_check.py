@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -28,6 +29,7 @@ from app.storage.database import (
     canonical_brand_counts,
     coverage_snapshot,
     get_candidates_with_price_in_bbox,
+    independent_brand_count,
     list_brands,
     list_stations,
     price_status,
@@ -379,6 +381,21 @@ def test_restricted_station_not_counted_in_coverage_snapshot() -> None:
     _with_public_access_db("public_access_coverage", check)
 
 
+def test_independent_brand_count_matches_coverage_snapshot() -> None:
+    for include_independent in (True, False):
+        db_path = ROOT / "tests" / f".independent_count_matches_{include_independent}.sqlite"
+        _cleanup_sqlite(db_path)
+        try:
+            _build_independent_brand_test_db(db_path, include_independent=include_independent)
+            coverage = coverage_snapshot(db_path)
+            _assert(
+                independent_brand_count(db_path) == coverage["independent_count"],
+                {"include_independent": include_independent, "coverage": coverage},
+            )
+        finally:
+            _cleanup_sqlite(db_path)
+
+
 def test_restricted_station_cannot_appear_in_optimize_results() -> None:
     def check(db_path: Path) -> None:
         request = OptimizationInput(
@@ -601,6 +618,43 @@ class _FixedRouteProvider:
         return 10.0
 
 
+class _MappedRouteProvider:
+    route_source = "mapped"
+
+    def __init__(self, distances: dict[str, tuple[float, float]], direct_km: float) -> None:
+        self.distances = distances
+        self.direct_km = direct_km
+
+    def distances_for_candidates(self, origin, destination, stations):
+        return {
+            station.station_id: self.distances[station.station_id]
+            for station in stations
+            if station.station_id in self.distances
+        }
+
+    def direct_distance_km(self, origin, destination):
+        return self.direct_km
+
+
+def _test_station(station_id: str, lon: float = 0.0) -> Station:
+    return Station(
+        station_id=station_id,
+        brand="TEST",
+        name=station_id,
+        address="",
+        postal_code="",
+        municipality="",
+        province="",
+        lat=0.0,
+        lon=lon,
+        source="TEST",
+        brand_label_raw="TEST",
+        brand_canonical="TEST",
+        brand_group="TEST",
+        brand_confidence=1.0,
+    )
+
+
 def test_optimizer_charges_extra_detour_only() -> None:
     station = Station(
         station_id="s1",
@@ -626,6 +680,194 @@ def test_optimizer_charges_extra_detour_only() -> None:
     _assert(result.extra_detour_km == 2.0, result.to_dict())
     _assert(result.liters_spent_on_route == 0.1, result.to_dict())
     _assert(result.travel_cost_eur == 0.2, result.to_dict())
+
+
+def test_minimal_detour_local_prefers_nearest_over_cheaper_farther() -> None:
+    close = _test_station("close")
+    cheap_far = _test_station("cheap-far")
+    request = OptimizationInput(
+        origin=Coordinates(0.0, 0.0),
+        destination=Coordinates(0.0, 0.0),
+        fuel_type="gasoleo_a",
+        liters=30,
+        optimization_mode="minimal_detour",
+    )
+    provider = _MappedRouteProvider(
+        {
+            "close": (2.0, 2.0),
+            "cheap-far": (6.0, 6.0),
+        },
+        direct_km=0.0,
+    )
+    results = optimize_candidates([(close, 2.0), (cheap_far, 1.0)], request, route_provider=provider)
+    _assert(results[0].station.station_id == "close", [item.to_dict() for item in results])
+
+
+def test_minimal_detour_trip_prefers_smallest_extra_detour() -> None:
+    low_detour = _test_station("low-detour")
+    cheap_far = _test_station("cheap-far")
+    request = OptimizationInput(
+        origin=Coordinates(0.0, 0.0),
+        destination=Coordinates(0.0, 2.0),
+        fuel_type="gasoleo_a",
+        liters=30,
+        optimization_mode="minimal_detour",
+        return_to_origin=True,
+    )
+    provider = _MappedRouteProvider(
+        {
+            "low-detour": (50.0, 55.0),
+            "cheap-far": (50.0, 80.0),
+        },
+        direct_km=100.0,
+    )
+    results = optimize_candidates([(low_detour, 2.0), (cheap_far, 1.0)], request, route_provider=provider)
+    _assert(results[0].station.station_id == "low-detour", [item.to_dict() for item in results])
+
+
+def test_economic_mode_still_prefers_best_effective_cost() -> None:
+    close = _test_station("close")
+    cheap_far = _test_station("cheap-far")
+    request = OptimizationInput(
+        origin=Coordinates(0.0, 0.0),
+        destination=Coordinates(0.0, 0.0),
+        fuel_type="gasoleo_a",
+        liters=30,
+        optimization_mode="economic",
+    )
+    provider = _MappedRouteProvider(
+        {
+            "close": (2.0, 2.0),
+            "cheap-far": (6.0, 6.0),
+        },
+        direct_km=0.0,
+    )
+    results = optimize_candidates([(close, 2.0), (cheap_far, 1.0)], request, route_provider=provider)
+    _assert(results[0].station.station_id == "cheap-far", [item.to_dict() for item in results])
+
+
+def test_balanced_rank_fusion_prefers_compromise_candidate() -> None:
+    economic_extreme = _test_station("economic-extreme")
+    distance_extreme = _test_station("distance-extreme")
+    compromise = _test_station("compromise")
+    request = OptimizationInput(
+        origin=Coordinates(0.0, 0.0),
+        destination=Coordinates(0.0, 2.0),
+        fuel_type="gasoleo_a",
+        liters=30,
+        optimization_mode="balanced",
+        result_limit=10,
+        return_to_origin=True,
+    )
+    provider = _MappedRouteProvider(
+        {
+            "economic-extreme": (70.0, 70.0),
+            "distance-extreme": (50.0, 50.0),
+            "compromise": (55.0, 55.0),
+        },
+        direct_km=100.0,
+    )
+    results = optimize_candidates(
+        [
+            (economic_extreme, 1.0),
+            (distance_extreme, 2.5),
+            (compromise, 1.4),
+        ],
+        request,
+        route_provider=provider,
+    )
+    ids = [item.station.station_id for item in results]
+    _assert(ids.index("compromise") < ids.index("distance-extreme"), [item.to_dict() for item in results])
+    _assert(results[ids.index("compromise")].balanced_score is not None, [item.to_dict() for item in results])
+
+
+def test_balanced_dedupes_candidates_from_both_shortlists() -> None:
+    shared = _test_station("shared")
+    request = OptimizationInput(
+        origin=Coordinates(0.0, 0.0),
+        destination=Coordinates(0.0, 0.0),
+        fuel_type="gasoleo_a",
+        liters=30,
+        optimization_mode="balanced",
+        result_limit=10,
+    )
+    results = optimize_candidates(
+        [(shared, 1.0)],
+        request,
+        route_provider=_MappedRouteProvider({"shared": (1.0, 1.0)}, direct_km=0.0),
+    )
+    ids = [item.station.station_id for item in results]
+    _assert(ids == ["shared"], [item.to_dict() for item in results])
+    _assert(len(ids) == len(set(ids)), ids)
+
+
+def test_balanced_can_include_11th_11th_compromise_when_k_allows() -> None:
+    candidates: list[tuple[Station, float]] = []
+    distances: dict[str, tuple[float, float]] = {}
+    for idx in range(10):
+        station = _test_station(f"economic-{idx}")
+        candidates.append((station, 1.0 + idx * 0.01))
+        distances[station.station_id] = (70.0 + idx * 0.1, 70.0 + idx * 0.1)
+    compromise = _test_station("compromise-11th")
+    candidates.append((compromise, 1.20))
+    distances[compromise.station_id] = (55.0, 65.0)
+    for idx in range(10):
+        station = _test_station(f"distance-{idx}")
+        candidates.append((station, 2.0 + idx * 0.01))
+        distances[station.station_id] = (50.0 + idx * 0.1, 50.0 + idx * 0.1)
+
+    request = OptimizationInput(
+        origin=Coordinates(0.0, 0.0),
+        destination=Coordinates(0.0, 2.0),
+        fuel_type="gasoleo_a",
+        liters=30,
+        optimization_mode="balanced",
+        result_limit=10,
+        return_to_origin=True,
+    )
+    results = optimize_candidates(candidates, request, route_provider=_MappedRouteProvider(distances, direct_km=100.0))
+    by_id = {item.station.station_id: item for item in results}
+    _assert("compromise-11th" in by_id, [item.station.station_id for item in results])
+    _assert(by_id["compromise-11th"].economic_rank_points == 10.0, by_id["compromise-11th"].to_dict())
+    _assert(by_id["compromise-11th"].distance_rank_points == 10.0, by_id["compromise-11th"].to_dict())
+
+
+def test_haversine_fallback_minimal_detour_ranking_is_deterministic() -> None:
+    close = _test_station("close", lon=0.1)
+    far = _test_station("far", lon=0.5)
+    request = OptimizationInput(
+        origin=Coordinates(0.0, 0.0),
+        destination=Coordinates(0.0, 2.0),
+        fuel_type="gasoleo_a",
+        liters=30,
+        optimization_mode="minimal_detour",
+        return_to_origin=True,
+    )
+    results = optimize_candidates([(far, 1.0), (close, 2.0)], request)
+    _assert(results[0].station.station_id == "close", [item.to_dict() for item in results])
+
+
+def test_budget_mode_economic_keeps_net_liters_priority() -> None:
+    near_expensive = _test_station("near-expensive")
+    cheap_far = _test_station("cheap-far")
+    request = OptimizationInput(
+        origin=Coordinates(0.0, 0.0),
+        destination=Coordinates(0.0, 0.0),
+        fuel_type="gasoleo_a",
+        input_mode="budget",
+        budget_amount_eur=40,
+        liters=1,
+        optimization_mode="economic",
+    )
+    provider = _MappedRouteProvider(
+        {
+            "near-expensive": (0.0, 0.0),
+            "cheap-far": (1.0, 1.0),
+        },
+        direct_km=0.0,
+    )
+    results = optimize_candidates([(near_expensive, 2.0), (cheap_far, 1.0)], request, route_provider=provider)
+    _assert(results[0].station.station_id == "cheap-far", [item.to_dict() for item in results])
 
 
 def test_prefilter_uses_route_corridor_for_trips() -> None:
@@ -798,6 +1040,242 @@ def test_same_place_threshold_controls_search_shape() -> None:
             candidate = Path(str(db_path) + suffix)
             if candidate.exists():
                 candidate.unlink()
+
+
+def _range_station(station_id: str, lon: float, price: float, name: str | None = None) -> tuple[Station, Price]:
+    station = Station(
+        station_id=station_id,
+        brand="TEST",
+        name=name or station_id,
+        address="",
+        postal_code="",
+        municipality="",
+        province="",
+        lat=0.0,
+        lon=lon,
+        source="TEST",
+        brand_label_raw="TEST",
+        brand_canonical="TEST",
+        brand_group="TEST",
+        brand_confidence=1.0,
+    )
+    return station, Price(station_id, "gasoleo_a", price, None, "TEST")
+
+
+def _with_reachable_range_db(name: str, station_prices: list[tuple[Station, Price]], check) -> None:
+    db_path = ROOT / "tests" / f".{name}.sqlite"
+    _cleanup_sqlite(db_path)
+    stations = [station for station, _ in station_prices]
+    prices = [price for _, price in station_prices]
+    try:
+        replace_catalog(db_path, stations, prices, metadata={"source": "TEST"})
+        previous_settings = api_main.settings
+        api_main.settings = Settings(db_path=db_path, ors_api_key=None)
+        try:
+            check()
+        finally:
+            api_main.settings = previous_settings
+    finally:
+        _cleanup_sqlite(db_path)
+
+
+def _one_way_payload(**overrides) -> api_main.OptimizeRequest:
+    values = {
+        "origin_lat": 0.0,
+        "origin_lon": 0.0,
+        "destination_lat": 0.0,
+        "destination_lon": 3.0,
+        "fuel_type": "gasoleo_a",
+        "liters": 30,
+        "consumption_l_100km": 5.5,
+        "use_ors": False,
+        "max_candidates": 20,
+        "result_limit": 10,
+    }
+    values.update(overrides)
+    return api_main.OptimizeRequest(**values)
+
+
+def test_reachable_range_filter_applies_to_one_way_trip_by_default() -> None:
+    near = _range_station("reachable", 0.5, 1.8)
+    far = _range_station("unreachable", 2.5, 1.0)
+
+    def check() -> None:
+        response = api_main.optimize(_one_way_payload())
+        search = response["search"]
+        _assert(search["reachable_range_filter_active"] is True, search)
+        _assert(search["remaining_fuel_liters_used"] == 15.0, search)
+        _assert(search["remaining_fuel_liters_source"] == "default", search)
+        _assert(abs(search["theoretical_range_km"] - 272.727) < 0.01, search)
+        _assert(search["safety_margin_km"] == 50.0, search)
+        _assert(abs(search["prudent_range_km"] - 222.727) < 0.01, search)
+        _assert(search["unreachable_candidates_excluded"] == 1, search)
+        _assert("reachable_range_filter_active" not in _warning_codes(response), response["warnings"])
+
+    _with_reachable_range_db("reachable_default", [near, far], check)
+
+
+def test_reachable_range_filter_uses_request_remaining_liters() -> None:
+    near = _range_station("near", 0.5, 1.8)
+    far = _range_station("far", 1.0, 1.0)
+
+    def check() -> None:
+        response = api_main.optimize(_one_way_payload(remaining_fuel_liters=8.0))
+        search = response["search"]
+        _assert(search["reachable_range_filter_active"] is True, search)
+        _assert(search["remaining_fuel_liters_used"] == 8.0, search)
+        _assert(search["remaining_fuel_liters_source"] == "request", search)
+        _assert(abs(search["theoretical_range_km"] - 145.455) < 0.01, search)
+        _assert(abs(search["safety_margin_km"] - 36.364) < 0.01, search)
+        _assert(abs(search["prudent_range_km"] - 109.091) < 0.01, search)
+
+    _with_reachable_range_db("reachable_request_liters", [near, far], check)
+
+
+def test_reachable_range_filter_does_not_apply_to_return_to_origin() -> None:
+    station = _range_station("station", 2.5, 1.0)
+
+    def check() -> None:
+        response = api_main.optimize(_one_way_payload(return_to_origin=True))
+        _assert(response["search"]["reachable_range_filter_active"] is False, response["search"])
+        _assert(response["count"] == 1, response)
+
+    _with_reachable_range_db("reachable_return_to_origin", [station], check)
+
+
+def test_reachable_range_filter_does_not_apply_to_same_place_search() -> None:
+    station = _range_station("station", 0.001, 1.0)
+
+    def check() -> None:
+        response = api_main.optimize(
+            _one_way_payload(
+                destination_lat=0.0,
+                destination_lon=0.001,
+                remaining_fuel_liters=None,
+            )
+        )
+        _assert(response["search"]["reachable_range_filter_active"] is False, response["search"])
+        _assert(response["count"] == 1, response)
+
+    _with_reachable_range_db("reachable_same_place", [station], check)
+
+
+def test_unreachable_candidate_excluded_before_ranking() -> None:
+    reachable_expensive = _range_station("reachable-expensive", 0.5, 2.0)
+    unreachable_cheap = _range_station("unreachable-cheap", 2.5, 1.0)
+
+    def check() -> None:
+        response = api_main.optimize(_one_way_payload(remaining_fuel_liters=8.0, optimization_mode="economic"))
+        _assert(response["best"]["station"]["station_id"] == "reachable-expensive", response)
+        _assert(response["search"]["unreachable_candidates_excluded"] == 1, response["search"])
+
+    _with_reachable_range_db("reachable_before_ranking", [reachable_expensive, unreachable_cheap], check)
+
+
+def test_no_candidates_within_prudent_range_returns_safe_no_result() -> None:
+    far = _range_station("too-far", 2.0, 1.0)
+
+    def check() -> None:
+        response = api_main.optimize(_one_way_payload(remaining_fuel_liters=8.0))
+        _assert(response["count"] == 0, response)
+        _assert(response["returned"] == 0, response)
+        _assert(response["best"] is None, response)
+        search = response["search"]
+        _assert(search["reachable_range_filter_active"] is True, search)
+        _assert(search["unreachable_candidates_excluded"] == 1, search)
+        warning = _warning_by_code(response, "reachable_range_filter_active")
+        _assert(warning["severity"] == "warning", warning)
+
+    _with_reachable_range_db("reachable_zero_result", [far], check)
+
+
+def test_invalid_explicit_remaining_liters_rejected_or_handled_consistently() -> None:
+    try:
+        _one_way_payload(remaining_fuel_liters=0.0)
+    except ValidationError:
+        return
+    raise AssertionError("Expected non-positive remaining_fuel_liters to be rejected by request validation.")
+
+
+def test_reachable_range_filter_inactive_keeps_optimization_modes_working() -> None:
+    station = _range_station("local", 0.001, 1.4)
+
+    def check() -> None:
+        for mode in ("economic", "minimal_detour", "balanced"):
+            response = api_main.optimize(
+                _one_way_payload(
+                    destination_lat=0.0,
+                    destination_lon=0.001,
+                    optimization_mode=mode,
+                )
+            )
+            _assert(response["search"]["reachable_range_filter_active"] is False, response["search"])
+            _assert(response["count"] == 1, response)
+            _assert(response["best"]["optimization_mode"] == mode, response["best"])
+
+    _with_reachable_range_db("reachable_inactive_modes", [station], check)
+
+
+def test_minimal_detour_pool_preserves_nearest_before_cap() -> None:
+    close = _range_station("close", 0.01, 2.0)
+    cheap_far = _range_station("cheap-far", 0.5, 1.0)
+
+    def check() -> None:
+        request = OptimizationInput(
+            origin=Coordinates(0.0, 0.0),
+            destination=Coordinates(0.0, 0.0),
+            fuel_type="gasoleo_a",
+            optimization_mode="minimal_detour",
+            max_candidates=1,
+        )
+        candidates = prefilter_candidates(api_main.settings.db_path, request)
+        _assert([station.station_id for station, _ in candidates] == ["close"], candidates)
+
+    _with_reachable_range_db("minimal_detour_pool", [close, cheap_far], check)
+
+
+def test_balanced_uses_internal_shortlist_but_returns_result_limit() -> None:
+    station_prices = [
+        _range_station(f"station-{idx:02d}", 0.001 + idx * 0.001, 1.0 + idx * 0.01)
+        for idx in range(25)
+    ]
+
+    def check() -> None:
+        response = api_main.optimize(
+            _one_way_payload(
+                destination_lat=0.0,
+                destination_lon=0.001,
+                optimization_mode="balanced",
+                max_candidates=10,
+                result_limit=3,
+            )
+        )
+        _assert(response["search_policy"] == "mixed", response)
+        _assert(response["search"]["balanced_shortlist_size"] == 20, response["search"])
+        _assert(response["returned"] == 3, response)
+        _assert(len(response["items"]) == 3, response)
+        _assert(response["count"] >= response["returned"], response)
+
+    _with_reachable_range_db("balanced_internal_limit", station_prices, check)
+
+
+def test_reachable_range_filter_applies_before_all_optimization_modes() -> None:
+    reachable_expensive = _range_station("reachable-expensive", 0.5, 2.0)
+    unreachable_cheap = _range_station("unreachable-cheap", 2.5, 1.0)
+
+    def check() -> None:
+        for mode in ("economic", "minimal_detour", "balanced"):
+            response = api_main.optimize(
+                _one_way_payload(
+                    remaining_fuel_liters=8.0,
+                    optimization_mode=mode,
+                )
+            )
+            _assert(response["best"]["station"]["station_id"] == "reachable-expensive", response)
+            _assert(response["search"]["reachable_range_filter_active"] is True, response["search"])
+            _assert(response["search"]["unreachable_candidates_excluded"] == 1, response["search"])
+
+    _with_reachable_range_db("reachable_before_all_modes", [reachable_expensive, unreachable_cheap], check)
 
 
 def test_radius_aliases_are_deprecated_and_conflict_checked() -> None:
@@ -996,6 +1474,17 @@ def test_home_ui_uses_map_search_without_coordinate_fields() -> None:
     _assert("parsePositiveDecimal('consumption_l_100km')" in frontend, "Average consumption input should be validated before optimize.")
     _assert("consumption_l_100km: consumption" in frontend, "Optimize payload should use the custom average consumption value.")
     _assert("consumption_l_100km: 5.5" not in frontend, "Optimize payload should not hardcode average consumption.")
+    _assert("remaining_fuel_liters" in html, "Remaining fuel input missing from home UI.")
+    _assert("M&#225;s informaci&#243;n sobre litros en dep&#243;sito" in html, "Remaining fuel info icon missing from home UI.")
+    _assert("Obligatorio en viajes de ida" in html, "Remaining fuel tooltip should explain one-way requirement.")
+    _assert("Opcional si regresas al origen" in html, "Remaining fuel tooltip should explain return-to-origin optionality.")
+    _assert("parseOptionalPositiveDecimal('remaining_fuel_liters')" in frontend, "Remaining fuel should use optional positive validation.")
+    _assert("$('remaining_fuel_liters').placeholder = same ? 'Opcional' : 'Obligatorio'" in frontend, "Remaining fuel placeholder should follow return mode.")
+    _assert("$('remaining_fuel_liters').required = !same" in frontend, "Remaining fuel should be required only for one-way trips.")
+    _assert("!$('return_to_origin').checked && remainingFuel === undefined" in frontend, "One-way trips should require remaining fuel before optimize.")
+    _assert("payload.remaining_fuel_liters = remainingFuel" in frontend, "Optimize payload should send remaining_fuel_liters when filled.")
+    _assert("remainingFuel !== undefined" in frontend, "Optimize payload should omit remaining_fuel_liters when empty.")
+    _assert("return_to_origin: $('return_to_origin').checked" in frontend, "Optimize payload should send return_to_origin.")
     _assert('name="brand_filter"' in frontend, "Brand checkbox inputs missing from home UI.")
     _assert("leaflet" in html.lower(), "Leaflet map assets missing from home UI.")
     _assert("Latitud" not in html, "Visible latitude field leaked into home UI.")
@@ -1199,6 +1688,8 @@ def test_haversine_warning_when_use_ors_false() -> None:
         )
         warning = _warning_by_code(response, "using_haversine_estimate")
         _assert(warning["severity"] == "info", warning)
+        _assert("ORS" not in warning["message"], warning)
+        _assert("ruta real" not in warning["message"].lower(), warning)
         _assert(warning["data"]["route_source"] == "haversine_estimate", warning)
 
     _with_warning_db("haversine_warning", check)
@@ -1381,6 +1872,7 @@ def test_no_candidates_excludes_extent_limit_warning() -> None:
 def test_haversine_copy_not_duplicated() -> None:
     js = (ROOT / "static" / "app.js").read_text(encoding="utf-8")
     _assert(js.count("Ruta estimada por distancia") == 1, "Haversine copy should appear once.")
+    _assert("routeSource.includes('haversine')" in js, "Haversine route source note should be hidden.")
 
 
 def _is_independent_station(station: dict) -> bool:
@@ -1397,11 +1889,33 @@ def test_brands_endpoint_includes_virtual_independent() -> None:
         items = response["brands"]
         virtual = [item for item in items if item.get("canonical") == INDEPENDENT_BRAND_SENTINEL]
         _assert(len(virtual) == 1, items)
+        _assert(virtual[0]["id"] == "independent", virtual[0])
+        _assert(virtual[0]["canonical"] == INDEPENDENT_BRAND_SENTINEL, virtual[0])
         _assert(virtual[0]["is_virtual"] is True, virtual[0])
-        _assert(virtual[0]["station_count"] >= 1, virtual[0])
+        _assert(isinstance(virtual[0]["station_count"], int) and virtual[0]["station_count"] >= 1, virtual[0])
+        _assert(virtual[0]["hint"], virtual[0])
         _assert(items[-1]["canonical"] == INDEPENDENT_BRAND_SENTINEL, items)
 
     _with_independent_brand_db("brands_virtual_independent", check)
+
+
+def test_brands_endpoint_does_not_call_coverage_snapshot() -> None:
+    def check() -> None:
+        previous_coverage_snapshot = api_main.coverage_snapshot
+
+        def fail_coverage_snapshot(*_args, **_kwargs):
+            raise AssertionError("/brands should use independent_brand_count, not coverage_snapshot")
+
+        api_main.coverage_snapshot = fail_coverage_snapshot
+        try:
+            response = _json_payload(api_main.brands())
+        finally:
+            api_main.coverage_snapshot = previous_coverage_snapshot
+        canonicals = [item.get("canonical") for item in response["brands"]]
+        _assert("BALLENOIL" in canonicals, response)
+        _assert(INDEPENDENT_BRAND_SENTINEL in canonicals, response)
+
+    _with_independent_brand_db("brands_no_coverage_snapshot", check)
 
 
 def test_brands_endpoint_omits_virtual_when_no_independents() -> None:
@@ -2141,6 +2655,7 @@ def run() -> None:
     test_restricted_station_not_returned_by_candidate_query()
     test_restricted_station_not_counted_in_brands()
     test_restricted_station_not_counted_in_coverage_snapshot()
+    test_independent_brand_count_matches_coverage_snapshot()
     test_restricted_station_cannot_appear_in_optimize_results()
     test_public_access_filter_reports_restricted_catalog_rows()
     test_public_access_oleocampo_members_only_restricted()
@@ -2155,9 +2670,28 @@ def run() -> None:
     test_token_filtering()
     test_catalog_database_and_optimizer()
     test_optimizer_charges_extra_detour_only()
+    test_minimal_detour_local_prefers_nearest_over_cheaper_farther()
+    test_minimal_detour_trip_prefers_smallest_extra_detour()
+    test_economic_mode_still_prefers_best_effective_cost()
+    test_balanced_rank_fusion_prefers_compromise_candidate()
+    test_balanced_dedupes_candidates_from_both_shortlists()
+    test_balanced_can_include_11th_11th_compromise_when_k_allows()
+    test_haversine_fallback_minimal_detour_ranking_is_deterministic()
+    test_budget_mode_economic_keeps_net_liters_priority()
     test_prefilter_uses_route_corridor_for_trips()
     test_economic_expansion_can_include_cheap_outer_candidate()
     test_same_place_threshold_controls_search_shape()
+    test_reachable_range_filter_applies_to_one_way_trip_by_default()
+    test_reachable_range_filter_uses_request_remaining_liters()
+    test_reachable_range_filter_does_not_apply_to_return_to_origin()
+    test_reachable_range_filter_does_not_apply_to_same_place_search()
+    test_unreachable_candidate_excluded_before_ranking()
+    test_no_candidates_within_prudent_range_returns_safe_no_result()
+    test_invalid_explicit_remaining_liters_rejected_or_handled_consistently()
+    test_reachable_range_filter_inactive_keeps_optimization_modes_working()
+    test_minimal_detour_pool_preserves_nearest_before_cap()
+    test_balanced_uses_internal_shortlist_but_returns_result_limit()
+    test_reachable_range_filter_applies_before_all_optimization_modes()
     test_radius_aliases_are_deprecated_and_conflict_checked()
     test_address_without_ors_key_is_client_error()
     test_geocode_without_ors_key_is_client_error()
@@ -2181,6 +2715,7 @@ def run() -> None:
     test_no_candidates_excludes_extent_limit_warning()
     test_haversine_copy_not_duplicated()
     test_brands_endpoint_includes_virtual_independent()
+    test_brands_endpoint_does_not_call_coverage_snapshot()
     test_brands_endpoint_omits_virtual_when_no_independents()
     test_optimize_without_filter_includes_independents()
     test_optimize_with_real_brand_only_excludes_independents()

@@ -374,6 +374,19 @@ def canonical_brand_counts(db_path: Path) -> dict[str, int]:
     return dict(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
 
+def independent_brand_count(db_path: Path) -> int:
+    with open_db(db_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT *
+            FROM stations s
+            WHERE active = 1
+              AND {_independent_predicate_sql()}
+            """
+        ).fetchall()
+    return sum(1 for row in rows if is_publicly_eligible(row_to_station(row)))
+
+
 def raw_brand_label_counts(db_path: Path, limit: int = 500, offset: int = 0) -> list[dict[str, object]]:
     with open_db(db_path) as conn:
         rows = conn.execute(

@@ -88,7 +88,7 @@ def build_optimize_warnings(
                 code="using_haversine_estimate",
                 severity="info",
                 title="Ruta estimada por distancia",
-                message="El coste de ruta se ha calculado con una aproximación de distancia, no con ruta real ORS.",
+                message="El coste de ruta se ha calculado con una aproximación de distancia.",
                 data={"route_source": route_source_text},
             ),
         )
@@ -166,6 +166,28 @@ def build_optimize_warnings(
                 },
             ),
         )
+
+    if _truthy(search.get("reachable_range_filter_active")):
+        excluded = int(search.get("unreachable_candidates_excluded") or 0)
+        if result_count == 0 and excluded > 0:
+            _append_once(
+                warnings,
+                seen,
+                Warning(
+                    code="reachable_range_filter_active",
+                    severity="warning",
+                    title="Sin estaciones dentro de la autonomia prudente",
+                    message="No se han encontrado estaciones alcanzables con la autonomia estimada y el margen de seguridad.",
+                    data={
+                        "remaining_fuel_liters_used": search.get("remaining_fuel_liters_used"),
+                        "remaining_fuel_liters_source": search.get("remaining_fuel_liters_source"),
+                        "theoretical_range_km": search.get("theoretical_range_km"),
+                        "safety_margin_km": search.get("safety_margin_km"),
+                        "prudent_range_km": search.get("prudent_range_km"),
+                        "unreachable_candidates_excluded": excluded,
+                    },
+                ),
+            )
 
     candidate_universe_size = int(search.get("candidate_universe_size") or 0)
     effective_extent = _as_float(search.get("effective_search_extent_km"))

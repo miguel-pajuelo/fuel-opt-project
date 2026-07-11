@@ -100,6 +100,9 @@ class OptimizationInput:
     economic_expansion_enabled: bool = True
     optimization_mode: str = "economic"
     max_candidates: int = 75
+    result_limit: int = 20
+    remaining_fuel_liters: float | None = None
+    return_to_origin: bool | None = None
     route_detour_factor: float = 1.25
     local_search_radius_km: float = 50.0
     corridor_radius_km: float = 10.0
@@ -137,6 +140,9 @@ class CandidateResult:
     net_liters: float
     net_km: float
     route_source: str
+    economic_rank_points: float | None = None
+    distance_rank_points: float | None = None
+    balanced_score: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)

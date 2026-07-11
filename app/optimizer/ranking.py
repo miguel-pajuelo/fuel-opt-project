@@ -11,6 +11,12 @@ from app.storage.database import get_candidates_with_price, get_candidates_with_
 
 
 ECONOMIC_EPSILON_EUR = 0.10
+BALANCED_ECONOMIC_WEIGHT = 0.55
+BALANCED_DISTANCE_WEIGHT = 0.45
+DEFAULT_REMAINING_FUEL_LITERS_FOR_ONE_WAY_TRIP = 15.0
+REACHABLE_RANGE_SAFETY_FRACTION = 0.25
+REACHABLE_RANGE_MIN_MARGIN_KM = 15.0
+REACHABLE_RANGE_MAX_MARGIN_KM = 50.0
 MODE_DETOUR_PENALTY_EUR_KM = {
     "economic": 0.0,
     "balanced": 0.08,
@@ -186,9 +192,101 @@ def _same_place(origin: Coordinates, destination: Coordinates, threshold_km: flo
     return haversine_km(origin, destination) <= threshold_km
 
 
+def _clamp(value: float, minimum: float, maximum: float) -> float:
+    return max(minimum, min(maximum, value))
+
+
+def _should_apply_reachable_range_filter(request: OptimizationInput) -> bool:
+    if request.return_to_origin is True:
+        return False
+    return not _same_place(request.origin, request.destination, request.same_place_threshold_km)
+
+
+def _compute_prudent_reachable_range_km(
+    remaining_fuel_liters: float,
+    consumption_l_100km: float,
+) -> tuple[float, float, float] | None:
+    if remaining_fuel_liters <= 0 or consumption_l_100km <= 0:
+        return None
+    theoretical_range_km = remaining_fuel_liters / consumption_l_100km * 100.0
+    safety_margin_km = _clamp(
+        theoretical_range_km * REACHABLE_RANGE_SAFETY_FRACTION,
+        REACHABLE_RANGE_MIN_MARGIN_KM,
+        REACHABLE_RANGE_MAX_MARGIN_KM,
+    )
+    prudent_range_km = max(0.0, theoretical_range_km - safety_margin_km)
+    return theoretical_range_km, safety_margin_km, prudent_range_km
+
+
+def _reachable_range_inactive_context() -> dict[str, Any]:
+    return {
+        "reachable_range_filter_active": False,
+        "unreachable_candidates_excluded": 0,
+    }
+
+
+def _filter_reachable_results(
+    results: list[CandidateResult],
+    request: OptimizationInput,
+) -> tuple[list[CandidateResult], dict[str, Any]]:
+    if not _should_apply_reachable_range_filter(request):
+        return results, _reachable_range_inactive_context()
+
+    if request.remaining_fuel_liters is None:
+        remaining_fuel_liters = DEFAULT_REMAINING_FUEL_LITERS_FOR_ONE_WAY_TRIP
+        remaining_fuel_source = "default"
+    else:
+        remaining_fuel_liters = request.remaining_fuel_liters
+        remaining_fuel_source = "request"
+
+    range_parts = _compute_prudent_reachable_range_km(
+        remaining_fuel_liters,
+        request.consumption_l_100km,
+    )
+    if range_parts is None:
+        return results, _reachable_range_inactive_context()
+
+    theoretical_range_km, safety_margin_km, prudent_range_km = range_parts
+    reachable = [
+        item for item in results
+        if item.distance_to_station_km <= prudent_range_km
+    ]
+    excluded_count = len(results) - len(reachable)
+    context = {
+        "reachable_range_filter_active": True,
+        "remaining_fuel_liters_used": round(remaining_fuel_liters, 3),
+        "remaining_fuel_liters_source": remaining_fuel_source,
+        "theoretical_range_km": round(theoretical_range_km, 3),
+        "safety_margin_km": round(safety_margin_km, 3),
+        "prudent_range_km": round(prudent_range_km, 3),
+        "unreachable_candidates_excluded": excluded_count,
+        "reachable_range_reason": "real_one_way_trip",
+    }
+    return reachable, context
+
+
 def _optimization_mode(request: OptimizationInput) -> str:
     mode = (request.optimization_mode or "economic").strip().lower()
     return mode if mode in MODE_DETOUR_PENALTY_EUR_KM else "economic"
+
+
+def _search_policy(request: OptimizationInput) -> str:
+    mode = _optimization_mode(request)
+    if mode == "minimal_detour":
+        return "distance"
+    if mode == "balanced":
+        return "mixed"
+    return "economic"
+
+
+def _balanced_shortlist_size(request: OptimizationInput) -> int:
+    return max(20, 2 * max(1, request.result_limit))
+
+
+def _candidate_pool_limit(request: OptimizationInput) -> int:
+    if _optimization_mode(request) == "balanced":
+        return max(request.max_candidates, _balanced_shortlist_size(request))
+    return request.max_candidates
 
 
 def _reference_price(prices: list[float]) -> float:
@@ -238,16 +336,14 @@ def _approx_score(
 ) -> float:
     extra_km = _estimated_extra_km(request, station, spatial_metric_km, is_local_search)
     detour_cost = extra_km * _cost_per_km(request, reference_price_eur_l)
-    detour_penalty = extra_km * MODE_DETOUR_PENALTY_EUR_KM[_optimization_mode(request)]
     if _is_budget_mode(request):
         gross_liters = _candidate_gross_liters(request, price)
         liters_spent = extra_km / 100.0 * request.consumption_l_100km
-        detour_penalty_liters = detour_penalty / reference_price_eur_l if reference_price_eur_l > 0 else 0.0
-        return -(gross_liters - liters_spent) + detour_penalty_liters
-    return price * request.liters + detour_cost + detour_penalty
+        return -(gross_liters - liters_spent)
+    return price * request.liters + detour_cost
 
 
-def _select_profiled_pool(
+def _select_economic_profiled_pool(
     scored: list[tuple[Station, float, float]],
     request: OptimizationInput,
     is_local_search: bool,
@@ -275,6 +371,56 @@ def _select_profiled_pool(
     return list(selected.values())
 
 
+def _select_distance_pool(
+    scored: list[tuple[Station, float, float]],
+    request: OptimizationInput,
+) -> list[tuple[Station, float]]:
+    selected = sorted(scored, key=lambda row: (row[2], row[1], row[0].station_id))
+    return [(station, price) for station, price, _ in selected[:request.max_candidates]]
+
+
+def _select_balanced_pool(
+    scored: list[tuple[Station, float, float]],
+    request: OptimizationInput,
+    is_local_search: bool,
+) -> list[tuple[Station, float]]:
+    if not scored:
+        return []
+    reference_price = _reference_price([price for _, price, _ in scored])
+    by_distance = sorted(scored, key=lambda row: (row[2], row[1], row[0].station_id))
+    by_economic = sorted(
+        scored,
+        key=lambda row: (
+            _approx_score(request, row[0], row[1], row[2], reference_price, is_local_search),
+            row[2],
+            row[1],
+            row[0].station_id,
+        ),
+    )
+    shortlist_size = _balanced_shortlist_size(request)
+    limit = _candidate_pool_limit(request)
+    selected: dict[str, tuple[Station, float]] = {}
+    for group in (by_economic[:shortlist_size], by_distance[:shortlist_size], by_economic, by_distance):
+        for station, price, _ in group:
+            selected.setdefault(station.station_id, (station, price))
+            if len(selected) >= limit:
+                return list(selected.values())
+    return list(selected.values())
+
+
+def _select_profiled_pool(
+    scored: list[tuple[Station, float, float]],
+    request: OptimizationInput,
+    is_local_search: bool,
+) -> list[tuple[Station, float]]:
+    mode = _optimization_mode(request)
+    if mode == "minimal_detour":
+        return _select_distance_pool(scored, request)
+    if mode == "balanced":
+        return _select_balanced_pool(scored, request, is_local_search)
+    return _select_economic_profiled_pool(scored, request, is_local_search)
+
+
 def _expansion_thresholds(preferred_km: float, max_extent_km: float, enabled: bool) -> list[float]:
     if not enabled:
         return [preferred_km]
@@ -289,6 +435,43 @@ def _expansion_thresholds(preferred_km: float, max_extent_km: float, enabled: bo
     return thresholds
 
 
+def _distance_expand_pool(
+    scored: list[tuple[Station, float, float]],
+    request: OptimizationInput,
+    preferred_extent_km: float,
+    max_extent_km: float,
+    is_local_search: bool,
+) -> tuple[list[tuple[Station, float]], dict[str, Any]]:
+    final_extent = preferred_extent_km
+    final_subset: list[tuple[Station, float, float]] = []
+    steps: list[dict[str, Any]] = []
+    for extent in _expansion_thresholds(
+        preferred_extent_km,
+        max(preferred_extent_km, max_extent_km),
+        request.economic_expansion_enabled,
+    ):
+        subset = [row for row in scored if row[2] <= extent]
+        steps.append({"extent_km": extent, "candidate_count": len(subset), "stop": bool(subset)})
+        if subset:
+            final_extent = extent
+            final_subset = subset
+            break
+
+    pool = _select_profiled_pool(final_subset, request, is_local_search)
+    trace = {
+        "search_policy": _search_policy(request),
+        "optimization_mode": _optimization_mode(request),
+        "candidate_universe_size": len(scored),
+        "candidate_pool_size": len(pool),
+        "economic_expansion_used": False,
+        "distance_expansion_used": final_extent > preferred_extent_km,
+        "effective_search_extent_km": round(final_extent, 3),
+        "expansion_steps": steps,
+        "fallback_used": False,
+    }
+    return pool, trace
+
+
 def _economically_expand_pool(
     scored: list[tuple[Station, float, float]],
     request: OptimizationInput,
@@ -296,9 +479,13 @@ def _economically_expand_pool(
     max_extent_km: float,
     is_local_search: bool,
 ) -> tuple[list[tuple[Station, float]], dict[str, Any]]:
+    if _optimization_mode(request) == "minimal_detour":
+        return _distance_expand_pool(scored, request, preferred_extent_km, max_extent_km, is_local_search)
+
     if not scored:
         return [], {
-            "search_policy": "economic",
+            "search_policy": _search_policy(request),
+            "optimization_mode": _optimization_mode(request),
             "candidate_universe_size": 0,
             "candidate_pool_size": 0,
             "economic_expansion_used": False,
@@ -363,7 +550,7 @@ def _economically_expand_pool(
 
     pool = _select_profiled_pool(final_subset, request, is_local_search)
     trace = {
-        "search_policy": "economic",
+        "search_policy": _search_policy(request),
         "optimization_mode": _optimization_mode(request),
         "candidate_universe_size": len(scored),
         "candidate_pool_size": len(pool),
@@ -372,6 +559,8 @@ def _economically_expand_pool(
         "expansion_steps": steps,
         "fallback_used": False,
     }
+    if _optimization_mode(request) == "balanced":
+        trace["balanced_shortlist_size"] = _balanced_shortlist_size(request)
     return pool, trace
 
 
@@ -524,7 +713,87 @@ def prefilter_candidates_with_trace(
         trace["candidate_pool_size"] = len(pool)
         return pool, trace
 
-    return candidates[:request.max_candidates], trace
+    return candidates[:_candidate_pool_limit(request)], trace
+
+
+def _economic_rank_key(item: CandidateResult, request: OptimizationInput) -> tuple[float, float, float, str]:
+    if _is_budget_mode(request):
+        return (-item.net_liters, item.total_detour_km, item.price_eur_l, item.station.station_id)
+    return (item.effective_total_cost_eur, item.extra_detour_km, item.price_eur_l, item.station.station_id)
+
+
+def _distance_rank_key(item: CandidateResult, request: OptimizationInput) -> tuple[float, float, float, float, str]:
+    if _same_place(request.origin, request.destination, request.same_place_threshold_km):
+        return (
+            item.distance_to_station_km,
+            item.total_detour_km,
+            item.effective_total_cost_eur,
+            item.price_eur_l,
+            item.station.station_id,
+        )
+    return (
+        item.extra_detour_km,
+        item.route_via_station_km,
+        item.effective_total_cost_eur,
+        item.price_eur_l,
+        item.station.station_id,
+    )
+
+
+def _rank_points(index: int, k: int) -> float:
+    return float(max(k - index, 0))
+
+
+def _rank_balanced_results(results: list[CandidateResult], request: OptimizationInput) -> list[CandidateResult]:
+    shortlist_size = _balanced_shortlist_size(request)
+    economic_ranked = sorted(results, key=lambda item: _economic_rank_key(item, request))[:shortlist_size]
+    distance_ranked = sorted(results, key=lambda item: _distance_rank_key(item, request))[:shortlist_size]
+    economic_points = {
+        item.station.station_id: _rank_points(idx, shortlist_size)
+        for idx, item in enumerate(economic_ranked)
+    }
+    distance_points = {
+        item.station.station_id: _rank_points(idx, shortlist_size)
+        for idx, item in enumerate(distance_ranked)
+    }
+
+    shortlisted: dict[str, CandidateResult] = {}
+    for item in economic_ranked + distance_ranked:
+        shortlisted.setdefault(item.station.station_id, item)
+
+    ranked: list[CandidateResult] = []
+    for station_id, item in shortlisted.items():
+        economic = economic_points.get(station_id, 0.0)
+        distance = distance_points.get(station_id, 0.0)
+        balanced_score = BALANCED_ECONOMIC_WEIGHT * economic + BALANCED_DISTANCE_WEIGHT * distance
+        ranked.append(
+            replace(
+                item,
+                economic_rank_points=economic,
+                distance_rank_points=distance,
+                balanced_score=balanced_score,
+            )
+        )
+
+    ranked.sort(
+        key=lambda item: (
+            -(item.balanced_score or 0.0),
+            -((item.economic_rank_points or 0.0) + (item.distance_rank_points or 0.0)),
+            _distance_rank_key(item, request),
+            _economic_rank_key(item, request),
+            item.price_eur_l,
+        )
+    )
+    return ranked
+
+
+def _rank_results_by_mode(results: list[CandidateResult], request: OptimizationInput) -> list[CandidateResult]:
+    mode = _optimization_mode(request)
+    if mode == "minimal_detour":
+        return sorted(results, key=lambda item: _distance_rank_key(item, request))
+    if mode == "balanced":
+        return _rank_balanced_results(results, request)
+    return sorted(results, key=lambda item: _economic_rank_key(item, request))
 
 
 def optimize_candidates(
@@ -532,6 +801,15 @@ def optimize_candidates(
     request: OptimizationInput,
     route_provider: RouteProvider | None = None,
 ) -> list[CandidateResult]:
+    results, _ = optimize_candidates_with_context(candidates, request, route_provider=route_provider)
+    return results
+
+
+def optimize_candidates_with_context(
+    candidates: list[tuple[Station, float]],
+    request: OptimizationInput,
+    route_provider: RouteProvider | None = None,
+) -> tuple[list[CandidateResult], dict[str, Any]]:
     provider = route_provider or HaversineEstimateProvider(detour_factor=request.route_detour_factor)
     station_list = [station for station, _ in candidates]
     price_by_station = {station.station_id: price for station, price in candidates}
@@ -596,11 +874,8 @@ def optimize_candidates(
                 route_source=provider.route_source,
             )
         )
-    if _is_budget_mode(request):
-        results.sort(key=lambda item: (-item.net_liters, item.total_detour_km, item.price_eur_l))
-    else:
-        results.sort(key=lambda item: (item.optimization_score_eur, item.total_detour_km, item.price_eur_l))
-    return _annotate_results(results)
+    results, reachable_context = _filter_reachable_results(results, request)
+    return _annotate_results(_rank_results_by_mode(results, request)), reachable_context
 
 
 def _annotate_results(results: list[CandidateResult]) -> list[CandidateResult]:
@@ -630,6 +905,10 @@ def _annotate_results(results: list[CandidateResult]) -> list[CandidateResult]:
 def _why_selected(item: CandidateResult, comparison_delta: float, is_best: bool) -> str:
     if not is_best:
         return ""
+    if item.optimization_mode == "minimal_detour":
+        return "Gana por menor distancia o desvio frente a las alternativas evaluadas."
+    if item.optimization_mode == "balanced":
+        return "Gana por equilibrar ahorro y desvio en el ranking combinado."
     if item.input_mode == "budget":
         if comparison_delta > 0.05 and item.extra_detour_km > 1.0:
             return "Gana porque permite repostar mas litros con el mismo presupuesto, incluso contando el desvio."
@@ -683,12 +962,17 @@ def optimize_from_db_with_context(
         excluded_brands=excluded_brands,
         route_geometry=route_geometry,
     )
-    results = optimize_candidates(candidates, request, route_provider=route_provider)
+    results, reachable_context = optimize_candidates_with_context(candidates, request, route_provider=route_provider)
     best = results[0] if results else None
     trace.update(
         {
+            **reachable_context,
             "best_result_outside_preferred_zone": bool(best and trace.get("economic_expansion_used")),
             "result_count": len(results),
         }
     )
+    if _optimization_mode(request) == "balanced":
+        trace["balanced_shortlist_size"] = _balanced_shortlist_size(request)
+        trace["balanced_economic_weight"] = BALANCED_ECONOMIC_WEIGHT
+        trace["balanced_distance_weight"] = BALANCED_DISTANCE_WEIGHT
     return results, trace

@@ -12,8 +12,10 @@ import threading
 import time
 import unicodedata
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -63,6 +65,7 @@ from app.storage.database import (
     catalog_status as db_catalog_status,
     coverage_snapshot,
     database_health,
+    independent_brand_count,
     list_stations,
     price_status,
     raw_brand_label_counts,
@@ -185,7 +188,15 @@ if _cors_origins:
     )
 
 _refresh_lock = threading.Lock()
+_scheduler_lock = threading.Lock()
+_scheduler_stop_event = threading.Event()
+_scheduler_thread: threading.Thread | None = None
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+CATALOG_REFRESH_TIMEZONE_NAME = "Europe/Madrid"
+CATALOG_REFRESH_TIMEZONE = ZoneInfo(CATALOG_REFRESH_TIMEZONE_NAME)
+CATALOG_REFRESH_HOUR = 12
+CATALOG_REFRESH_MINUTE = 0
 
 
 # Baseline security headers applied to every response (H6). No CSP is set:
@@ -251,6 +262,40 @@ def _validate_startup() -> None:
         )
 
 
+def _madrid_time(value: datetime | None = None) -> datetime:
+    current_time = value or datetime.now(CATALOG_REFRESH_TIMEZONE)
+    if current_time.tzinfo is None:
+        current_time = current_time.replace(tzinfo=CATALOG_REFRESH_TIMEZONE)
+    return current_time.astimezone(CATALOG_REFRESH_TIMEZONE)
+
+
+def next_catalog_refresh_slot(now: datetime | None = None) -> datetime:
+    madrid_time = _madrid_time(now)
+    scheduled_today = madrid_time.replace(
+        hour=CATALOG_REFRESH_HOUR,
+        minute=CATALOG_REFRESH_MINUTE,
+        second=0,
+        microsecond=0,
+    )
+    if madrid_time < scheduled_today:
+        return scheduled_today
+    return scheduled_today + timedelta(days=1)
+
+
+def seconds_until_next_catalog_refresh(now: datetime | None = None) -> float:
+    madrid_time = _madrid_time(now)
+    next_slot = next_catalog_refresh_slot(madrid_time)
+    delta = next_slot.astimezone(timezone.utc) - madrid_time.astimezone(timezone.utc)
+    return max(0.0, delta.total_seconds())
+
+
+def catalog_refresh_schedule_description() -> str:
+    return (
+        f"daily at {CATALOG_REFRESH_HOUR:02d}:{CATALOG_REFRESH_MINUTE:02d} "
+        f"{CATALOG_REFRESH_TIMEZONE_NAME}"
+    )
+
+
 INDEPENDENT_BRAND_LABEL = "Independientes / sin marca"
 INDEPENDENT_BRAND_HINT = "Incluye estaciones independientes o con rótulo no reconocido."
 
@@ -273,6 +318,133 @@ def _catalog_refresh_env() -> dict[str, str]:
     if getattr(sys, "frozen", False):
         env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     return env
+
+
+def _read_catalog_refresh_report(report_path: Path) -> dict[str, object]:
+    if not report_path.exists():
+        return {}
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _run_catalog_refresh_pipeline(timeout_sec: int = 900) -> dict[str, object]:
+    if not _refresh_lock.acquire(blocking=False):
+        return {
+            "locked": True,
+            "returncode": None,
+            "report": {
+                "refresh_status": "skipped",
+                "refresh_error": "Catalog refresh already in progress.",
+            },
+            "stdout": "",
+            "stderr": "",
+        }
+    try:
+        report_path = PROJECT_ROOT / "data" / "reports" / "catalog_refresh_report.json"
+        cmd = _catalog_refresh_command(report_path)
+        try:
+            completed = subprocess.run(
+                cmd,
+                cwd=PROJECT_ROOT,
+                env=_catalog_refresh_env(),
+                capture_output=True,
+                text=True,
+                timeout=timeout_sec,
+            )
+        except subprocess.TimeoutExpired as exc:
+            return {
+                "timed_out": True,
+                "returncode": None,
+                "report": _read_catalog_refresh_report(report_path),
+                "stdout": exc.stdout or "",
+                "stderr": exc.stderr or "",
+            }
+
+        return {
+            "timed_out": False,
+            "returncode": completed.returncode,
+            "report": _read_catalog_refresh_report(report_path),
+            "stdout": completed.stdout,
+            "stderr": completed.stderr,
+        }
+    finally:
+        _refresh_lock.release()
+
+
+def _catalog_refresh_scheduler_loop(stop_event: threading.Event) -> None:
+    logger.info(
+        f"catalog refresh scheduler started schedule={catalog_refresh_schedule_description()}",
+    )
+    while not stop_event.is_set():
+        next_slot = next_catalog_refresh_slot()
+        wait_seconds = seconds_until_next_catalog_refresh()
+        logger.info(
+            "catalog refresh scheduled "
+            f"scheduled_for={next_slot.isoformat()} "
+            f"timezone={CATALOG_REFRESH_TIMEZONE_NAME} "
+            f"wait_seconds={int(wait_seconds)}",
+        )
+        if stop_event.wait(wait_seconds):
+            break
+
+        result = _run_catalog_refresh_pipeline()
+        report = result.get("report") if isinstance(result.get("report"), dict) else {}
+        returncode = result.get("returncode")
+        refresh_status = report.get("refresh_status") if isinstance(report, dict) else ""
+        if returncode == 0:
+            logger.info(
+                f"scheduled catalog refresh succeeded refresh_status={refresh_status or 'ok'}",
+            )
+        else:
+            logger.error(
+                "scheduled catalog refresh failed "
+                f"returncode={returncode} refresh_status={refresh_status or 'failed'}",
+            )
+    logger.info("catalog refresh scheduler stopped")
+
+
+def start_catalog_refresh_scheduler() -> bool:
+    global _scheduler_thread
+    with _scheduler_lock:
+        if _scheduler_thread and _scheduler_thread.is_alive():
+            logger.info("catalog refresh scheduler already running")
+            return False
+        _scheduler_stop_event.clear()
+        _scheduler_thread = threading.Thread(
+            target=_catalog_refresh_scheduler_loop,
+            args=(_scheduler_stop_event,),
+            name="fuelopt-catalog-refresh-scheduler",
+            daemon=True,
+        )
+        _scheduler_thread.start()
+        return True
+
+
+def stop_catalog_refresh_scheduler(timeout_sec: float = 5.0) -> None:
+    global _scheduler_thread
+    with _scheduler_lock:
+        thread = _scheduler_thread
+        if not thread:
+            return
+        _scheduler_stop_event.set()
+    if thread.is_alive():
+        thread.join(timeout=timeout_sec)
+    with _scheduler_lock:
+        if _scheduler_thread is thread:
+            _scheduler_thread = None
+
+
+@app.on_event("startup")
+def _start_catalog_refresh_scheduler_on_startup() -> None:
+    start_catalog_refresh_scheduler()
+
+
+@app.on_event("shutdown")
+def _stop_catalog_refresh_scheduler_on_shutdown() -> None:
+    stop_catalog_refresh_scheduler()
 
 
 def _bearer_token(value: str | None) -> str:
@@ -349,6 +521,8 @@ class OptimizeRequest(BaseModel):
     max_search_extent_km: float = Field(default=settings.max_search_extent_km, gt=0, le=800.0)
     economic_expansion_enabled: bool = True
     optimization_mode: str = Field(default=settings.default_optimization_mode)
+    remaining_fuel_liters: float | None = Field(default=None, gt=0)
+    return_to_origin: bool | None = None
     local_search_radius_km: float | None = Field(default=None, gt=0, le=500.0)
     corridor_radius_km: float | None = Field(default=None, gt=0, le=200.0)
     max_candidates: int = Field(default=settings.max_route_candidates, gt=0, le=250)
@@ -738,10 +912,9 @@ def fuels() -> JSONResponse:
 def brands() -> dict[str, Any]:
     counts = canonical_brand_counts(settings.db_path)
     try:
-        coverage = coverage_snapshot(settings.db_path)
+        independent_count = independent_brand_count(settings.db_path)
     except Exception:
-        coverage = {"independent_count": 0}
-    independent_count = int(coverage.get("independent_count", 0) or 0)
+        independent_count = 0
     known_payload: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in ui_brand_catalog():
@@ -802,64 +975,45 @@ def catalog_status() -> dict[str, object]:
 @app.post("/catalog/refresh")
 @limiter.limit("2/minute")
 def refresh_catalog(request: Request, _: None = Depends(_require_catalog_refresh_auth)) -> dict[str, object]:
-    if not _refresh_lock.acquire(blocking=False):
-        raise HTTPException(status_code=429, detail="Catalog refresh already in progress.")
-    try:
-        report_path = PROJECT_ROOT / "data" / "reports" / "catalog_refresh_report.json"
-        cmd = _catalog_refresh_command(report_path)
-        try:
-            completed = subprocess.run(
-                cmd,
-                cwd=PROJECT_ROOT,
-                env=_catalog_refresh_env(),
-                capture_output=True,
-                text=True,
-                timeout=900,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise HTTPException(status_code=504, detail="Catalog refresh timed out.") from exc
+    result = _run_catalog_refresh_pipeline(timeout_sec=900)
+    report = result.get("report") if isinstance(result.get("report"), dict) else {}
 
-        report: dict[str, object] = {}
-        if report_path.exists():
-            try:
-                report = json.loads(report_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                report = {}
+    if result.get("timed_out"):
+        raise HTTPException(status_code=504, detail="Catalog refresh timed out.")
 
-        if completed.returncode == 2:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "message": "Catalog refresh failed validation.",
-                    "refresh_status": report.get("refresh_status"),
-                    "validation_status": report.get("validation_status"),
-                    "validation_errors": report.get("validation_errors", []),
-                    "validation_warnings": report.get("validation_warnings", []),
-                },
-            )
+    if result.get("locked") or report.get("refresh_status") == "skipped":
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "message": "Catalog refresh already in progress.",
+                "refresh_status": report.get("refresh_status"),
+                "refresh_error": report.get("refresh_error"),
+            },
+        )
 
-        if report.get("refresh_status") == "skipped":
-            raise HTTPException(
-                status_code=429,
-                detail={
-                    "message": "Catalog refresh already in progress.",
-                    "refresh_status": report.get("refresh_status"),
-                    "refresh_error": report.get("refresh_error"),
-                },
-            )
+    returncode = result.get("returncode")
+    if returncode == 2:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Catalog refresh failed validation.",
+                "refresh_status": report.get("refresh_status"),
+                "validation_status": report.get("validation_status"),
+                "validation_errors": report.get("validation_errors", []),
+                "validation_warnings": report.get("validation_warnings", []),
+            },
+        )
 
-        if completed.returncode != 0:
-            detail = report.get("refresh_error") or completed.stderr or completed.stdout or "Catalog refresh failed."
-            raise HTTPException(status_code=502, detail=str(detail))
+    if returncode != 0:
+        detail = report.get("refresh_error") or result.get("stderr") or result.get("stdout") or "Catalog refresh failed."
+        raise HTTPException(status_code=502, detail=str(detail))
 
-        status = _catalog_status()
-        return {
-            "refresh": report,
-            "catalog": status,
-            "returncode": completed.returncode,
-        }
-    finally:
-        _refresh_lock.release()
+    status = _catalog_status()
+    return {
+        "refresh": report,
+        "catalog": status,
+        "returncode": returncode,
+    }
 
 
 @app.get("/prices/status")
@@ -918,6 +1072,9 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
         economic_expansion_enabled=payload.economic_expansion_enabled,
         optimization_mode=payload.optimization_mode,
         max_candidates=payload.max_candidates,
+        result_limit=payload.result_limit,
+        remaining_fuel_liters=payload.remaining_fuel_liters,
+        return_to_origin=payload.return_to_origin,
         route_detour_factor=settings.route_detour_factor,
         local_search_radius_km=local_search_radius_km,
         corridor_radius_km=corridor_radius_km,

@@ -11,7 +11,6 @@ import time
 import urllib.error
 import urllib.request
 import webbrowser
-from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -22,7 +21,6 @@ LAN_HOST = "0.0.0.0"
 DEFAULT_PORT = 8001
 DEFAULT_BROWSER_HOST = "127.0.0.1"
 HEALTH_TIMEOUT_SEC = 35
-CATALOG_REFRESH_INTERVAL = timedelta(hours=4)
 
 
 def _looks_like_project_root(path: Path) -> bool:
@@ -110,50 +108,6 @@ def request_json(method: str, url: str, timeout: int = 10) -> dict[str, Any]:
     return json.loads(body) if body else {}
 
 
-def parse_catalog_timestamp(value: object) -> datetime | None:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    text = value.strip()
-    if text.endswith("Z"):
-        text = f"{text[:-1]}+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
-def catalog_refresh_due(status: dict[str, Any], now: datetime | None = None) -> tuple[bool, str]:
-    current_time = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    built_at = parse_catalog_timestamp(status.get("built_at"))
-    station_count = int(status.get("station_count") or 0)
-    if station_count <= 0:
-        return True, "catalog has no stations"
-    if built_at is None:
-        return True, "catalog built_at is missing or invalid"
-    age = current_time - built_at
-    if age >= CATALOG_REFRESH_INTERVAL:
-        return True, f"catalog is stale age_seconds={int(age.total_seconds())}"
-    remaining = CATALOG_REFRESH_INTERVAL - age
-    return False, f"catalog is fresh remaining_seconds={int(remaining.total_seconds())}"
-
-
-def should_start_refresh_worker(base_url: str) -> bool:
-    try:
-        status = request_json("GET", f"{base_url}/catalog/status", timeout=10)
-    except Exception as exc:
-        log(f"catalog freshness check failed, refresh will run: {exc}")
-        return True
-    due, reason = catalog_refresh_due(status)
-    if due:
-        log(f"catalog refresh due: {reason}")
-        return True
-    log(f"catalog refresh skipped: {reason}")
-    return False
-
-
 def server_ready(base_url: str) -> bool:
     try:
         payload = request_json("GET", f"{base_url}/health", timeout=3)
@@ -214,17 +168,41 @@ def resolve_bind_host(requested_host: str, lan: bool = False) -> str:
     return requested_host
 
 
-def refresh_worker(base_url: str) -> int:
-    log("background refresh started")
+def catalog_refresh_command(report_path: Path) -> list[str]:
+    args = [
+        "--source",
+        "minetur",
+        "--write-report",
+        str(report_path),
+    ]
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--catalog-refresh-script", *args]
+    return [sys.executable, str(ROOT / "scripts" / "refresh_catalog.py"), *args]
+
+
+def run_catalog_refresh_once() -> int:
+    REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    report_path = REPORT_DIR / "catalog_refresh_report.json"
+    cmd = catalog_refresh_command(report_path)
+    log("catalog refresh command started")
     try:
-        payload = request_json("POST", f"{base_url}/catalog/refresh", timeout=1800)
+        completed = subprocess.run(
+            cmd,
+            cwd=ROOT,
+            env=managed_env(),
+            timeout=1800,
+        )
     except Exception as exc:
-        log(f"background refresh failed: {exc}")
+        log(f"catalog refresh command failed: {exc}")
         return 1
-    refresh = payload.get("refresh") if isinstance(payload, dict) else {}
-    status = refresh.get("refresh_status") if isinstance(refresh, dict) else payload.get("returncode")
-    log(f"background refresh finished status={status}")
-    return 0
+    log(f"catalog refresh command finished returncode={completed.returncode}")
+    return int(completed.returncode)
+
+
+def refresh_worker(base_url: str) -> int:
+    _ = base_url
+    log("explicit background refresh started")
+    return run_catalog_refresh_once()
 
 
 def start_refresh_worker(base_url: str) -> None:
@@ -269,8 +247,12 @@ def run_launcher(args: argparse.Namespace) -> int:
         webbrowser.open(url)
         log(f"browser opened url={url}")
 
-    if not args.no_refresh and should_start_refresh_worker(base_url):
+    if args.refresh and not args.no_refresh:
         start_refresh_worker(base_url)
+    elif args.refresh and args.no_refresh:
+        log("explicit refresh skipped because --no-refresh was set")
+    else:
+        log("startup refresh skipped; automatic refresh is owned by the web service scheduler")
 
     return 0
 
@@ -286,6 +268,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--lan", action="store_true", help="Allow LAN access by binding the server to 0.0.0.0.")
     parser.add_argument("--no-browser", action="store_true", help="Start server without opening the browser.")
+    parser.add_argument("--refresh", action="store_true", help="Explicitly request a background data refresh after launch.")
     parser.add_argument("--no-refresh", action="store_true", help="Do not request a background data refresh.")
     parser.add_argument("--server-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--refresh-only", action="store_true", help=argparse.SUPPRESS)

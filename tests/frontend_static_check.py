@@ -100,6 +100,7 @@ def test_catalog_and_route_status_copy_present() -> None:
     _assert("freshness-fresh" in js and "freshness-recent" in js and "freshness-stale" in js, "Freshness color classes should be assigned by JS.")
     _assert("Ruta estimada por distancia" in js, "Haversine route status copy missing.")
     _assert("Ruta calculada con OpenRouteService" not in js, "ORS route note should not be shown in results.")
+    _assert("routeSource.includes('haversine')" in js, "Haversine route source note should be hidden from results.")
     _assert("emptyResultHtml" in js, "No-result helper missing.")
 
 
@@ -152,6 +153,47 @@ def test_sidebar_and_floating_search_layout() -> None:
     _assert("destination_block" in html, "Destination block should still exist for one-way trips.")
     _assert("syncReturnMode" in js, "Return mode synchronizer missing.")
     _assert("setActive(same ? 'origin' : 'destination')" in js, "Return mode should switch active search point.")
+    _assert('for="liters">Cantidad a repostar</label>' in html, "Quantity field label should be Cantidad a repostar.")
+    _assert("Cantidad de combustible a repostar." not in html, "Quantity helper copy should not be visible below the field.")
+    _assert("refuel_amount_hint" not in js and "refuel_amount_hint" not in html, "Removed quantity helper should not be referenced.")
+    _assert("remaining_fuel_liters" in html, "Remaining fuel input missing from sidebar.")
+    _assert('id="remaining_fuel_field"' in html, "Remaining fuel field wrapper should be addressable for conditional rendering.")
+    _assert("Litros en dep" in html, "Remaining fuel label missing from sidebar.")
+    _assert("fuel-context-row span-2" in html, "Consumption and remaining fuel should share the same layout group.")
+    _assert(".fuel-context-row" in styles and "grid-template-columns: 1fr" in styles, "Consumption and remaining fuel should stack vertically.")
+    _assert('for="consumption_l_100km">Consumo medio</label>' in html, "Consumption label should not include the unit.")
+    _assert("(l/100km)" not in html.lower(), "Consumption unit should move out of the label.")
+    _assert("L/100 km" in html, "Consumption input should show an internal L/100 km suffix.")
+    _assert("Litros en dep&#243;sito aproximados" in html, "Remaining fuel label should use explicit approximate fuel copy.")
+    _assert('id="quantity_unit"' in html and ">L</span>" in html, "Quantity input should include a visual unit suffix.")
+    _assert("$('quantity_unit').textContent = isBudget ? '€' : 'L'" in js, "Quantity unit suffix should switch between euros and liters.")
+    _assert("M&#225;s informaci&#243;n sobre litros en dep&#243;sito" in html, "Remaining fuel info icon missing.")
+    _assert("Obligatorio en viajes de ida" in html, "Remaining fuel tooltip should explain one-way requirement.")
+    _assert("Opcional si regresas al origen" in html, "Remaining fuel tooltip should explain return-to-origin optionality.")
+    _assert("position: fixed" in styles and "z-index: 10000" in styles, "Info tooltip should render above sidebar layers without clipping.")
+    _assert("--tooltip-left" in styles and "--tooltip-top" in styles, "Info tooltip should use viewport coordinates.")
+    _assert("tooltip.style.setProperty('--tooltip-left'" in js and "tooltip.style.setProperty('--tooltip-top'" in js, "Info tooltip should be positioned by JS.")
+    _assert("Combustible disponible actualmente en el veh" not in html, "Remaining fuel helper text should not be visible.")
+    _assert("parseOptionalPositiveDecimal('remaining_fuel_liters')" in js, "Remaining fuel should use optional positive decimal validation.")
+    _assert("remainingFuel === null" in js, "Invalid remaining fuel should be blocked before optimize.")
+    _assert("function setRemainingFuelError" in js, "Remaining fuel should have a scoped error-state helper.")
+    _assert("setRemainingFuelError(true)" in js, "Remaining fuel validation should mark only the field as invalid.")
+    _assert("remaining-fuel-field--error" in js and ".remaining-fuel-field--error" in styles, "Remaining fuel should have a specific field-level error class.")
+    _assert("remaining-fuel-error-icon--label" not in html, "Remaining fuel label should not add a second warning icon next to the info icon.")
+    _assert("remaining-fuel-error-icon--input" in html, "Remaining fuel input error icon missing.")
+    _assert("Introduce los litros actuales del dep&#243;sito para continuar." in html, "Remaining fuel inline error copy missing.")
+    _assert("aria-invalid" in js, "Remaining fuel error state should update aria-invalid.")
+    _assert(".field-error-message" in styles, "Remaining fuel inline error styles missing.")
+    _assert("input.input-error" in styles, "Input error style should be present.")
+    _assert("$('remaining_fuel_liters').placeholder = same ? 'Opcional' : 'Obligatorio'" in js, "Remaining fuel placeholder should follow return mode.")
+    _assert("$('remaining_fuel_liters').required = !same" in js, "Remaining fuel should be required only for one-way trips.")
+    _assert("remainingFuelField.hidden = same" in js, "Remaining fuel section should be hidden when returning to origin.")
+    _assert("closeInfoTooltips()" in js, "Open remaining fuel tooltip should close when the section is hidden.")
+    _assert("const remainingFuel = returnToOrigin ? undefined : parseOptionalPositiveDecimal('remaining_fuel_liters')" in js, "Hidden remaining fuel value should not be parsed or sent.")
+    _assert("!$('return_to_origin').checked && remainingFuel === undefined" in js, "One-way trips should require remaining fuel before optimize.")
+    _assert("payload.remaining_fuel_liters = remainingFuel" in js, "Optimize payload should send remaining_fuel_liters when filled.")
+    _assert("remainingFuel !== undefined" in js, "Optimize payload should omit remaining_fuel_liters when empty.")
+    _assert("return_to_origin: $('return_to_origin').checked" in js, "Optimize payload should send return_to_origin.")
 
 
 def test_app_js_renders_warnings() -> None:
@@ -170,6 +212,7 @@ def test_haversine_copy_appears_once() -> None:
         js.count("Ruta estimada por distancia") == 1,
         "Haversine copy should appear once, only as structured warning.",
     )
+    _assert("Fuente de ruta" in js and "routeSource.includes('haversine')" in js, "Technical haversine route source should be suppressed.")
 
 
 def test_styles_warning_classes() -> None:
@@ -229,11 +272,39 @@ def test_app_js_handles_virtual_brand() -> None:
     js = _read("static/app.js")
     styles = _read("static/styles.css")
     _assert("is_virtual" in js or "__INDEPENDENT__" in js, "Virtual brand handling missing from JS.")
-    _assert("brand-check--virtual" in js, "Virtual brand class missing from JS.")
-    _assert(".brand-check--virtual" in styles, "Virtual brand class missing from CSS.")
+    _assert("const TOP_BRAND_SELECTOR_LIMIT = 10" in js, "Brand selector should expose a top-10 limit constant.")
+    _assert("function primaryBrandOptions" in js, "Brand selector should derive primary visible options.")
+    _assert(".filter(brand => !brand.is_virtual)" in js, "Primary brand selector should exclude virtual/internal brand options.")
+    _assert(".slice(0, TOP_BRAND_SELECTOR_LIMIT)" in js, "Primary brand selector should render only top brands.")
+    _assert("Number(b.station_count || 0) - Number(a.station_count || 0)" in js, "Primary brands should be sorted by station count.")
+    _assert("state.brands = brands" in js, "Frontend should keep the full /brands response in state.")
+    _assert("const visible = primaryBrandOptions(state.brands)" in js, "Brand UI should render only derived visible options.")
+    _assert("const shouldFilterByBrands = !shouldExcludeBrands && brands.length > 0 && !allBrandsSelected()" in js, "All-brands mode must not send the visible top-10 as a backend filter.")
+    _assert(".brand-check--virtual" in styles, "Virtual brand style should remain available if reused later.")
     _assert(".brand-hint" in styles, "Virtual brand hint style missing from CSS.")
     _assert("function excludedBrands" in js, "excludedBrands helper missing for all-except brand filtering.")
     _assert("payload.excluded_brands = excluded" in js, "Optimize payload should support brand exclusions.")
+
+
+def test_brand_loading_state_and_independent_option_fetches() -> None:
+    html = _read("static/index.html")
+    js = _read("static/app.js")
+    styles = _read("static/styles.css")
+    _assert('id="brand_checks" class="brand-grid brand-grid--loading"' in html, "Brand grid should render an initial loading state.")
+    _assert("brand-loading-status" in html and "brand-skeleton-row" in html, "Initial brand loading skeleton missing.")
+    _assert("brand-grid--loading" in styles and "@keyframes brand-skeleton-shimmer" in styles, "Brand loading skeleton styles missing.")
+    brand_loading_region = html[html.find('id="brand_checks"'):html.find("</div>\n          </div>", html.find('id="brand_checks"'))]
+    _assert('name="brand_filter"' not in brand_loading_region, "Brand loading skeleton must not create fake brand_filter inputs.")
+    _assert("function renderBrandLoading" in js, "Brand loading renderer missing.")
+    _assert("function renderBrandLoadError" in js, "Brand load error renderer missing.")
+    load_start = js.find("async function loadOptions")
+    load_region = js[load_start:js.find("$('select_all_brands')", load_start)] if load_start != -1 else ""
+    _assert("const loadFuels = async ()" in load_region, "loadOptions should split fuel loading into its own task.")
+    _assert("const loadBrands = async ()" in load_region, "loadOptions should split brand loading into its own task.")
+    _assert("setPddOptions('fuel_type', data.fuels || [])" in load_region, "Fuel dropdown should update inside the independent fuel task.")
+    _assert("renderBrands(data.brands || [])" in load_region, "Brands should render inside the independent brand task.")
+    _assert("Promise.allSettled" in load_region, "loadOptions should let independent option tasks settle without blocking the first successful hydration.")
+    _assert("const [fuels, brands] = await Promise.all" not in load_region, "Fuel hydration must not wait behind /brands.")
 
 
 def test_map_has_user_location_control() -> None:
@@ -262,10 +333,19 @@ def test_map_has_user_location_control() -> None:
     _assert("FuelOpt geolocation result" in js, "Geolocation debug log missing.")
     _assert("fallback_used: false" in js, "Geolocation logs should state no fallback was used.")
     _assert("Ubicación aproximada: precisión baja." in js, "Low accuracy location warning missing.")
+    _assert("function getLocationAccuracySeverity" in js, "Location accuracy severity helper missing.")
+    _assert("MEDIUM_LOCATION_ACCURACY_M" in js, "Medium location accuracy threshold missing.")
+    _assert("POOR_LOCATION_ACCURACY_M" in js, "Poor location accuracy threshold missing.")
+    _assert("location-accuracy-warning--poor" in js, "Poor location accuracy warning class missing from JS.")
+    _assert("location-accuracy-warning--medium" in js, "Medium location accuracy warning class missing from JS.")
+    _assert("location-accuracy-warning--soft" in js, "Soft location accuracy warning class missing from JS.")
     _assert("Permiso de ubicación denegado." in js, "Geolocation permission error copy missing.")
     _assert("Tu navegador no soporta geolocalización." in js, "Unsupported geolocation copy missing.")
     _assert(".user-location-control" in styles, "User location control styles missing.")
     _assert(".user-location-button" in styles, "User location button styles missing.")
+    _assert(".route-status.location-accuracy-warning--poor" in styles, "Poor location accuracy warning class missing from CSS.")
+    _assert(".route-status.location-accuracy-warning--medium" in styles, "Medium location accuracy warning class missing from CSS.")
+    _assert(".route-status.location-accuracy-warning--soft" in styles, "Soft location accuracy warning class missing from CSS.")
 
 
 def test_map_controls_share_layout_anchor() -> None:
@@ -632,10 +712,10 @@ def test_emerald_gold_palette_applied() -> None:
         "CTA arrow must not be injected as '->' from app.js.",
     )
 
-    # 8. Consumo medio shows l/100km unit in parentheses
+    # 8. Consumo medio uses clean label plus internal unit suffix
     _assert(
-        "(l/100km)" in html,
-        "Consumo medio field must display '(l/100km)' unit in index.html.",
+        'for="consumption_l_100km">Consumo medio</label>' in html and "L/100 km" in html,
+        "Consumo medio field must use a clean label and internal L/100 km unit suffix.",
     )
 
     # 9. No brand logo asset paths added in this phase

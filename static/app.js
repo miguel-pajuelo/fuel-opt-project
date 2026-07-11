@@ -15,6 +15,12 @@
       const value = Number($(id).value.replace(',', '.'));
       return Number.isFinite(value) && value > 0 ? value : null;
     };
+    const parseOptionalPositiveDecimal = (id) => {
+      const raw = $(id).value.trim();
+      if (!raw) return undefined;
+      const value = Number(raw.replace(',', '.'));
+      return Number.isFinite(value) && value > 0 ? value : null;
+    };
     let refreshMessageTimer = null;
     let lastCatalogRefreshValue = null;
     let lastCatalogStatus = null;
@@ -215,17 +221,30 @@
       return excluded.length > 0 && selected.length > 10;
     }
 
+    function setRemainingFuelError(hasError) {
+      const active = Boolean(hasError);
+      const field = $('remaining_fuel_field');
+      const input = $('remaining_fuel_liters');
+      field.classList.toggle('remaining-fuel-field--error', active);
+      input.classList.toggle('input-error', active);
+      input.setAttribute('aria-invalid', String(active));
+    }
+
     function updateBrandFilterState() {
       const allSelected = allBrandsSelected();
       const excludedCount = excludedBrands().length;
+      const isPending = brandInputs().length === 0;
       if (allSelected) {
         state.brandFilterMode = 'all';
       }
       const allExcept = state.brandFilterMode === 'all_except' && excludedCount > 0;
-      $('select_all_brands').classList.toggle('active', allSelected || allExcept);
-      $('select_all_brands').setAttribute('aria-pressed', allExcept ? 'mixed' : String(allSelected));
+      const allActive = allSelected || allExcept || (isPending && state.brandFilterMode === 'all');
+      $('select_all_brands').classList.toggle('active', allActive);
+      $('select_all_brands').setAttribute('aria-pressed', allExcept ? 'mixed' : String(allActive));
       $('select_all_brands').textContent = allExcept ? `Todas excepto ${excludedCount}` : 'Todas';
     }
+
+    const TOP_BRAND_SELECTOR_LIMIT = 10;
 
     const BRAND_LOGOS = {
       'REPSOL':    '/static/logos/repsol.png',
@@ -309,19 +328,66 @@
       return BRAND_LOGO_FALLBACK;
     }
 
+    function primaryBrandOptions(brands) {
+      return brands
+        .filter(brand => !brand.is_virtual)
+        .slice()
+        .sort((a, b) => (
+          Number(b.station_count || 0) - Number(a.station_count || 0)
+          || String(a.label || a.canonical || '').localeCompare(String(b.label || b.canonical || ''), 'es')
+        ))
+        .slice(0, TOP_BRAND_SELECTOR_LIMIT);
+    }
+
+    function brandLoadingMarkup() {
+      return `
+        <div class="brand-loading-status" role="status">Cargando marcas...</div>
+        ${[1, 2, 3].map(() => `
+        <div class="brand-skeleton-row" aria-hidden="true">
+          <span class="brand-skeleton-logo"></span>
+          <span class="brand-skeleton-copy">
+            <span class="brand-skeleton-line brand-skeleton-line--name"></span>
+            <span class="brand-skeleton-line brand-skeleton-line--meta"></span>
+          </span>
+          <span class="brand-skeleton-toggle"></span>
+        </div>`).join('')}
+      `;
+    }
+
+    function renderBrandLoading({ force = false } = {}) {
+      const box = $('brand_checks');
+      if (!force && box.children.length) return;
+      box.classList.add('brand-grid--loading');
+      box.setAttribute('aria-busy', 'true');
+      box.innerHTML = brandLoadingMarkup();
+      updateBrandFilterState();
+    }
+
+    function renderBrandLoadError(message = 'No se pudieron cargar las marcas.') {
+      const box = $('brand_checks');
+      box.classList.remove('brand-grid--loading');
+      box.setAttribute('aria-busy', 'false');
+      box.innerHTML = `
+        <div class="brand-load-error" role="status">
+          <strong>Marcas no disponibles</strong>
+          <span>${escapeHtml(message)}</span>
+        </div>
+      `;
+      updateBrandFilterState();
+    }
+
     function renderBrands(brands) {
-      const realBrands = brands.filter(brand => !brand.is_virtual);
-      const virtualBrands = brands.filter(brand => brand.is_virtual);
-      const visible = [...realBrands.slice(0, 24), ...virtualBrands];
+      state.brands = brands;
+      const visible = primaryBrandOptions(state.brands);
+      $('brand_checks').classList.remove('brand-grid--loading');
+      $('brand_checks').setAttribute('aria-busy', 'false');
       $('brand_checks').innerHTML = visible.map((brand) => {
         const logoSrc = brandLogoFor(brand);
         const hasSpecificLogo = Boolean(BRAND_LOGOS[brand.canonical]);
         const logoClass = hasSpecificLogo ? 'brand-logo' : 'brand-logo brand-logo--generic';
-        const logoAlt = brand.is_virtual
-          ? 'Gasolinera sin marca reconocida'
-          : `Logo ${escapeHtml(brand.label)}`;
+        const logoAlt = `Logo ${escapeHtml(brand.label)}`;
         return `
-        <label class="brand-check${brand.is_virtual ? ' brand-check--virtual' : ''}" title="${escapeHtml(brand.label)}">
+        <label class="brand-check" title="${escapeHtml(brand.label)}">
           <span class="brand-logo-frame" aria-hidden="true">
             <img class="${logoClass}" src="${logoSrc}" alt="${logoAlt}" loading="lazy" onerror="this.src='${BRAND_LOGO_FALLBACK}';this.className='brand-logo brand-logo--generic'">
           </span>
@@ -355,6 +421,7 @@
       resultHasFit: false,
       sidebarCollapsed: false,
       brandFilterMode: 'all',
+      brands: [],
       userLocationMarker: null,
       userLocationAccuracyCircle: null,
     };
@@ -380,6 +447,8 @@
 
     const desktopSidebarQuery = window.matchMedia('(min-width: 1001px)');
     const LOW_LOCATION_ACCURACY_M = 1000;
+    const MEDIUM_LOCATION_ACCURACY_M = 2000;
+    const POOR_LOCATION_ACCURACY_M = 5000;
     const USER_LOCATION_PADDING = [80, 80];
     const USER_LOCATION_MAX_ZOOM = 17;
     const USER_LOCATION_MIN_GOOD_ACCURACY_ZOOM = 16;
@@ -441,6 +510,14 @@
       element.textContent = message;
       element.classList.toggle('visible', Boolean(message));
       element.classList.toggle('error', tone === 'error');
+      element.classList.remove(
+        'location-accuracy-warning--poor',
+        'location-accuracy-warning--medium',
+        'location-accuracy-warning--soft',
+      );
+      if (['poor', 'medium', 'soft'].includes(tone)) {
+        element.classList.add(`location-accuracy-warning--${tone}`);
+      }
     }
 
     function userLocationErrorMessage(error) {
@@ -450,6 +527,13 @@
       if (error.code === error.POSITION_UNAVAILABLE) return 'Ubicación no disponible.';
       if (error.code === error.TIMEOUT) return 'La ubicación ha tardado demasiado.';
       return 'No se pudo obtener tu ubicación.';
+    }
+
+    function getLocationAccuracySeverity(accuracyMeters) {
+      if (!Number.isFinite(accuracyMeters) || accuracyMeters <= LOW_LOCATION_ACCURACY_M) return '';
+      if (accuracyMeters > POOR_LOCATION_ACCURACY_M) return 'poor';
+      if (accuracyMeters > MEDIUM_LOCATION_ACCURACY_M) return 'medium';
+      return 'soft';
     }
 
     function focusUserLocation(latLng, accuracyMeters) {
@@ -544,8 +628,9 @@
       }
       focusUserLocation(latLng, accuracy);
       track('Geolocalización usada', { precision_m: String(Number.isFinite(accuracy) ? Math.round(accuracy) : -1) });
-      if (Number.isFinite(accuracy) && accuracy > LOW_LOCATION_ACCURACY_M) {
-        setRouteStatus('Ubicación aproximada: precisión baja.');
+      const accuracySeverity = getLocationAccuracySeverity(accuracy);
+      if (accuracySeverity) {
+        setRouteStatus('Ubicación aproximada: precisión baja.', accuracySeverity);
       } else {
         setRouteStatus('');
       }
@@ -978,10 +1063,8 @@
       $('refill_mode_liters').setAttribute('aria-pressed', String(!isBudget));
       $('refill_mode_budget').setAttribute('aria-pressed', String(isBudget));
       $('liters').placeholder = isBudget ? 'Ej. 40' : 'Ej. 30';
+      $('quantity_unit').textContent = isBudget ? '€' : 'L';
       $('liters').setAttribute('aria-label', isBudget ? 'Importe en euros' : 'Litros a repostar');
-      $('refuel_amount_hint').textContent = isBudget
-        ? 'Presupuesto total que quieres gastar.'
-        : 'Cantidad de combustible a repostar.';
     }
 
     function metricSvgIcon(innerHtml) {
@@ -1394,6 +1477,17 @@
       const searchCard = document.querySelector('.map-search-card');
       if (searchCard) searchCard.classList.toggle('return-mode', same);
       $('destination_block').style.display = same ? 'none' : '';
+      const remainingFuelField = $('remaining_fuel_field');
+      if (remainingFuelField) {
+        remainingFuelField.hidden = same;
+        remainingFuelField.setAttribute('aria-hidden', String(same));
+      }
+      $('remaining_fuel_liters').placeholder = same ? 'Opcional' : 'Obligatorio';
+      $('remaining_fuel_liters').required = !same;
+      if (same) {
+        setRemainingFuelError(false);
+        closeInfoTooltips();
+      }
       $('tab_destination').style.display = '';
       if (same && state.origin) {
         mirrorDestinationToOrigin();
@@ -1438,6 +1532,7 @@
       setInputMode('budget');
       track('Modo presupuesto activado');
     });
+    $('remaining_fuel_liters').addEventListener('input', () => setRemainingFuelError(false));
 
     syncRefuelInputUI();
     syncAllPointUI();
@@ -1584,9 +1679,103 @@
       }).join('');
     }
 
+    function closeInfoTooltips(except = null) {
+      document.querySelectorAll('.info-icon.is-open').forEach((el) => {
+        if (el === except) return;
+        el.classList.remove('is-open');
+        el.setAttribute('aria-expanded', 'false');
+        const tooltip = el.querySelector('.info-tooltip');
+        if (tooltip) {
+          tooltip.style.removeProperty('--tooltip-left');
+          tooltip.style.removeProperty('--tooltip-top');
+        }
+      });
+    }
+
+    function positionInfoTooltip(icon) {
+      const tooltip = icon?.querySelector('.info-tooltip');
+      if (!tooltip) return;
+      const boundary = icon.closest('.side') || icon.closest('.result-card') || document.documentElement;
+      const iconRect = icon.getBoundingClientRect();
+      const boundaryRect = boundary.getBoundingClientRect();
+      const margin = 14;
+      const safeLeft = Math.max(boundaryRect.left, 0) + margin;
+      const safeRight = Math.min(boundaryRect.right, window.innerWidth) - margin;
+      const safeTop = margin;
+      const safeBottom = window.innerHeight - margin;
+      const safeWidth = Math.max(0, safeRight - safeLeft);
+      const tooltipWidth = Math.min(tooltip.getBoundingClientRect().width || 260, safeWidth);
+      let tooltipLeft = icon.classList.contains('info-icon--below')
+        ? iconRect.left - Math.min(tooltipWidth - iconRect.width, 48)
+        : iconRect.left;
+      if (tooltipLeft + tooltipWidth > safeRight) tooltipLeft = safeRight - tooltipWidth;
+      if (tooltipLeft < safeLeft) tooltipLeft = safeLeft;
+      const tooltipHeight = tooltip.getBoundingClientRect().height || 64;
+      const belowTop = iconRect.bottom + 9;
+      const aboveTop = iconRect.top - tooltipHeight - 9;
+      const nextSection = icon.closest('.config-field, .brand-tools')?.parentElement?.nextElementSibling;
+      const nextTop = nextSection?.getBoundingClientRect?.().top ?? safeBottom;
+      const opensTooLow = icon.classList.contains('info-icon--below')
+        && belowTop + tooltipHeight > Math.min(safeBottom, nextTop - 8);
+      let tooltipTop = belowTop;
+      if ((opensTooLow || belowTop + tooltipHeight > safeBottom) && aboveTop >= safeTop) {
+        tooltipTop = aboveTop;
+      }
+      if (tooltipTop + tooltipHeight > safeBottom) tooltipTop = safeBottom - tooltipHeight;
+      if (tooltipTop < safeTop) tooltipTop = safeTop;
+      tooltip.style.setProperty('--tooltip-left', `${Math.round(tooltipLeft)}px`);
+      tooltip.style.setProperty('--tooltip-top', `${Math.round(tooltipTop)}px`);
+    }
+
+    function toggleInfoTooltip(icon) {
+      const wasOpen = icon.classList.contains('is-open');
+      closeInfoTooltips(icon);
+      if (wasOpen) {
+        icon.classList.remove('is-open');
+        icon.setAttribute('aria-expanded', 'false');
+        return;
+      }
+      positionInfoTooltip(icon);
+      icon.classList.add('is-open');
+      icon.setAttribute('aria-expanded', 'true');
+    }
+
+    document.querySelectorAll('#config_sidebar .info-icon').forEach((icon) => {
+      icon.setAttribute('aria-expanded', 'false');
+      icon.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleInfoTooltip(icon);
+      });
+      icon.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleInfoTooltip(icon);
+        }
+        if (e.key === 'Escape') {
+          closeInfoTooltips();
+        }
+      });
+    });
+
     document.addEventListener('click', () => {
       document.querySelectorAll('.pdd.is-open').forEach(closePDD);
-      document.querySelectorAll('.info-icon.is-open').forEach(el => el.classList.remove('is-open'));
+      closeInfoTooltips();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeInfoTooltips();
+    });
+
+    document.addEventListener('mouseover', (e) => {
+      const icon = e.target.closest?.('.info-icon');
+      if (icon) positionInfoTooltip(icon);
+    }, true);
+
+    document.addEventListener('focusin', (e) => {
+      const icon = e.target.closest?.('.info-icon');
+      if (icon) positionInfoTooltip(icon);
     });
 
     // Mobile tap toggle for info tooltips — delegated on the persistent result container
@@ -1594,9 +1783,7 @@
       const icon = e.target.closest('.info-icon');
       if (!icon) return;
       e.stopPropagation();
-      const wasOpen = icon.classList.contains('is-open');
-      document.querySelectorAll('.info-icon.is-open').forEach(el => el.classList.remove('is-open'));
-      if (!wasOpen) icon.classList.add('is-open');
+      toggleInfoTooltip(icon);
     });
 
     // Mobile tap toggle for info tooltips — sidebar icons
@@ -1604,25 +1791,46 @@
       const icon = e.target.closest('.info-icon');
       if (!icon) return;
       e.stopPropagation();
-      const wasOpen = icon.classList.contains('is-open');
-      document.querySelectorAll('.info-icon.is-open').forEach(el => el.classList.remove('is-open'));
-      if (!wasOpen) icon.classList.add('is-open');
+      toggleInfoTooltip(icon);
     });
 
     // ─────────────────────────────────────────────────────────────────
 
     async function loadOptions() {
-      const [fuels, brands] = await Promise.all([
-        fetch('/fuels').then(r => r.json()),
-        fetch('/brands').then(r => r.json()),
+      const loadFuels = async () => {
+        const response = await fetch('/fuels');
+        const data = await response.json();
+        if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'No se pudieron cargar los combustibles');
+        setPddOptions('fuel_type', data.fuels || []);
+      };
+      const loadBrands = async () => {
+        if (!state.brands.length) renderBrandLoading();
+        const response = await fetch('/brands');
+        const data = await response.json();
+        if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'No se pudieron cargar las marcas');
+        renderBrands(data.brands || []);
+      };
+      const results = await Promise.allSettled([
+        loadFuels(),
+        loadBrands().catch(error => {
+          renderBrandLoadError(error.message);
+          throw error;
+        }),
       ]);
-      setPddOptions('fuel_type', fuels.fuels);
-      renderBrands(brands.brands || []);
+      const failed = results.find(result => result.status === 'rejected');
+      if (failed) throw failed.reason;
     }
 
     $('select_all_brands').addEventListener('click', () => {
+      const inputs = brandInputs();
+      if (!inputs.length) {
+        state.brandFilterMode = 'all';
+        $('status').textContent = '';
+        updateBrandFilterState();
+        return;
+      }
       const shouldSelectAll = !allBrandsSelected();
-      brandInputs().forEach(input => {
+      inputs.forEach(input => {
         input.checked = shouldSelectAll;
       });
       state.brandFilterMode = shouldSelectAll ? 'all' : 'manual';
@@ -1676,6 +1884,9 @@
       const routeSource = String(data.route_source || selected.route_source || '').toLowerCase();
       if (!routeSource) return '';
       if (routeSource.includes('openrouteservice')) {
+        return '';
+      }
+      if (routeSource.includes('haversine')) {
         return '';
       }
       return `<div class="result-note"><strong>Fuente de ruta:</strong> ${escapeHtml(routeSource)}</div>`;
@@ -2208,9 +2419,12 @@
       const button = $('submit');
       button.disabled = true;
       $('status').textContent = 'Calculando...';
+      setRemainingFuelError(false);
       try {
         const amount = parsePositiveDecimal('liters');
         const consumption = parsePositiveDecimal('consumption_l_100km');
+        const returnToOrigin = $('return_to_origin').checked;
+        const remainingFuel = returnToOrigin ? undefined : parseOptionalPositiveDecimal('remaining_fuel_liters');
         if (amount === null) {
           $('status').textContent = state.inputMode === 'budget'
             ? 'Introduce un importe válido.'
@@ -2219,6 +2433,16 @@
         }
         if (consumption === null) {
           $('status').textContent = 'Introduce un consumo medio válido.';
+          return;
+        }
+        if (remainingFuel === null) {
+          setRemainingFuelError(true);
+          $('status').textContent = 'Introduce litros en dep\u00f3sito v\u00e1lidos.';
+          return;
+        }
+        if (!$('return_to_origin').checked && remainingFuel === undefined) {
+          setRemainingFuelError(true);
+          $('status').textContent = 'Introduce litros en dep\u00f3sito aproximados.';
           return;
         }
         const brands = selectedBrands();
@@ -2246,8 +2470,12 @@
           corridor_radius_km: 10,
           max_candidates: 75,
           result_limit: 10,
+          return_to_origin: $('return_to_origin').checked,
           use_ors: true,
         };
+        if (!returnToOrigin && remainingFuel !== undefined) {
+          payload.remaining_fuel_liters = remainingFuel;
+        }
         if (state.inputMode === 'budget') {
           payload.budget_amount_eur = amount;
         }

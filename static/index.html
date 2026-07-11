@@ -14,7 +14,7 @@
           async src="//gc.zgo.at/count.js"></script>
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
-  <link rel="stylesheet" href="/static/styles.css?v=feedback-modal-20260519-10">
+  <link rel="stylesheet" href="/static/styles.css?v=brand-loading-20260610-1">
 </head>
 <body>
   <div class="shell app-shell">
@@ -84,34 +84,83 @@
           </div>
 
           <div class="config-field amount-field span-2">
-            <label class="label" for="liters">Cantidad</label>
+            <label class="label" for="liters">Cantidad a repostar</label>
             <div class="amount-row">
               <div class="amount-mode" aria-label="Modo de cantidad">
                 <button id="refill_mode_liters" class="amount-mode-option active" type="button" aria-pressed="true">Litros</button>
                 <button id="refill_mode_budget" class="amount-mode-option" type="button" aria-pressed="false">Euros</button>
               </div>
-              <input id="liters" inputmode="decimal" value="30" aria-label="Cantidad a repostar">
+              <div class="input-shell input-shell--with-unit">
+                <input id="liters" inputmode="decimal" value="30" aria-label="Cantidad a repostar">
+                <span id="quantity_unit" class="input-unit" aria-hidden="true">L</span>
+              </div>
             </div>
-            <div id="refuel_amount_hint" class="input-hint">Cantidad de combustible a repostar.</div>
           </div>
 
-          <div class="config-field span-2">
-            <label class="label" for="consumption_l_100km">Consumo medio <span class="label-unit">(l/100km)</span></label>
-            <input id="consumption_l_100km" inputmode="decimal" value="5.5" aria-label="Consumo medio en litros cada 100 kil&#243;metros">
+          <div class="fuel-context-row span-2">
+            <div class="config-field">
+              <label class="label" for="consumption_l_100km">Consumo medio</label>
+              <div class="input-shell input-shell--with-unit input-shell--wide-unit">
+                <input id="consumption_l_100km" inputmode="decimal" value="5.5" aria-label="Consumo medio en litros cada 100 kil&#243;metros">
+                <span class="input-unit" aria-hidden="true">L/100 km</span>
+              </div>
+            </div>
+
+            <div id="remaining_fuel_field" class="config-field">
+              <div class="field-label-row">
+                <label class="label" for="remaining_fuel_liters">Litros en dep&#243;sito aproximados</label>
+                <button class="info-icon info-icon--below" type="button" tabindex="0" aria-label="M&#225;s informaci&#243;n sobre litros en dep&#243;sito" aria-expanded="false">
+                  <svg class="info-icon__svg" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M8 7.5v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="5" r="0.85" fill="currentColor"/></svg>
+                  <span class="info-tooltip" role="tooltip">Obligatorio en viajes de ida para filtrar estaciones alcanzables. Opcional si regresas al origen.</span>
+                </button>
+              </div>
+              <div class="input-shell input-shell--with-unit">
+                <input id="remaining_fuel_liters" inputmode="decimal" placeholder="Opcional" aria-label="Litros disponibles actualmente en el dep&#243;sito" aria-describedby="remaining_fuel_error">
+                <span class="remaining-fuel-error-icon remaining-fuel-error-icon--input" aria-hidden="true">!</span>
+                <span class="input-unit" aria-hidden="true">L</span>
+              </div>
+              <div id="remaining_fuel_error" class="field-error-message" role="alert" aria-live="polite">Introduce los litros actuales del dep&#243;sito para continuar.</div>
+            </div>
           </div>
 
           <div class="brand-section span-2">
             <div class="brand-tools">
               <div style="display:flex;align-items:center;gap:6px">
                 <label class="label" style="margin:0">Marcas</label>
-                <button class="info-icon info-icon--below" type="button" tabindex="0" aria-label="M&#225;s informaci&#243;n sobre el filtro de marcas">
+                <button class="info-icon info-icon--below" type="button" tabindex="0" aria-label="M&#225;s informaci&#243;n sobre el filtro de marcas" aria-expanded="false">
                   <svg class="info-icon__svg" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.5"/><path d="M8 7.5v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="5" r="0.85" fill="currentColor"/></svg>
-                  <span class="info-tooltip" role="tooltip">Pulsa &#8220;Todas&#8221; para buscar sin l&#237;mite de marcas. Manualmente, puedes seleccionar hasta 10 a la vez.</span>
+                  <span class="info-tooltip" role="tooltip">Mostramos las marcas principales. Con &#8220;Todas&#8221;, las menos comunes tambi&#233;n se incluyen.</span>
                 </button>
               </div>
               <button id="select_all_brands" class="link-button active" type="button" aria-pressed="true">Todas</button>
             </div>
-            <div id="brand_checks" class="brand-grid"></div>
+            <div id="brand_checks" class="brand-grid brand-grid--loading" aria-live="polite" aria-busy="true">
+              <div class="brand-loading-status" role="status">Cargando marcas...</div>
+              <div class="brand-skeleton-row" aria-hidden="true">
+                <span class="brand-skeleton-logo"></span>
+                <span class="brand-skeleton-copy">
+                  <span class="brand-skeleton-line brand-skeleton-line--name"></span>
+                  <span class="brand-skeleton-line brand-skeleton-line--meta"></span>
+                </span>
+                <span class="brand-skeleton-toggle"></span>
+              </div>
+              <div class="brand-skeleton-row" aria-hidden="true">
+                <span class="brand-skeleton-logo"></span>
+                <span class="brand-skeleton-copy">
+                  <span class="brand-skeleton-line brand-skeleton-line--name"></span>
+                  <span class="brand-skeleton-line brand-skeleton-line--meta"></span>
+                </span>
+                <span class="brand-skeleton-toggle"></span>
+              </div>
+              <div class="brand-skeleton-row" aria-hidden="true">
+                <span class="brand-skeleton-logo"></span>
+                <span class="brand-skeleton-copy">
+                  <span class="brand-skeleton-line brand-skeleton-line--name"></span>
+                  <span class="brand-skeleton-line brand-skeleton-line--meta"></span>
+                </span>
+                <span class="brand-skeleton-toggle"></span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -228,6 +277,6 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
-  <script src="/static/app.js?v=feedback-modal-20260519-11"></script>
+  <script src="/static/app.js?v=brand-loading-20260610-1"></script>
 </body>
 </html>
