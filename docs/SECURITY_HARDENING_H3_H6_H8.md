@@ -2,7 +2,7 @@
 
 This note documents the operational flags introduced for the audit findings
 H3 (proxy rate-limit keys), H6 (security headers) and H8 (IP logging / PII),
-and what still must be verified in a real proxied deployment (Railway).
+and what still must be verified when the local service is placed behind a proxy.
 
 ## Environment flags
 
@@ -12,9 +12,9 @@ and what still must be verified in a real proxied deployment (Railway).
 | `FUELOPT_LOG_CLIENT_IP` | `false` | When `true`, access logs include the raw client IP. When `false`, only a coarsely anonymized IP is logged (IPv4 → `/24`, IPv6 → `/48`). |
 
 Both default to the safe/local behavior. Set them explicitly **only** in a
-public deployment that sits behind a trusted reverse proxy.
+local deployment that sits behind a trusted reverse proxy.
 
-## H3 — what must be verified on Railway
+## H3 — what must be verified behind a reverse proxy
 
 `X-Forwarded-For` is only trusted when `FUELOPT_TRUST_PROXY_HEADERS=true`. The
 current implementation trusts the **left-most** entry, which assumes a single

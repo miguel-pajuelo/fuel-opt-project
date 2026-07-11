@@ -48,15 +48,15 @@ python -c "import app.api.main as a; print(a._slowapi_available)"
 ```
 
 `True` means limits are enforced. `False` means the no-op fallback is active —
-install dependencies before any public exposure:
+install dependencies before enabling the optional web endpoints:
 
 ```bash
 pip install -r requirements-web.txt
 ```
 
-## Deployment variables (configure manually in Railway / your host)
+## Environment variables
 
-Set these as provider-managed secrets/variables, never in a committed file:
+Set these locally as needed, never in a committed file:
 
 | Variable | Purpose |
 |---|---|
@@ -65,7 +65,7 @@ Set these as provider-managed secrets/variables, never in a committed file:
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `FEEDBACK_RECIPIENT` | Feedback SMTP (optional). |
 | `CORS_ORIGINS` | Comma-separated allowed origins (empty = same-origin only). |
 | `ALERT_WEBHOOK_URL` | Optional 5xx alert webhook. |
-| `FUELOPT_ENABLE_API_DOCS` | `false` in production. |
+| `FUELOPT_ENABLE_API_DOCS` | Keep disabled unless explicitly needed. |
 | `FUELOPT_ALLOW_LAN` | Keep `0` unless intentionally exposing on LAN. |
 | `FUELOPT_TRUST_PROXY_HEADERS` | `1` only behind a trusted reverse proxy (see `docs/SECURITY_HARDENING_H3_H6_H8.md`). |
 | `FUELOPT_LOG_CLIENT_IP` | `0` by default (logs anonymized IPs); `1` only for local/debug. |

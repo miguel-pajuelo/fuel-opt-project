@@ -252,7 +252,7 @@ def run_launcher(args: argparse.Namespace) -> int:
     elif args.refresh and args.no_refresh:
         log("explicit refresh skipped because --no-refresh was set")
     else:
-        log("startup refresh skipped; automatic refresh is owned by the web service scheduler")
+        log("startup refresh skipped; use --refresh to request a local refresh")
 
     return 0
 

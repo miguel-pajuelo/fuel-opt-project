@@ -113,18 +113,16 @@ Si el catálogo aparece como `degraded`, significa que la app no ha conseguido c
 - No subas `.env`, credenciales locales, dumps privados, cachés temporales ni entornos virtuales.
 - `/catalog/refresh` está protegido por `FUELOPT_ADMIN_TOKEN`.
 - La documentación automática de FastAPI queda oculta salvo que `FUELOPT_ENABLE_API_DOCS=true`.
-- Ten cuidado al desplegar públicamente: las búsquedas de ruta pueden pasar por ORS y los mapas por proveedores externos de tiles.
 
 ## Limitaciones conocidas
 
 - Proyecto en estado prototipo/demo.
 - La frescura de datos depende de la disponibilidad de las fuentes externas.
 - Algunas estimaciones pueden usar aproximaciones por distancia cuando ORS no responde.
-- No está endurecido para producción sin configurar observabilidad, límites, despliegue seguro y gestión robusta de secretos.
+- No sustituye una revisión de seguridad y configuración local adecuada antes de distribuir la aplicación.
 
 ## Roadmap
 
-- Despliegue público con HTTPS, variables secretas y refresco programado.
 - Monitorización de catálogo y alertas cuando el estado pase a degradado.
 - Mejora de scoring para tiempo de desvío, peajes y tráfico.
 - Historial de frescura de precios por fuente.

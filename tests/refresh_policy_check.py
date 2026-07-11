@@ -6,10 +6,8 @@ import os
 import sqlite3
 import sys
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from zoneinfo import ZoneInfo
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -175,43 +173,6 @@ def test_failed_refresh_does_not_replace_active_db() -> None:
         _assert(report["refresh_status"] == "failed", report)
 
 
-def test_launcher_refresh_schedule_is_noon_madrid() -> None:
-    madrid = ZoneInfo("Europe/Madrid")
-    now = datetime(2026, 6, 22, 13, 30, tzinfo=madrid)
-    slot = api_main.next_catalog_refresh_slot(now)
-
-    _assert(api_main.CATALOG_REFRESH_TIMEZONE_NAME == "Europe/Madrid", api_main.CATALOG_REFRESH_TIMEZONE_NAME)
-    _assert(api_main.CATALOG_REFRESH_HOUR == 12, api_main.CATALOG_REFRESH_HOUR)
-    _assert(api_main.CATALOG_REFRESH_MINUTE == 0, api_main.CATALOG_REFRESH_MINUTE)
-    _assert(api_main.CATALOG_REFRESH_TIMEZONE.key == "Europe/Madrid", api_main.CATALOG_REFRESH_TIMEZONE)
-    _assert(api_main.catalog_refresh_schedule_description() == "daily at 12:00 Europe/Madrid", api_main.catalog_refresh_schedule_description())
-    _assert(slot.isoformat() == "2026-06-23T12:00:00+02:00", slot.isoformat())
-    _assert(slot.hour == 12 and slot.minute == 0, slot.isoformat())
-    _assert(slot.tzinfo == madrid, slot.tzinfo)
-    _assert(slot.utcoffset().total_seconds() == 7200, slot.isoformat())
-
-
-def test_next_refresh_slot_handles_spanish_dst() -> None:
-    madrid = ZoneInfo("Europe/Madrid")
-    winter_next = api_main.next_catalog_refresh_slot(datetime(2026, 1, 15, 13, 0, tzinfo=madrid))
-    summer_next = api_main.next_catalog_refresh_slot(datetime(2026, 6, 22, 13, 0, tzinfo=madrid))
-    spring_transition_next = api_main.next_catalog_refresh_slot(datetime(2026, 3, 28, 13, 0, tzinfo=madrid))
-    autumn_transition_next = api_main.next_catalog_refresh_slot(datetime(2026, 10, 24, 13, 0, tzinfo=madrid))
-
-    _assert(winter_next.isoformat() == "2026-01-16T12:00:00+01:00", winter_next.isoformat())
-    _assert(summer_next.isoformat() == "2026-06-23T12:00:00+02:00", summer_next.isoformat())
-    _assert(spring_transition_next.isoformat() == "2026-03-29T12:00:00+02:00", spring_transition_next.isoformat())
-    _assert(autumn_transition_next.isoformat() == "2026-10-25T12:00:00+01:00", autumn_transition_next.isoformat())
-
-
-def test_seconds_until_next_refresh_uses_noon_madrid() -> None:
-    madrid = ZoneInfo("Europe/Madrid")
-    seconds = api_main.seconds_until_next_catalog_refresh(datetime(2026, 6, 22, 11, 45, tzinfo=madrid))
-    _assert(seconds == 15 * 60, seconds)
-    seconds_at_noon = api_main.seconds_until_next_catalog_refresh(datetime(2026, 6, 22, 12, 0, tzinfo=madrid))
-    _assert(seconds_at_noon == 24 * 60 * 60, seconds_at_noon)
-
-
 def test_launcher_has_no_stale_startup_refresh_policy() -> None:
     _assert(not hasattr(fuelopt_launcher, "catalog_refresh_due"), "stale due helper should not exist")
     _assert(not hasattr(fuelopt_launcher, "should_start_refresh_worker"), "startup freshness trigger should not exist")
@@ -284,114 +245,13 @@ def test_explicit_launcher_refresh_remains_available() -> None:
     _assert(calls == ["http://127.0.0.1:8124"], calls)
 
 
-def test_web_startup_starts_scheduler_without_refresh_execution() -> None:
-    calls: list[str] = []
-    original_thread = api_main._scheduler_thread
-    original_thread_class = api_main.threading.Thread
-    original_runner = api_main._run_catalog_refresh_pipeline
-
-    class FakeThread:
-        def __init__(self, target, args=(), name=None, daemon=None):
-            calls.append(f"thread:{name}:{daemon}")
-            self._alive = False
-
-        def start(self):
-            calls.append("start")
-            self._alive = True
-
-        def is_alive(self):
-            return self._alive
-
-        def join(self, timeout=None):
-            calls.append(f"join:{timeout}")
-            self._alive = False
-
-    try:
-        api_main._scheduler_thread = None
-        api_main.threading.Thread = FakeThread
-        api_main._run_catalog_refresh_pipeline = lambda *_args, **_kwargs: calls.append("refresh")
-        api_main._start_catalog_refresh_scheduler_on_startup()
-    finally:
-        api_main.threading.Thread = original_thread_class
-        api_main._run_catalog_refresh_pipeline = original_runner
-        api_main._scheduler_thread = original_thread
-        api_main._scheduler_stop_event.clear()
-
-    _assert(calls == ["thread:fuelopt-catalog-refresh-scheduler:True", "start"], calls)
-
-
-def test_scheduler_loop_waits_before_refresh() -> None:
-    calls: list[object] = []
-    original_seconds = api_main.seconds_until_next_catalog_refresh
-    original_slot = api_main.next_catalog_refresh_slot
-    original_runner = api_main._run_catalog_refresh_pipeline
-
-    class StopAfterFirstWait:
-        def is_set(self) -> bool:
-            return False
-
-        def wait(self, seconds: float) -> bool:
-            calls.append(("wait", seconds))
-            return True
-
-    try:
-        api_main.seconds_until_next_catalog_refresh = lambda *_args, **_kwargs: 900.0
-        api_main.next_catalog_refresh_slot = lambda *_args, **_kwargs: datetime(2026, 6, 22, 12, 0, tzinfo=ZoneInfo("Europe/Madrid"))
-        api_main._run_catalog_refresh_pipeline = lambda *_args, **_kwargs: calls.append("refresh")
-        api_main._catalog_refresh_scheduler_loop(StopAfterFirstWait())
-    finally:
-        api_main.seconds_until_next_catalog_refresh = original_seconds
-        api_main.next_catalog_refresh_slot = original_slot
-        api_main._run_catalog_refresh_pipeline = original_runner
-
-    _assert(calls == [("wait", 900.0)], calls)
-
-
-def test_web_scheduler_prevents_duplicate_loop_in_process() -> None:
-    calls: list[str] = []
-    original_thread = api_main._scheduler_thread
-
-    class AliveThread:
-        def is_alive(self):
-            calls.append("checked")
-            return True
-
-    try:
-        api_main._scheduler_thread = AliveThread()
-        started = api_main.start_catalog_refresh_scheduler()
-    finally:
-        api_main._scheduler_thread = original_thread
-
-    _assert(started is False, started)
-    _assert(calls == ["checked"], calls)
-
-
-def test_one_automatic_scheduling_entrypoint() -> None:
+def test_web_process_has_no_automatic_refresh_scheduler() -> None:
     api_source = (ROOT / "app" / "api" / "main.py").read_text(encoding="utf-8")
     launcher = (ROOT / "fuelopt_launcher.py").read_text(encoding="utf-8")
-    web_config = json.loads((ROOT / "railway.json").read_text(encoding="utf-8"))
 
-    _assert(api_source.count("def _catalog_refresh_scheduler_loop") == 1, "expected one web scheduler loop")
-    _assert(api_source.count("@app.on_event(\"startup\")") >= 2, "web startup hooks should include scheduler start")
+    for forbidden in ("_catalog_refresh_scheduler_loop", "start_catalog_refresh_scheduler", "CATALOG_REFRESH_TIMEZONE"):
+        _assert(forbidden not in api_source, f"automatic web scheduler remains: {forbidden}")
     _assert("--refresh-scheduler" not in launcher, "launcher scheduler CLI must not exist")
-    _assert(web_config["deploy"].get("cronSchedule") is None, web_config)
-    _assert(web_config["deploy"].get("numReplicas") == 1, web_config)
-    _assert(web_config["deploy"].get("requiredMountPath") == "/data", web_config)
-    _assert("--refresh-scheduler" not in web_config["deploy"]["startCommand"], web_config)
-    _assert(not (ROOT / "railway.refresh.json").exists(), "separate refresh worker config should not exist")
-
-
-def test_no_old_automatic_refresh_schedule_remains() -> None:
-    paths = [
-        ROOT / "app" / "api" / "main.py",
-        ROOT / "fuelopt_launcher.py",
-        ROOT / "railway.json",
-        ROOT / "docs" / "RAILWAY_DEPLOYMENT.md",
-        ROOT / "docs" / "PUBLICATION_ROADMAP.md",
-    ]
-    combined = "\n".join(path.read_text(encoding="utf-8") for path in paths if path.exists())
-    for forbidden in ("timedelta(hours=4)", "0 */4 * * *", "older_than_four_hours", "should_start_refresh_worker", "--refresh-scheduler"):
-        _assert(forbidden not in combined, f"old automatic refresh schedule remains: {forbidden}")
 
 
 def test_request_paths_are_catalog_read_only() -> None:
@@ -429,6 +289,17 @@ def test_manual_refresh_endpoint_remains_distinct() -> None:
     _assert("_run_catalog_refresh_pipeline" in source, "manual refresh endpoint should use the shared refresh runner")
     _assert("subprocess.run" in runner_source, "shared refresh runner should still run the safe refresh command")
     _assert("_require_catalog_refresh_auth" in source or "Depends(_require_catalog_refresh_auth)" in source, "manual refresh should stay protected")
+
+
+def test_manual_refresh_pipeline_prevents_concurrent_runs() -> None:
+    acquired = api_main._refresh_lock.acquire(blocking=False)
+    _assert(acquired, "test could not acquire refresh lock")
+    try:
+        result = api_main._run_catalog_refresh_pipeline()
+    finally:
+        api_main._refresh_lock.release()
+
+    _assert(result.get("locked") is True, result)
 
 
 def test_launcher_defaults_to_localhost() -> None:
@@ -479,20 +350,14 @@ def run() -> None:
     test_publish_snapshot_candidate_replaces_active_once_valid()
     test_zero_backup_retention_removes_previous_sqlite_copy()
     test_failed_refresh_does_not_replace_active_db()
-    test_launcher_refresh_schedule_is_noon_madrid()
-    test_next_refresh_slot_handles_spanish_dst()
-    test_seconds_until_next_refresh_uses_noon_madrid()
     test_launcher_has_no_stale_startup_refresh_policy()
     test_launcher_startup_does_not_refresh_by_default()
     test_explicit_launcher_refresh_remains_available()
-    test_web_startup_starts_scheduler_without_refresh_execution()
-    test_scheduler_loop_waits_before_refresh()
-    test_web_scheduler_prevents_duplicate_loop_in_process()
-    test_one_automatic_scheduling_entrypoint()
-    test_no_old_automatic_refresh_schedule_remains()
+    test_web_process_has_no_automatic_refresh_scheduler()
     test_request_paths_are_catalog_read_only()
     test_stale_warning_policy_does_not_refresh()
     test_manual_refresh_endpoint_remains_distinct()
+    test_manual_refresh_pipeline_prevents_concurrent_runs()
     test_launcher_defaults_to_localhost()
     test_launcher_lan_is_explicit()
     test_launcher_lan_env_truthy_values()

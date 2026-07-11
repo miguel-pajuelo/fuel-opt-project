@@ -12,10 +12,8 @@ import threading
 import time
 import unicodedata
 import uuid
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -188,15 +186,7 @@ if _cors_origins:
     )
 
 _refresh_lock = threading.Lock()
-_scheduler_lock = threading.Lock()
-_scheduler_stop_event = threading.Event()
-_scheduler_thread: threading.Thread | None = None
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-CATALOG_REFRESH_TIMEZONE_NAME = "Europe/Madrid"
-CATALOG_REFRESH_TIMEZONE = ZoneInfo(CATALOG_REFRESH_TIMEZONE_NAME)
-CATALOG_REFRESH_HOUR = 12
-CATALOG_REFRESH_MINUTE = 0
 
 
 # Baseline security headers applied to every response (H6). No CSP is set:
@@ -260,40 +250,6 @@ def _validate_startup() -> None:
             f"Base de datos no encontrada en {settings.db_path}. "
             "Ejecuta scripts/refresh_catalog.py antes de arrancar."
         )
-
-
-def _madrid_time(value: datetime | None = None) -> datetime:
-    current_time = value or datetime.now(CATALOG_REFRESH_TIMEZONE)
-    if current_time.tzinfo is None:
-        current_time = current_time.replace(tzinfo=CATALOG_REFRESH_TIMEZONE)
-    return current_time.astimezone(CATALOG_REFRESH_TIMEZONE)
-
-
-def next_catalog_refresh_slot(now: datetime | None = None) -> datetime:
-    madrid_time = _madrid_time(now)
-    scheduled_today = madrid_time.replace(
-        hour=CATALOG_REFRESH_HOUR,
-        minute=CATALOG_REFRESH_MINUTE,
-        second=0,
-        microsecond=0,
-    )
-    if madrid_time < scheduled_today:
-        return scheduled_today
-    return scheduled_today + timedelta(days=1)
-
-
-def seconds_until_next_catalog_refresh(now: datetime | None = None) -> float:
-    madrid_time = _madrid_time(now)
-    next_slot = next_catalog_refresh_slot(madrid_time)
-    delta = next_slot.astimezone(timezone.utc) - madrid_time.astimezone(timezone.utc)
-    return max(0.0, delta.total_seconds())
-
-
-def catalog_refresh_schedule_description() -> str:
-    return (
-        f"daily at {CATALOG_REFRESH_HOUR:02d}:{CATALOG_REFRESH_MINUTE:02d} "
-        f"{CATALOG_REFRESH_TIMEZONE_NAME}"
-    )
 
 
 INDEPENDENT_BRAND_LABEL = "Independientes / sin marca"
@@ -372,79 +328,6 @@ def _run_catalog_refresh_pipeline(timeout_sec: int = 900) -> dict[str, object]:
         }
     finally:
         _refresh_lock.release()
-
-
-def _catalog_refresh_scheduler_loop(stop_event: threading.Event) -> None:
-    logger.info(
-        f"catalog refresh scheduler started schedule={catalog_refresh_schedule_description()}",
-    )
-    while not stop_event.is_set():
-        next_slot = next_catalog_refresh_slot()
-        wait_seconds = seconds_until_next_catalog_refresh()
-        logger.info(
-            "catalog refresh scheduled "
-            f"scheduled_for={next_slot.isoformat()} "
-            f"timezone={CATALOG_REFRESH_TIMEZONE_NAME} "
-            f"wait_seconds={int(wait_seconds)}",
-        )
-        if stop_event.wait(wait_seconds):
-            break
-
-        result = _run_catalog_refresh_pipeline()
-        report = result.get("report") if isinstance(result.get("report"), dict) else {}
-        returncode = result.get("returncode")
-        refresh_status = report.get("refresh_status") if isinstance(report, dict) else ""
-        if returncode == 0:
-            logger.info(
-                f"scheduled catalog refresh succeeded refresh_status={refresh_status or 'ok'}",
-            )
-        else:
-            logger.error(
-                "scheduled catalog refresh failed "
-                f"returncode={returncode} refresh_status={refresh_status or 'failed'}",
-            )
-    logger.info("catalog refresh scheduler stopped")
-
-
-def start_catalog_refresh_scheduler() -> bool:
-    global _scheduler_thread
-    with _scheduler_lock:
-        if _scheduler_thread and _scheduler_thread.is_alive():
-            logger.info("catalog refresh scheduler already running")
-            return False
-        _scheduler_stop_event.clear()
-        _scheduler_thread = threading.Thread(
-            target=_catalog_refresh_scheduler_loop,
-            args=(_scheduler_stop_event,),
-            name="fuelopt-catalog-refresh-scheduler",
-            daemon=True,
-        )
-        _scheduler_thread.start()
-        return True
-
-
-def stop_catalog_refresh_scheduler(timeout_sec: float = 5.0) -> None:
-    global _scheduler_thread
-    with _scheduler_lock:
-        thread = _scheduler_thread
-        if not thread:
-            return
-        _scheduler_stop_event.set()
-    if thread.is_alive():
-        thread.join(timeout=timeout_sec)
-    with _scheduler_lock:
-        if _scheduler_thread is thread:
-            _scheduler_thread = None
-
-
-@app.on_event("startup")
-def _start_catalog_refresh_scheduler_on_startup() -> None:
-    start_catalog_refresh_scheduler()
-
-
-@app.on_event("shutdown")
-def _stop_catalog_refresh_scheduler_on_shutdown() -> None:
-    stop_catalog_refresh_scheduler()
 
 
 def _bearer_token(value: str | None) -> str:
