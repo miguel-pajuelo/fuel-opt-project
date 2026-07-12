@@ -192,7 +192,7 @@ def test_project_root_database_fallback_is_not_marked_immutable() -> None:
             module_file=resource / "app" / "paths.py",
             frozen=False,
         )
-        _assert(paths.seed_db_path == legacy_db, paths)
+        _assert(paths.seed_db_path == legacy_db.resolve(), paths)
         _assert(paths.seed_db_is_immutable is False, "PROJECT_ROOT/data/db must remain WAL-aware")
 
 
