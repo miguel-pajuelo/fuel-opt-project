@@ -1,0 +1,208 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+    # Patch 7A bootstrap only. Removed after the remote runner validation.
+    branches:
+      - "codex/patch-7a"
+      - "codex/patch-7a-fail"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Dry-run version (MAJOR.MINOR.PATCH)"
+        required: true
+        default: "0.1.0"
+        type: string
+      fail_before_build:
+        description: "Test that an early failure publishes no artifacts"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuelopt-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and audit Windows artifacts
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      artifact-name: ${{ steps.version.outputs.artifact-name }}
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      REF_NAME: ${{ github.ref_name }}
+      REF_TYPE: ${{ github.ref_type }}
+      REQUESTED_VERSION: ${{ inputs.version }}
+      PYTHON_VERSION: "3.12.12"
+      INNO_VERSION: "6.7.3"
+      INNO_INSTALLER_SHA256: "9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Validate release identity and derive version
+        id: version
+        shell: pwsh
+        run: |
+          $isReleaseTag = $env:EVENT_NAME -eq 'push' -and $env:REF_TYPE -eq 'tag'
+          if ($isReleaseTag) {
+            if ($env:REF_NAME -notmatch '^v(?<version>\d+\.\d+\.\d+)$') {
+              throw "Release tags must use vMAJOR.MINOR.PATCH; received: $env:REF_NAME"
+            }
+            $version = $Matches.version
+          } else {
+            $version = if ($env:REQUESTED_VERSION) { $env:REQUESTED_VERSION.Trim() } else { '0.1.0' }
+            if ($version -notmatch '^\d+\.\d+\.\d+$') {
+              throw "Dry-run versions must use MAJOR.MINOR.PATCH; received: $version"
+            }
+          }
+          $artifactName = "FuelOpt-$version-windows"
+          "FUELOPT_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "artifact-name=$artifactName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "Release mode: $isReleaseTag; version: $version"
+
+      - name: Simulate a failure before build
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.fail_before_build) || github.ref_name == 'codex/patch-7a-fail' }}
+        shell: pwsh
+        run: throw 'Intentional Patch 7A failure before dependency installation and build.'
+
+      - name: Set up pinned Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            requirements-web.txt
+            requirements-build.txt
+
+      - name: Install pinned dependencies
+        shell: pwsh
+        run: python -m pip install --requirement requirements-web.txt --requirement requirements-build.txt
+
+      - name: Run release checks
+        shell: cmd
+        run: scripts\release_check.cmd
+
+      - name: Clean release outputs
+        shell: pwsh
+        run: scripts\clean_release_artifacts.ps1
+
+      - name: Build audited PyInstaller onedir bundle
+        shell: cmd
+        run: scripts\build_onedir.cmd
+
+      - name: Install verified Inno Setup compiler
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "innosetup-$env:INNO_VERSION.exe"
+          $url = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-$env:INNO_VERSION.exe"
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          $actualHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash
+          if ($actualHash -ne $env:INNO_INSTALLER_SHA256) {
+            throw "Inno Setup installer hash mismatch: $actualHash"
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Pyrsys B\.V\.') {
+            throw 'Inno Setup installer signature is invalid or has an unexpected publisher.'
+          }
+          $process = Start-Process -FilePath $installer `
+            -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER' `
+            -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Inno Setup installation failed with exit code $($process.ExitCode)."
+          }
+
+      - name: Build audited Inno Setup installer
+        shell: cmd
+        run: scripts\build_installer.cmd
+
+      - name: Package onedir bundle and checksums
+        shell: pwsh
+        run: |
+          $releaseDir = Join-Path $PWD 'dist\release'
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          $bundleArchive = Join-Path $releaseDir "FuelOpt-$env:FUELOPT_VERSION-windows-x64.zip"
+          $setupSource = Join-Path $PWD "dist\installer\FuelOpt-Setup-$env:FUELOPT_VERSION.exe"
+          $setupTarget = Join-Path $releaseDir (Split-Path $setupSource -Leaf)
+          Compress-Archive -Path 'dist\FuelOpt' -DestinationPath $bundleArchive -CompressionLevel Optimal
+          Copy-Item -LiteralPath $setupSource -Destination $setupTarget
+          $artifacts = @($setupTarget, $bundleArchive)
+          $checksumLines = foreach ($artifact in $artifacts) {
+            $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $(Split-Path $artifact -Leaf)"
+          }
+          $checksumLines | Set-Content -LiteralPath (Join-Path $releaseDir 'SHA256SUMS.txt') -Encoding utf8
+
+      - name: Audit release payload
+        shell: pwsh
+        run: |
+          python tests\bundle_check.py --bundle dist\FuelOpt
+          python tests\installer_check.py
+          $releaseFiles = @(Get-ChildItem -LiteralPath 'dist\release' -File)
+          if ($releaseFiles.Count -ne 3) {
+            throw "Expected installer, onedir ZIP and SHA256SUMS.txt; found $($releaseFiles.Count)."
+          }
+          $setup = Get-Item "dist\release\FuelOpt-Setup-$env:FUELOPT_VERSION.exe"
+          $versionInfo = $setup.VersionInfo
+          if ($versionInfo.ProductVersion -ne $env:FUELOPT_VERSION -or $versionInfo.FileVersion -ne $env:FUELOPT_VERSION) {
+            throw "Installer metadata version mismatch: product=$($versionInfo.ProductVersion), file=$($versionInfo.FileVersion)"
+          }
+          if ((Get-AuthenticodeSignature -LiteralPath $setup.FullName).Status -ne 'NotSigned') {
+            throw 'Patch 7 expects the installer to remain unsigned until code signing is configured.'
+          }
+
+      - name: Preserve workflow artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.version.outputs.artifact-name }}
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-release:
+    name: Publish GitHub Release assets
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      FUELOPT_VERSION: ${{ needs.build.outputs.version }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download audited build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.build.outputs.artifact-name }}
+          path: dist/release
+
+      - name: Create or update GitHub Release
+        shell: pwsh
+        run: |
+          $files = @(
+            "dist\release\FuelOpt-Setup-$env:FUELOPT_VERSION.exe",
+            "dist\release\FuelOpt-$env:FUELOPT_VERSION-windows-x64.zip",
+            'dist\release\SHA256SUMS.txt'
+          )
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG @files --clobber
+          } else {
+            gh release create $env:RELEASE_TAG @files `
+              --verify-tag `
+              --title "FuelOpt $env:FUELOPT_VERSION" `
+              --generate-notes
+          }
