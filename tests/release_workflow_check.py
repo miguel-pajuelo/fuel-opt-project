@@ -20,7 +20,7 @@ def run() -> None:
 
     _assert(re.search(r"(?m)^\s*tags:\s*$", text), "workflow must filter pushed tags")
     _assert('      - "v*"' in text, "workflow must trigger on v* tags")
-    _assert("workflow_dispatch:" in text and "fail_before_build:" in text, "dry-run dispatch contract is missing")
+    _assert("workflow_dispatch:" in text, "dry-run dispatch contract is missing")
     _assert("windows-latest" in lowered, "Windows runner is required")
     _assert(lowered.count("contents: write") == 1, "write permission must exist only on the publish job")
     _assert("github.ref_type == 'tag'" in text, "release publication must be tag-only")
@@ -47,7 +47,8 @@ def run() -> None:
     _assert(".env" not in lowered and "ors_api_key" not in lowered, "workflow references private configuration")
     _assert("pull_request_target" not in lowered, "privileged pull_request_target execution is forbidden")
     _assert("workflow_run" not in lowered, "release must not accept untrusted workflow artifacts")
-    _assert("codex/patch-7a-fail" in text, "temporary early-failure runner probe is missing")
+    _assert("branches:" not in text and "codex/patch-7a" not in text, "temporary branch triggers must not remain")
+    _assert("fail_before_build" not in text, "temporary failure simulation must not remain")
     print("OK: Windows GitHub Release workflow checks passed")
 
 

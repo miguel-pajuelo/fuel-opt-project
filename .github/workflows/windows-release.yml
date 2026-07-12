@@ -4,10 +4,6 @@ on:
   push:
     tags:
       - "v*"
-    # Patch 7A bootstrap only. Removed after the remote runner validation.
-    branches:
-      - "codex/patch-7a"
-      - "codex/patch-7a-fail"
   workflow_dispatch:
     inputs:
       version:
@@ -15,11 +11,6 @@ on:
         required: true
         default: "0.1.0"
         type: string
-      fail_before_build:
-        description: "Test that an early failure publishes no artifacts"
-        required: true
-        default: false
-        type: boolean
 
 permissions:
   contents: read
@@ -71,11 +62,6 @@ jobs:
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "artifact-name=$artifactName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "Release mode: $isReleaseTag; version: $version"
-
-      - name: Simulate a failure before build
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.fail_before_build) || github.ref_name == 'codex/patch-7a-fail' }}
-        shell: pwsh
-        run: throw 'Intentional Patch 7A failure before dependency installation and build.'
 
       - name: Set up pinned Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
