@@ -39,7 +39,7 @@ def run() -> None:
     action_uses = re.findall(r"uses:\s+actions/[^@\s]+@([^\s#]+)", text)
     _assert(len(action_uses) == 4, "unexpected number of first-party actions")
     _assert(all(re.fullmatch(r"[0-9a-f]{40}", revision) for revision in action_uses), "actions must be commit-pinned")
-    _assert("# v4" in text, "workflow artifact preservation is missing")
+    _assert(text.count("# v7") == 2, "artifact upload and download actions must use the Node 24 release")
     _assert("gh release create" in text and "gh release upload" in text, "idempotent GitHub Release publication is missing")
     _assert("GH_TOKEN: ${{ github.token }}" in text, "GitHub CLI must use the scoped workflow token")
     _assert("--verify-tag" in text, "release publication must verify the tag")
