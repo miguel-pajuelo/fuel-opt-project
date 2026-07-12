@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlencode
 
 from app.data_sources.brand_catalog import NORMALIZATION_VERSION
 from app.data_sources.public_access import (
@@ -74,6 +75,25 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def sqlite_file_uri(db_path: Path, *, mode: str = "ro", immutable: bool = False) -> str:
+    """Build a percent-encoded SQLite file URI, including Windows paths."""
+    query: dict[str, str] = {"mode": mode}
+    if immutable:
+        query["immutable"] = "1"
+    return f"{db_path.expanduser().resolve().as_uri()}?{urlencode(query)}"
+
+
+def connect_readonly(db_path: Path, *, immutable: bool = False) -> sqlite3.Connection:
+    """Open an existing DB; immutable mode also forbids WAL/SHM creation."""
+    uri = sqlite_file_uri(db_path, mode="ro", immutable=immutable)
+    conn = sqlite3.connect(uri, uri=True, timeout=30)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA query_only = ON")
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    return conn
+
+
 @contextmanager
 def open_db(db_path: Path):
     conn = connect(db_path)
@@ -85,6 +105,15 @@ def open_db(db_path: Path):
         if conn.in_transaction:
             conn.rollback()
         raise
+    finally:
+        conn.close()
+
+
+@contextmanager
+def open_db_readonly(db_path: Path, *, immutable: bool = False):
+    conn = connect_readonly(db_path, immutable=immutable)
+    try:
+        yield conn
     finally:
         conn.close()
 
@@ -400,9 +429,16 @@ def raw_brand_label_counts(db_path: Path, limit: int = 500, offset: int = 0) -> 
     ]
 
 
-def database_health(db_path: Path) -> dict[str, object]:
+def database_health(
+    db_path: Path,
+    *,
+    readonly: bool = False,
+    immutable: bool = False,
+) -> dict[str, object]:
     expected_tables = {"stations", "prices", "catalog_metadata"}
-    with open_db(db_path) as conn:
+    opener = open_db_readonly if readonly else open_db
+    open_kwargs = {"immutable": immutable} if readonly else {}
+    with opener(db_path, **open_kwargs) as conn:
         rows = conn.execute(
             """
             SELECT name
@@ -595,8 +631,15 @@ def _parse_metadata_value(key: str, value: str) -> Any:
     return value
 
 
-def catalog_status(db_path: Path) -> dict[str, object]:
-    with open_db(db_path) as conn:
+def catalog_status(
+    db_path: Path,
+    *,
+    readonly: bool = False,
+    immutable: bool = False,
+) -> dict[str, object]:
+    opener = open_db_readonly if readonly else open_db
+    open_kwargs = {"immutable": immutable} if readonly else {}
+    with opener(db_path, **open_kwargs) as conn:
         station_count = conn.execute("SELECT COUNT(*) FROM stations WHERE active = 1").fetchone()[0]
         station_count_unknown_brand = conn.execute(
             """
@@ -662,8 +705,15 @@ def catalog_status(db_path: Path) -> dict[str, object]:
     return status
 
 
-def price_status(db_path: Path) -> dict[str, object]:
-    with open_db(db_path) as conn:
+def price_status(
+    db_path: Path,
+    *,
+    readonly: bool = False,
+    immutable: bool = False,
+) -> dict[str, object]:
+    opener = open_db_readonly if readonly else open_db
+    open_kwargs = {"immutable": immutable} if readonly else {}
+    with opener(db_path, **open_kwargs) as conn:
         fuel_rows = conn.execute(
             """
             SELECT fuel_type, COUNT(*) AS count, MIN(updated_at) AS oldest, MAX(updated_at) AS newest
@@ -672,7 +722,7 @@ def price_status(db_path: Path) -> dict[str, object]:
             ORDER BY fuel_type
             """
         ).fetchall()
-    status = catalog_status(db_path)
+    status = catalog_status(db_path, readonly=readonly, immutable=immutable)
     return {
         "stations": status["station_count"],
         "station_count_known_brand": status["station_count_known_brand"],

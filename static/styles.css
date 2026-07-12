@@ -209,65 +209,6 @@ a {
   color: var(--ink);
 }
 
-.support-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 5px 13px 5px 6px;
-  border: 1px solid rgba(159, 122, 58, .28);
-  border-radius: 999px;
-  background: rgba(255, 253, 248, .78);
-  color: var(--ink);
-  box-shadow: 0 8px 22px rgba(31, 25, 17, .07), inset 0 1px 0 rgba(255, 255, 255, .74);
-  white-space: nowrap;
-  text-decoration: none;
-  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease;
-}
-
-.support-chip:hover,
-.support-chip:focus-visible {
-  border-color: rgba(159, 122, 58, .52);
-  background: rgba(255, 253, 248, .96);
-  color: var(--ink);
-  box-shadow: 0 10px 26px rgba(31, 25, 17, .10), inset 0 1px 0 rgba(255, 255, 255, .88);
-  transform: translateY(-1px);
-}
-
-.support-chip:focus-visible {
-  outline: 2px solid rgba(159, 122, 58, .34);
-  outline-offset: 3px;
-}
-
-.support-chip__icon {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #FFF8EA;
-  background: var(--gold);
-  box-shadow: inset 0 1px 0 rgba(228, 211, 177, .5);
-  flex: 0 0 auto;
-}
-
-.support-chip__icon svg {
-  width: 14px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.support-chip__main {
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1;
-}
-
 /* ── Feedback chip (navbar) ─────────────────────────────────── */
 .feedback-chip {
   display: inline-flex;

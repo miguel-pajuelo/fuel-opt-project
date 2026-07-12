@@ -29,3 +29,4 @@ catalog_refresh_report.json
 build/
 dist/
 *.spec
+!FuelOpt.spec

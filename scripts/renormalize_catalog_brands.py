@@ -10,6 +10,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.config import load_settings
+from app.bootstrap import bootstrap_if_managed
+from app.paths import APP_PATHS
 from app.data_sources.brand_catalog import NORMALIZATION_VERSION, canonicalize_brand_label
 from app.storage.database import connect
 
@@ -79,6 +81,7 @@ def _upsert_metadata(conn, metadata: dict[str, object]) -> None:
 
 def main() -> int:
     args = parse_args()
+    bootstrap_if_managed(args.db, APP_PATHS.user_snapshot_path)
     conn = connect(args.db)
     try:
         rows = conn.execute(

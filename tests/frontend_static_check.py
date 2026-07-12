@@ -103,24 +103,28 @@ def test_catalog_and_route_status_copy_present() -> None:
     _assert("emptyResultHtml" in js, "No-result helper missing.")
 
 
-def test_header_support_chip_presentational_only() -> None:
+def test_header_has_no_support_chip_and_keeps_primary_actions() -> None:
     html = _read("static/index.html")
     styles = _read("static/styles.css")
 
-    _assert("Apoyar FuelOpt" in html, "Support chip should show 'Apoyar FuelOpt'.")
-    _assert("Ko-fi" not in html.split('class="support-chip__main"')[1], "Support chip should not show the Ko-fi sublabel.")
-    _assert('class="support-chip"' in html, "Support chip markup missing.")
-    _assert('href="https://ko-fi.com/fuelopt"' in html, "Support chip should link to the real FuelOpt Ko-fi page.")
-    _assert('target="_blank"' in html and 'rel="noopener noreferrer"' in html, "External Ko-fi link should open safely.")
+    combined = "\n".join([html, styles]).lower()
+    removed_tokens = (
+        "ko" + "-fi",
+        "ko" + "-fi.com",
+        "buyme" + "acoffee",
+        "buy me a " + "coffee",
+        "apoyar " + "fuelopt",
+        "support" + "-chip",
+    )
+    for token in removed_tokens:
+        _assert(token not in combined, f"Removed support component token remains: {token!r}")
+
     _assert('class="header-privacy-link"' in html, "Privacy link should be placed next to the FuelOpt wordmark.")
-    _assert("support-chip__icon" in html, "Support chip should include a local inline icon area.")
-    _assert(".support-chip" in styles, "Support chip CSS missing.")
     _assert(".header-privacy-link" in styles, "Header privacy link CSS missing.")
-    _assert(".support-chip__meta" not in styles, "Removed Ko-fi sublabel CSS should not remain.")
-    _assert("https://ko-fi.com/fuelopt" in html, "Support chip should use the provided Ko-fi URL.")
-    _assert("ko-fi.com" not in styles.lower(), "Support chip CSS must not load Ko-fi resources.")
-    _assert("cdn.ko-fi" not in html.lower() and "cdn.ko-fi" not in styles.lower(), "No external Ko-fi runtime script or asset should be loaded.")
-    _assert("Privacidad" in html[:html.find('class="support-chip"')], "Privacy link should appear before the support chip near the wordmark.")
+    _assert('href="/privacidad"' in html, "Privacy link should remain in the header.")
+    _assert('href="/como-funciona"' in html, "How-it-works link should remain in the header.")
+    _assert('class="feedback-chip"' in html, "Feedback action should remain in the header.")
+    _assert(".feedback-chip" in styles, "Feedback action styling should remain available.")
 
 
 def test_sidebar_and_floating_search_layout() -> None:
@@ -770,6 +774,23 @@ def test_external_leaflet_has_sri() -> None:
     (those tags are same-origin and exempt from the SRI requirement)."""
     html = _read("static/index.html")
     _assert("leaflet" in html.lower(), "Leaflet does not appear to be loaded by index.html.")
+    _assert(
+        'href="/static/vendor/leaflet/leaflet.css?v=1.9.4"' in html,
+        "The installed frontend must load its vendored Leaflet stylesheet.",
+    )
+    _assert(
+        'src="/static/vendor/leaflet/leaflet.js?v=1.9.4"' in html,
+        "The installed frontend must load its vendored Leaflet script.",
+    )
+    _assert("unpkg.com/leaflet" not in html, "Leaflet must not depend on a CDN in the desktop build.")
+    for relative in (
+        "static/vendor/leaflet/leaflet.css",
+        "static/vendor/leaflet/leaflet.js",
+        "static/vendor/leaflet/LICENSE",
+        "static/vendor/leaflet/images/marker-icon.png",
+        "static/vendor/leaflet/images/marker-shadow.png",
+    ):
+        _assert((ROOT / relative).is_file(), f"Vendored Leaflet asset is missing: {relative}")
     tag_re = re.compile(r"<(?:link|script)\b[^>]*leaflet[^>]*>", re.IGNORECASE)
     external_re = re.compile(r'(?:href|src)\s*=\s*"(?:https?:)?//', re.IGNORECASE)
     for tag in tag_re.findall(html):
@@ -791,7 +812,7 @@ def run() -> None:
     test_frontend_has_no_visible_mojibake()
     test_result_metrics_are_rendered_once()
     test_catalog_and_route_status_copy_present()
-    test_header_support_chip_presentational_only()
+    test_header_has_no_support_chip_and_keeps_primary_actions()
     test_sidebar_and_floating_search_layout()
     test_app_js_renders_warnings()
     test_haversine_copy_appears_once()

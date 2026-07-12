@@ -5,7 +5,6 @@ import os
 import sqlite3
 import sys
 import tempfile
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.storage.publish import cleanup_old_backups, publish_sqlite_candidate
-from fuelopt_launcher import DEFAULT_HOST, LAN_HOST, catalog_refresh_due, resolve_bind_host
+from fuelopt_launcher import DEFAULT_HOST, LAN_HOST, resolve_bind_host
 from scripts import rebuild_station_catalog
 from scripts.refresh_catalog import _publish_snapshot_candidate
 
@@ -118,35 +117,6 @@ def test_zero_backup_retention_removes_previous_sqlite_copy() -> None:
         _assert(not candidate_db.exists(), "candidate DB should be consumed")
 
 
-def test_launcher_skips_refresh_when_catalog_is_recent() -> None:
-    now = datetime(2026, 4, 23, 12, 0, tzinfo=timezone.utc)
-    due, reason = catalog_refresh_due(
-        {
-            "built_at": (now - timedelta(hours=3, minutes=59)).isoformat(),
-            "station_count": 1,
-        },
-        now=now,
-    )
-    _assert(due is False, reason)
-
-
-def test_launcher_refreshes_when_catalog_is_older_than_four_hours() -> None:
-    now = datetime(2026, 4, 23, 12, 0, tzinfo=timezone.utc)
-    due, reason = catalog_refresh_due(
-        {
-            "built_at": (now - timedelta(hours=4, seconds=1)).isoformat(),
-            "station_count": 1,
-        },
-        now=now,
-    )
-    _assert(due is True, reason)
-
-
-def test_launcher_refreshes_when_catalog_timestamp_is_missing() -> None:
-    due, reason = catalog_refresh_due({"built_at": "", "station_count": 1})
-    _assert(due is True, reason)
-
-
 def test_launcher_defaults_to_localhost() -> None:
     _assert(DEFAULT_HOST == "127.0.0.1", f"launcher default host should be localhost, got {DEFAULT_HOST}")
     _assert(resolve_bind_host(DEFAULT_HOST) == "127.0.0.1", "default bind host should stay local")
@@ -194,9 +164,6 @@ def run() -> None:
     test_candidate_snapshot_does_not_replace_active_before_publish()
     test_publish_snapshot_candidate_replaces_active_once_valid()
     test_zero_backup_retention_removes_previous_sqlite_copy()
-    test_launcher_skips_refresh_when_catalog_is_recent()
-    test_launcher_refreshes_when_catalog_is_older_than_four_hours()
-    test_launcher_refreshes_when_catalog_timestamp_is_missing()
     test_launcher_defaults_to_localhost()
     test_launcher_lan_is_explicit()
     test_launcher_lan_env_truthy_values()

@@ -1,0 +1,2 @@
+# Build-only dependency. Runtime dependencies remain in requirements-web.txt.
+pyinstaller==6.19.0

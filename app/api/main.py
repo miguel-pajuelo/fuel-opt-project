@@ -6,8 +6,6 @@ import logging
 import hmac
 import os
 import re
-import subprocess
-import sys
 import threading
 import time
 import unicodedata
@@ -45,6 +43,15 @@ except ImportError:
 
 from app.config import load_settings
 from app.config import PROJECT_ROOT
+from app.bootstrap import bootstrap_if_managed
+from app.catalog.refresh_service import (
+    EXIT_ALREADY_RUNNING,
+    EXIT_VALIDATION_FAILED,
+    RefreshRequest,
+    run_catalog_refresh,
+)
+from app.paths import APP_PATHS
+from app.windows_credentials import install_secret_redaction
 from app.api.warnings import build_optimize_warnings
 from app.data_sources.brand_catalog import canonical_brand_id, ui_brand_catalog
 from app.models import Coordinates, FUEL_FIELDS, OptimizationInput
@@ -81,6 +88,8 @@ class _JsonFormatter(logging.Formatter):
                 data[key] = getattr(record, key)
         if record.exc_info:
             data["exc"] = self.formatException(record.exc_info)
+        elif record.exc_text:
+            data["exc"] = record.exc_text
         return json.dumps(data, ensure_ascii=False, default=str)
 
 
@@ -90,6 +99,7 @@ logging.basicConfig(handlers=[_log_handler], level=logging.INFO, force=True)
 logger = logging.getLogger("fuelopt.api")
 
 settings = load_settings()
+install_secret_redaction(logging.getLogger(), settings.ors_api_key)
 
 
 def _first_forwarded_ip(forwarded_for: str) -> str | None:
@@ -189,7 +199,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 # Baseline security headers applied to every response (H6). No CSP is set:
-# the UI loads Leaflet + OSM tiles from unpkg/CDN, GoatCounter, and uses inline
+# the UI loads OSM tiles, GoatCounter, and uses inline
 # event handlers/styles, so a strict CSP would break current behavior. The
 # Permissions-Policy keeps geolocation enabled for same-origin (the map uses it)
 # while disabling camera/microphone.
@@ -239,40 +249,35 @@ async def _log_requests(request: Request, call_next):
 
 @app.on_event("startup")
 def _validate_startup() -> None:
+    logger.info("fastapi startup entered; bootstrap verification starting")
     if not settings.ors_api_key:
         logging.warning(
             "ORS_API_KEY no está configurada. "
             "Geocodificación y rutas reales no estarán disponibles."
+        )
+    try:
+        bootstrap = bootstrap_if_managed(settings.db_path, settings.minetur_snapshot_path)
+    except Exception:
+        logger.exception("fastapi startup bootstrap failed")
+        raise
+    if bootstrap is not None:
+        logger.info(
+            "user_data_bootstrap database_action=%s database_source=%s snapshot_action=%s logs_action=%s",
+            bootstrap.database_action,
+            bootstrap.database_source,
+            bootstrap.snapshot_action,
+            bootstrap.logs_action,
         )
     if not settings.db_path.exists():
         raise RuntimeError(
             f"Base de datos no encontrada en {settings.db_path}. "
             "Ejecuta scripts/refresh_catalog.py antes de arrancar."
         )
+    logger.info("fastapi startup completed")
 
 
 INDEPENDENT_BRAND_LABEL = "Independientes / sin marca"
 INDEPENDENT_BRAND_HINT = "Incluye estaciones independientes o con rótulo no reconocido."
-
-
-def _catalog_refresh_command(report_path: Path) -> list[str]:
-    args = [
-        "--source",
-        "minetur",
-        "--write-report",
-        str(report_path),
-    ]
-    if getattr(sys, "frozen", False):
-        return [sys.executable, "--catalog-refresh-script", *args]
-    return [sys.executable, str(PROJECT_ROOT / "scripts" / "refresh_catalog.py"), *args]
-
-
-def _catalog_refresh_env() -> dict[str, str]:
-    env = os.environ.copy()
-    env["FUELOPT_PROJECT_ROOT"] = str(PROJECT_ROOT)
-    if getattr(sys, "frozen", False):
-        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
-    return env
 
 
 def _bearer_token(value: str | None) -> str:
@@ -719,7 +724,7 @@ def health() -> dict[str, Any]:
             status_code=503,
             detail={"status": "down", "database": "unavailable", "error": str(exc)},
         ) from exc
-    return {"status": "ok", **db_status}
+    return {"status": "ok", "service": "FuelOpt", **db_status}
 
 
 @app.get("/fuels")
@@ -805,28 +810,15 @@ def refresh_catalog(request: Request, _: None = Depends(_require_catalog_refresh
     if not _refresh_lock.acquire(blocking=False):
         raise HTTPException(status_code=429, detail="Catalog refresh already in progress.")
     try:
-        report_path = PROJECT_ROOT / "data" / "reports" / "catalog_refresh_report.json"
-        cmd = _catalog_refresh_command(report_path)
-        try:
-            completed = subprocess.run(
-                cmd,
-                cwd=PROJECT_ROOT,
-                env=_catalog_refresh_env(),
-                capture_output=True,
-                text=True,
-                timeout=900,
+        result = run_catalog_refresh(
+            RefreshRequest.from_settings(
+                settings,
+                source="minetur",
+                report_path=APP_PATHS.logs_dir / "catalog_refresh_report.json",
             )
-        except subprocess.TimeoutExpired as exc:
-            raise HTTPException(status_code=504, detail="Catalog refresh timed out.") from exc
-
-        report: dict[str, object] = {}
-        if report_path.exists():
-            try:
-                report = json.loads(report_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                report = {}
-
-        if completed.returncode == 2:
+        )
+        report = result.report
+        if result.exit_code == EXIT_VALIDATION_FAILED:
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -838,7 +830,7 @@ def refresh_catalog(request: Request, _: None = Depends(_require_catalog_refresh
                 },
             )
 
-        if report.get("refresh_status") == "skipped":
+        if result.exit_code == EXIT_ALREADY_RUNNING:
             raise HTTPException(
                 status_code=429,
                 detail={
@@ -848,15 +840,15 @@ def refresh_catalog(request: Request, _: None = Depends(_require_catalog_refresh
                 },
             )
 
-        if completed.returncode != 0:
-            detail = report.get("refresh_error") or completed.stderr or completed.stdout or "Catalog refresh failed."
+        if result.exit_code != 0:
+            detail = report.get("refresh_error") or "Catalog refresh failed."
             raise HTTPException(status_code=502, detail=str(detail))
 
         status = _catalog_status()
         return {
             "refresh": report,
             "catalog": status,
-            "returncode": completed.returncode,
+            "returncode": result.exit_code,
         }
     finally:
         _refresh_lock.release()

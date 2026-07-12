@@ -11,6 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.config import load_settings
+from app.bootstrap import bootstrap_if_managed
 from app.data_sources.brand_catalog import DEFAULT_REGISTRY, NORMALIZATION_VERSION
 from app.data_sources.minetur import (
     build_catalog_from_minetur,
@@ -149,6 +150,7 @@ def _build_metadata(
 
 def main() -> int:
     args = parse_args()
+    bootstrap_if_managed(args.db, args.snapshot)
     (stations, prices), source, warnings = load_catalog(args)
     metadata = _build_metadata(source, stations, prices, warnings, args.snapshot)
     replace_catalog(args.db, stations, prices, metadata=metadata)

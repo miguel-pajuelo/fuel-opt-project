@@ -1,0 +1,106 @@
+"""Validate the self-contained PyInstaller onedir output without reading .env."""
+from __future__ import annotations
+
+import argparse
+import re
+import sqlite3
+import sys
+from pathlib import Path
+
+
+TEXT_SUFFIXES = {".css", ".html", ".js", ".json", ".md", ".txt", ".xml"}
+FORBIDDEN_PARTS = {".env", ".env.local", ".git", "__pycache__", ".pytest_cache", "tests"}
+FORBIDDEN_SUFFIXES = ("-wal", "-shm", ".log", ".next.sqlite")
+PERSONAL_PATH_PATTERNS = (
+    re.compile(r"[A-Za-z]:\\Users\\", re.IGNORECASE),
+    re.compile(r"/Users/", re.IGNORECASE),
+    re.compile(r"OneDrive[\\/]Escritorio", re.IGNORECASE),
+)
+SECRET_PATTERNS = (
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bAIza[0-9A-Za-z_-]{20,}\b"),
+    re.compile(r"\bgh[pousr]_[0-9A-Za-z]{20,}\b"),
+    re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
+)
+
+
+def _assert(condition: bool, message: object) -> None:
+    if not condition:
+        raise AssertionError(message)
+
+
+def _internal_root(bundle: Path) -> Path:
+    internal = bundle / "_internal"
+    return internal if internal.is_dir() else bundle
+
+
+def _validate_seed(path: Path) -> None:
+    _assert(path.is_file(), f"Packaged seed is missing: {path}")
+    uri = f"file:{path.resolve().as_posix()}?mode=ro&immutable=1"
+    connection = sqlite3.connect(uri, uri=True)
+    try:
+        _assert(connection.execute("PRAGMA quick_check").fetchone() == ("ok",), "Seed quick_check failed.")
+        count = connection.execute("SELECT COUNT(*) FROM stations").fetchone()[0]
+        _assert(count > 0, "Packaged seed contains no stations.")
+    finally:
+        connection.close()
+    _assert(not Path(f"{path}-wal").exists(), "Seed validation created a WAL sidecar.")
+    _assert(not Path(f"{path}-shm").exists(), "Seed validation created an SHM sidecar.")
+
+
+def validate_bundle(bundle: Path) -> None:
+    bundle = bundle.resolve()
+    internal = _internal_root(bundle)
+    required = (
+        bundle / "FuelOpt.exe",
+        internal / "static" / "index.html",
+        internal / "static" / "app.js",
+        internal / "static" / "styles.css",
+        internal / "static" / "vendor" / "leaflet" / "leaflet.js",
+        internal / "static" / "vendor" / "leaflet" / "leaflet.css",
+        internal / "static" / "vendor" / "leaflet" / "LICENSE",
+        internal / "resources" / "snapshot" / "minetur_snapshot.json",
+    )
+    for path in required:
+        _assert(path.is_file(), f"Required onedir resource is missing: {path.relative_to(bundle)}")
+
+    seed = internal / "resources" / "seed" / "gas_stations.seed.sqlite"
+    _validate_seed(seed)
+    _assert(any(internal.rglob("cacert.pem")), "Certifi CA bundle is missing.")
+    _assert(any(internal.glob("slowapi-*.dist-info")), "SlowAPI metadata/license is missing.")
+    _assert(not (internal / "data").exists(), "Developer cache data must not be bundled.")
+    for optional_runtime in ("httptools", "watchfiles", "websockets"):
+        _assert(not (internal / optional_runtime).exists(), f"Unused optional runtime was bundled: {optional_runtime}")
+
+    violations: list[str] = []
+    for path in bundle.rglob("*"):
+        relative = path.relative_to(bundle)
+        lowered_parts = {part.lower() for part in relative.parts}
+        if lowered_parts & FORBIDDEN_PARTS:
+            violations.append(f"forbidden path: {relative}")
+            continue
+        if path.is_file() and path.name.lower().endswith(FORBIDDEN_SUFFIXES):
+            violations.append(f"mutable artifact: {relative}")
+            continue
+        if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES or path.stat().st_size > 5_000_000:
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        if any(pattern.search(text) for pattern in PERSONAL_PATH_PATTERNS):
+            violations.append(f"personal absolute path: {relative}")
+        if any(pattern.search(text) for pattern in SECRET_PATTERNS):
+            violations.append(f"secret-shaped value: {relative}")
+    _assert(not violations, "Unsafe bundle content:\n  " + "\n  ".join(violations))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bundle", type=Path, required=True)
+    args = parser.parse_args()
+    validate_bundle(args.bundle)
+    print("OK: PyInstaller onedir bundle checks passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
