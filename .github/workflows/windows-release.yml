@@ -156,7 +156,7 @@ jobs:
           }
           $setup = Get-Item "dist\release\FuelOpt-Setup-$env:FUELOPT_VERSION.exe"
           $versionInfo = $setup.VersionInfo
-          if ($versionInfo.ProductVersion -ne $env:FUELOPT_VERSION -or $versionInfo.FileVersion -ne $env:FUELOPT_VERSION) {
+          if ($versionInfo.ProductVersion.Trim() -ne $env:FUELOPT_VERSION -or $versionInfo.FileVersion.Trim() -ne $env:FUELOPT_VERSION) {
             throw "Installer metadata version mismatch: product=$($versionInfo.ProductVersion), file=$($versionInfo.FileVersion)"
           }
           if ((Get-AuthenticodeSignature -LiteralPath $setup.FullName).Status -ne 'NotSigned') {
