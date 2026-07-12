@@ -7,7 +7,7 @@ if not defined FUELOPT_VERSION set "FUELOPT_VERSION=0.1.0"
 python tests\bundle_check.py --bundle dist\FuelOpt
 if errorlevel 1 exit /b 1
 
-python tests\installer_check.py
+python tests\installer_check.py --require-bundle
 if errorlevel 1 exit /b 1
 
 set "ISCC_EXE="

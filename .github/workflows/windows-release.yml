@@ -149,7 +149,7 @@ jobs:
         shell: pwsh
         run: |
           python tests\bundle_check.py --bundle dist\FuelOpt
-          python tests\installer_check.py
+          python tests\installer_check.py --require-bundle
           $releaseFiles = @(Get-ChildItem -LiteralPath 'dist\release' -File)
           if ($releaseFiles.Count -ne 3) {
             throw "Expected installer, onedir ZIP and SHA256SUMS.txt; found $($releaseFiles.Count)."

@@ -1,6 +1,7 @@
 """Static safety checks for the per-user Inno Setup installer."""
 from __future__ import annotations
 
+import argparse
 import re
 from pathlib import Path
 
@@ -23,7 +24,7 @@ def app_id(text: str) -> str:
     return match.group(1).upper()
 
 
-def run() -> None:
+def run(*, require_bundle: bool = False) -> None:
     text = SCRIPT.read_text(encoding="utf-8")
     lowered = text.lower()
     build = BUILD_SCRIPT.read_text(encoding="utf-8")
@@ -74,10 +75,15 @@ def run() -> None:
         _assert(token not in lowered, f"installer references forbidden content: {token}")
 
     _assert("bundle_check.py --bundle dist\\fuelopt" in build.lower(), "installer build must audit the bundle first")
+    _assert("installer_check.py --require-bundle" in build.lower(), "installer build must require the audited onedir bundle")
     _assert("installer\\fuelopt.iss" in build.lower(), "installer build does not compile the expected script")
-    _assert((ROOT / "dist" / "FuelOpt" / "FuelOpt.exe").is_file(), "audited onedir bundle is missing")
+    if require_bundle:
+        _assert((ROOT / "dist" / "FuelOpt" / "FuelOpt.exe").is_file(), "audited onedir bundle is missing")
     print("OK: Inno Setup installer safety checks passed")
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--require-bundle", action="store_true")
+    args = parser.parse_args()
+    run(require_bundle=args.require_bundle)
