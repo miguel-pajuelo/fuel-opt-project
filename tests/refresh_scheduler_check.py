@@ -214,7 +214,7 @@ def test_scheduler_xml_for_every_frequency() -> None:
         _assert(root.findtext(".//t:RunLevel", namespaces=namespace) == "LeastPrivilege", xml)
         _assert(root.findtext(".//t:UserId", namespaces=namespace) == "S-1-5-21-1000", xml)
         _assert(root.findtext(".//t:Arguments", namespaces=namespace) == "--refresh-direct --silent", xml)
-        expected = (now + {
+        expected = (now.astimezone() + {
             "1h": timedelta(hours=1), "2h": timedelta(hours=2), "4h": timedelta(hours=4),
             "8h": timedelta(hours=8), "12h": timedelta(hours=12), "24h": timedelta(hours=24),
         }[interval]).isoformat()
