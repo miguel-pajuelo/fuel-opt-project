@@ -169,6 +169,7 @@ jobs:
           name: ${{ steps.version.outputs.artifact-name }}
           path: dist/release/*
           if-no-files-found: error
+          overwrite: true
           retention-days: 14
 
   publish-release:
