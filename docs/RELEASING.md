@@ -20,7 +20,7 @@ Los tags como `v0.1`, `v0.1.0-beta` o cualquier valor que no sea `vX.Y.Z` hacen 
 
 ## Qué ejecuta el workflow
 
-- Instala Python 3.12.12 y las dependencias fijadas.
+- Instala Python 3.12.10, disponible para `windows-latest`, y las dependencias fijadas.
 - Ejecuta todos los release checks.
 - limpia `build\` y `dist\`;
 - genera el bundle PyInstaller onedir;
