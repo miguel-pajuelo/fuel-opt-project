@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sys
+from html import unescape
 from pathlib import Path
 
 
@@ -15,6 +16,17 @@ def _assert(condition: bool, message: object) -> None:
 
 def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
+
+
+def _html_attributes(tag: str) -> dict[str, str]:
+    return {
+        name: unescape(value)
+        for name, _quote, value in re.findall(
+            r"([\w:-]+)\s*=\s*([\"'])(.*?)\2",
+            tag,
+            flags=re.DOTALL,
+        )
+    }
 
 
 def test_frontend_is_extracted() -> None:
@@ -41,10 +53,105 @@ def test_dynamic_html_uses_escape_helper() -> None:
         "escapeHtml(opt.key)",
         "escapeHtml(opt.label)",
         "const stationName = escapeHtml(station.name ||",
-        "const whySelected = escapeHtml(selected.why_selected",
+        "text.textContent = explanation",
     ]
     for fragment in required_safe_fragments:
         _assert(fragment in js, f"Expected escaped fragment missing: {fragment}")
+
+
+def test_optimization_mode_selector_is_native_and_accessible() -> None:
+    html = _read("static/index.html")
+    styles = _read("static/styles.css")
+    decoded = unescape(html)
+    radio_tags = [
+        tag
+        for tag in re.findall(r"<input\b[^>]*>", html, flags=re.IGNORECASE)
+        if _html_attributes(tag).get("type") == "radio"
+        and _html_attributes(tag).get("name") == "optimization_mode"
+    ]
+    _assert(len(radio_tags) == 3, f"Expected exactly three optimization radios, got {radio_tags}")
+    radios = {_html_attributes(tag)["value"]: _html_attributes(tag) for tag in radio_tags}
+    _assert(set(radios) == {"economic", "minimal_detour", "balanced"}, radios)
+    _assert("checked" in radio_tags[0] and radios["economic"]["id"] == "optimization_mode_economic", radios)
+    _assert(sum(" checked" in tag for tag in radio_tags) == 1, "Only economic may be selected by default.")
+    _assert('<fieldset class="config-field optimization-mode-field span-2">' in html, "Optimization fieldset missing.")
+    _assert("<legend class=\"label\">Objetivo de optimizaci&#243;n</legend>" in html, "Optimization legend missing.")
+    for value, label in {
+        "economic": "Más ahorro",
+        "minimal_detour": "Menor desvío",
+        "balanced": "Equilibrado",
+    }.items():
+        radio_id = radios[value]["id"]
+        label_match = re.search(
+            rf'<label\b[^>]*\bfor="{re.escape(radio_id)}"[^>]*>(.*?)</label>',
+            html,
+            flags=re.DOTALL,
+        )
+        _assert(label_match is not None, f"Missing associated label for {value}.")
+        label_text = unescape(re.sub(r"<[^>]+>", " ", label_match.group(1)))
+        _assert(label in " ".join(label_text.split()), f"Public label missing for {value}.")
+    for description in (
+        "Prioriza el mayor ahorro neto estimado, descontando el coste del desplazamiento.",
+        "Prioriza la estación que exige menos distancia adicional.",
+        "En búsquedas locales, prioriza la estación más cercana.",
+        "Equilibra por igual el ahorro estimado y el desvío entre las opciones encontradas.",
+    ):
+        _assert(description in decoded, f"Optimization description missing: {description}")
+    _assert('role="radio"' not in html, "Native radios must not duplicate ARIA radio semantics.")
+    _assert('id="optimization_mode"' not in html, "Legacy optimization dropdown container remains.")
+    _assert("optimization_mode_trigger" not in html, "Legacy optimization dropdown trigger remains.")
+    _assert(".optimization-mode-option:has(input:checked)" in styles, "Selected radio card styling missing.")
+    _assert(".optimization-mode-option:has(input:focus-visible)" in styles, "Visible keyboard focus styling missing.")
+
+
+def test_optimization_mode_request_and_result_state_are_separate() -> None:
+    js = _read("static/app.js")
+    _assert("function getSelectedOptimizationMode()" in js, "Optimization radio reader missing.")
+    _assert(
+        "document.querySelector('input[name=\"optimization_mode\"]:checked')" in js,
+        "Optimization mode must be read from the checked native radio.",
+    )
+    _assert("const requestedOptimizationMode = getSelectedOptimizationMode();" in js, "Mode must be captured once per request.")
+    _assert("optimization_mode: requestedOptimizationMode" in js, "Payload must use the captured enum value.")
+    _assert("getPddValue('optimization_mode')" not in js, "Legacy dropdown reader remains for optimization mode.")
+    _assert("initPDD('optimization_mode')" not in js, "Legacy dropdown listener remains for optimization mode.")
+    _assert("renderedOptimizationMode: null" in js, "Rendered result mode needs independent state.")
+    _assert(
+        "state.renderedOptimizationMode = requestedOptimizationMode;" in js,
+        "Rendered mode must update only from a successful requested mode.",
+    )
+    _assert(
+        js.index("const { data, fallbackUsed } = await requestOptimization(payload);")
+        < js.index("state.renderedOptimizationMode = requestedOptimizationMode;"),
+        "Rendered mode changed before a successful response.",
+    )
+    _assert("data.optimization_mode !== requestedOptimizationMode" in js, "Response mode mismatch must not be silently relabeled.")
+    _assert("result_limit: 10" in js, "Result limit changed during selector integration.")
+    _assert("remaining_fuel_liters" not in js, "Autonomy entered the frontend payload.")
+
+
+def test_optimization_result_explanations_and_route_sources_are_visible() -> None:
+    js = _read("static/app.js")
+    styles = _read("static/styles.css")
+    for copy in (
+        "Ordenado por:",
+        "Más ahorro",
+        "Menor desvío",
+        "Equilibrado",
+        "Por qué aparece aquí",
+        "Ruta calculada con OpenRouteService",
+        "Estimación mediante distancia geográfica",
+    ):
+        _assert(copy in js, f"Result presentation copy missing: {copy}")
+    _assert("function setWhySelectedText(container, value)" in js, "Safe why_selected renderer missing.")
+    _assert("text.textContent = explanation" in js, "why_selected must use textContent.")
+    _assert("block.hidden = !explanation" in js, "Missing why_selected must hide its block.")
+    _assert("selected.why_selected ||" not in js, "Frontend must not invent a why_selected fallback.")
+    _assert("balanced_score" not in js, "Internal balanced score leaked into frontend code.")
+    _assert("economic_rank" not in js and "distance_rank" not in js, "Internal ranks leaked into frontend code.")
+    _assert(".result-mode-summary" in styles, "Mode summary styling missing.")
+    _assert(".why-selected[hidden]" in styles, "Empty explanation block must stay hidden.")
+    _assert(js.count("Ruta estimada por distancia") == 1, "Structured Haversine warning copy changed unexpectedly.")
 
 
 def test_frontend_has_no_visible_mojibake() -> None:
@@ -99,7 +206,7 @@ def test_catalog_and_route_status_copy_present() -> None:
     _assert("function catalogFreshnessClass" in js, "Catalog freshness color helper missing.")
     _assert("freshness-fresh" in js and "freshness-recent" in js and "freshness-stale" in js, "Freshness color classes should be assigned by JS.")
     _assert("Ruta estimada por distancia" in js, "Haversine route status copy missing.")
-    _assert("Ruta calculada con OpenRouteService" not in js, "ORS route note should not be shown in results.")
+    _assert("Ruta calculada con OpenRouteService" in js, "ORS route source should be identified in results.")
     _assert("emptyResultHtml" in js, "No-result helper missing.")
 
 
@@ -827,6 +934,9 @@ def run() -> None:
     test_external_leaflet_has_sri()
     test_no_unauthorized_analytics_or_retired_domains()
     test_dynamic_html_uses_escape_helper()
+    test_optimization_mode_selector_is_native_and_accessible()
+    test_optimization_mode_request_and_result_state_are_separate()
+    test_optimization_result_explanations_and_route_sources_are_visible()
     test_frontend_has_no_visible_mojibake()
     test_result_metrics_are_rendered_once()
     test_catalog_and_route_status_copy_present()

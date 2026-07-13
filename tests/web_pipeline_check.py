@@ -690,7 +690,7 @@ def test_economic_ranking_golden_liters_and_budget() -> None:
             "net_liters": [29.5, 30.0, 29.8],
             "detours": [10.0, 0.0, 4.0],
             "route_sources": ["openrouteservice_directions"] * 3,
-            "winner_reason": "El precio por litro compensa el desvio adicional frente a la alternativa de menor desvio.",
+            "winner_reason": "Prioriza el menor coste total estimado después de considerar el desplazamiento.",
         },
         _economic_golden_snapshot(liters),
     )
@@ -712,7 +712,10 @@ def test_economic_ranking_golden_liters_and_budget() -> None:
             "net_liters": [27.086207, 26.666667, 24.8],
             "detours": [10.0, 0.0, 4.0],
             "route_sources": ["openrouteservice_directions"] * 3,
-            "winner_reason": "Gana porque permite repostar mas litros con el mismo presupuesto, incluso contando el desvio.",
+            "winner_reason": (
+                "Prioriza la mayor cantidad neta estimada de combustible después de considerar "
+                "el desplazamiento."
+            ),
         },
         _economic_golden_snapshot(budget),
     )
@@ -746,7 +749,7 @@ def test_economic_ranking_golden_local_tie_and_input_order() -> None:
             "net_liters": [19.9, 19.9, 19.7],
             "detours": [2.0, 2.0, 6.0],
             "route_sources": ["fixed_local"] * 3,
-            "winner_reason": "Gana por menor coste efectivo total dentro de las opciones exploradas.",
+            "winner_reason": "Prioriza el menor coste total estimado después de considerar el desplazamiento.",
         },
         _economic_golden_snapshot(tied),
     )
@@ -910,6 +913,111 @@ def test_minimal_detour_ranks_trip_and_local_candidates() -> None:
     )
     _assert(local_results[0].distance_to_station_km < local_results[1].distance_to_station_km, local_results)
     _assert(local_results[0].extra_detour_km > local_results[1].extra_detour_km, local_results)
+
+
+def test_why_selected_is_mode_specific_and_schema_compatible() -> None:
+    candidates = [
+        (_ranking_station("A"), 1.45),
+        (_ranking_station("B"), 1.50),
+        (_ranking_station("C"), 1.55),
+    ]
+    trip_provider = _MappedRouteProvider(
+        {"A": (55.0, 55.0), "B": (50.0, 50.0), "C": (52.0, 52.0)},
+        direct_distance_km=100.0,
+    )
+    trip_base = dict(
+        origin=Coordinates(40.0, -3.0),
+        destination=Coordinates(41.0, -3.0),
+        consumption_l_100km=5.0,
+    )
+
+    economic_liters = optimize_candidates(
+        candidates,
+        OptimizationInput(**trip_base, liters=30.0, optimization_mode="economic"),
+        route_provider=trip_provider,
+    )
+    economic_budget = optimize_candidates(
+        candidates,
+        OptimizationInput(
+            **trip_base,
+            input_mode="budget",
+            budget_amount_eur=40.0,
+            optimization_mode="economic",
+        ),
+        route_provider=trip_provider,
+    )
+    minimal_trip = optimize_candidates(
+        candidates,
+        OptimizationInput(**trip_base, liters=30.0, optimization_mode="minimal_detour"),
+        route_provider=trip_provider,
+    )
+    local_provider = _MappedRouteProvider(
+        {"A": (2.0, 2.0), "B": (1.0, 1.0), "C": (3.0, 3.0)},
+        direct_distance_km=0.0,
+        route_source="haversine_estimate",
+    )
+    minimal_local = optimize_candidates(
+        candidates,
+        OptimizationInput(
+            origin=Coordinates(40.0, -3.0),
+            destination=Coordinates(40.0, -3.0),
+            liters=30.0,
+            consumption_l_100km=5.0,
+            optimization_mode="minimal_detour",
+        ),
+        route_provider=local_provider,
+    )
+    balanced = optimize_candidates(
+        candidates,
+        OptimizationInput(**trip_base, liters=30.0, optimization_mode="balanced"),
+        route_provider=trip_provider,
+    )
+
+    _assert(
+        {item.why_selected for item in economic_liters}
+        == {"Prioriza el menor coste total estimado después de considerar el desplazamiento."},
+        economic_liters,
+    )
+    _assert(
+        {item.why_selected for item in economic_budget}
+        == {
+            "Prioriza la mayor cantidad neta estimada de combustible después de considerar "
+            "el desplazamiento."
+        },
+        economic_budget,
+    )
+    _assert(
+        {item.why_selected for item in minimal_trip}
+        == {
+            "Prioriza el menor desvío adicional estimado; el resultado económico se utiliza "
+            "para desempatar."
+        },
+        minimal_trip,
+    )
+    _assert(
+        {item.why_selected for item in minimal_local}
+        == {
+            "Prioriza la estación más cercana estimada; el resultado económico se utiliza "
+            "para desempatar."
+        },
+        minimal_local,
+    )
+    _assert(
+        {item.why_selected for item in balanced}
+        == {
+            "Busca un compromiso entre el resultado económico estimado y el desvío entre las "
+            "opciones encontradas. Ambos criterios tienen el mismo peso en la ordenación."
+        },
+        balanced,
+    )
+    for result in economic_liters + economic_budget + minimal_trip + minimal_local + balanced:
+        payload = result.to_dict()
+        _assert(isinstance(payload["why_selected"], str) and payload["why_selected"], payload)
+        explanation = payload["why_selected"].lower()
+        for forbidden in ("balanced_score", "economic_rank", "distance_rank", "%", "exacta"):
+            _assert(forbidden not in explanation, (forbidden, explanation))
+        _assert("balanced_score" not in payload, payload)
+        _assert("economic_rank" not in payload and "distance_rank" not in payload, payload)
 
 
 def test_balanced_ranking_uses_equal_normalized_rank_weights() -> None:
@@ -2745,6 +2853,7 @@ def run() -> None:
     test_economic_api_golden_result_limit_is_final()
     test_optimization_mode_contract_is_explicit()
     test_minimal_detour_ranks_trip_and_local_candidates()
+    test_why_selected_is_mode_specific_and_schema_compatible()
     test_balanced_ranking_uses_equal_normalized_rank_weights()
     test_balanced_equal_semantic_metrics_share_ranks_and_score()
     test_balanced_semantic_ties_are_independent_per_dimension()

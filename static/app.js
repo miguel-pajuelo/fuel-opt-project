@@ -21,6 +21,20 @@
       'Ordenando mejores alternativas...',
       'Preparando resultado...',
     ];
+    const OPTIMIZATION_MODE_PRESENTATION = Object.freeze({
+      economic: Object.freeze({
+        label: 'Más ahorro',
+        description: 'Prioriza el mayor ahorro neto estimado, descontando el coste del desplazamiento.',
+      }),
+      minimal_detour: Object.freeze({
+        label: 'Menor desvío',
+        description: 'Prioriza la estación que exige menos distancia adicional.',
+      }),
+      balanced: Object.freeze({
+        label: 'Equilibrado',
+        description: 'Equilibra por igual el ahorro estimado y el desvío entre las opciones encontradas.',
+      }),
+    });
     let optimizeLoadingTimer = null;
     let optimizeLoadingMessageIndex = 0;
     function formatRefreshDate(value) {
@@ -342,6 +356,7 @@
       routeKey: '',
       routeRequestId: 0,
       lastOptimization: null,
+      renderedOptimizationMode: null,
       selectedResultIndex: 0,
       selectedStation: null,
       focusRequestId: 0,
@@ -1439,6 +1454,17 @@
 
     // ─── Custom dropdown (pdd) ───────────────────────────────────────
 
+    function getSelectedOptimizationMode() {
+      const selected = document.querySelector('input[name="optimization_mode"]:checked');
+      if (!selected) {
+        throw new Error('Selecciona un objetivo de optimización.');
+      }
+      if (!Object.prototype.hasOwnProperty.call(OPTIMIZATION_MODE_PRESENTATION, selected.value)) {
+        throw new Error('El objetivo de optimización seleccionado no es válido.');
+      }
+      return selected.value;
+    }
+
     function getPddValue(id) {
       const el = $(id);
       return el ? (el.dataset.value || '') : '';
@@ -1669,9 +1695,53 @@
       const routeSource = String(data.route_source || selected.route_source || '').toLowerCase();
       if (!routeSource) return '';
       if (routeSource.includes('openrouteservice')) {
-        return '';
+        return '<div class="result-note result-route-source"><strong>Fuente de ruta:</strong> Ruta calculada con OpenRouteService</div>';
       }
-      return `<div class="result-note"><strong>Fuente de ruta:</strong> ${escapeHtml(routeSource)}</div>`;
+      if (routeSource.includes('haversine')) {
+        return '<div class="result-note result-route-source"><strong>Fuente de ruta:</strong> Estimación mediante distancia geográfica</div>';
+      }
+      return '';
+    }
+
+    function optimizationModePresentation(mode) {
+      const presentation = OPTIMIZATION_MODE_PRESENTATION[mode];
+      if (!presentation) {
+        throw new Error('La respuesta contiene un objetivo de optimización no reconocido.');
+      }
+      return presentation;
+    }
+
+    function renderOptimizationModeSummary(mode) {
+      const presentation = optimizationModePresentation(mode);
+      return `
+        <section class="result-mode-summary" aria-label="Criterio de ordenación aplicado">
+          <p class="result-mode-order">Ordenado por: <strong>${escapeHtml(presentation.label)}</strong></p>
+          <p class="result-mode-description">${escapeHtml(presentation.description)}</p>
+        </section>
+      `;
+    }
+
+    function alternativesSubtitleForMode(mode, data, isBudgetMode) {
+      if (mode === 'minimal_detour') {
+        return data.search?.search_shape === 'local_radius'
+          ? 'Ordenadas por cercanía estimada'
+          : 'Ordenadas por menor desvío adicional estimado';
+      }
+      if (mode === 'balanced') {
+        return 'Ordenadas por equilibrio entre ahorro y desvío';
+      }
+      return isBudgetMode
+        ? 'Ordenadas por litros útiles estimados'
+        : 'Ordenadas por coste efectivo neto';
+    }
+
+    function setWhySelectedText(container, value) {
+      const block = container.querySelector('[data-why-selected]');
+      const text = block?.querySelector('[data-why-selected-text]');
+      const explanation = typeof value === 'string' ? value.trim() : '';
+      if (!block || !text) return;
+      text.textContent = explanation;
+      block.hidden = !explanation;
     }
 
     function warningByCode(warnings, code) {
@@ -2032,7 +2102,7 @@
       resultElement.removeAttribute('data-empty');
       resultElement.classList.remove('result-panel--expanded', 'result-panel--collapsed');
       if (!data.best) {
-        resultElement.innerHTML = emptyResultHtml(data);
+        resultElement.innerHTML = `${renderOptimizationModeSummary(state.renderedOptimizationMode)}${emptyResultHtml(data)}`;
         resultElement.insertAdjacentHTML('afterbegin', resultCloseButton());
         bindResultCloseButton();
         return;
@@ -2052,15 +2122,17 @@
         .map((item, index) => ({ item, index }));
       const rows = renderAlternativesList(alternatives, selectedIndex, isBudgetMode);
       const alternativesLabel = alternatives.length === 1 ? 'Ver 1 alternativa' : `Ver ${alternatives.length} alternativas`;
-      const alternativesSubtitle = isBudgetMode
-        ? 'Ordenadas por litros útiles estimados'
-        : 'Ordenadas por coste efectivo neto';
+      const alternativesSubtitle = alternativesSubtitleForMode(
+        state.renderedOptimizationMode,
+        data,
+        isBudgetMode,
+      );
       const alternativesOpen = alternatives.length > 0 && keepAlternativesOpen;
       const panelClass = alternativesOpen ? 'ranking' : 'ranking collapsed';
       resultElement.classList.toggle('result-panel--expanded', alternativesOpen);
       resultElement.classList.toggle('result-panel--collapsed', !alternativesOpen);
       state.alternativesOpen = alternativesOpen;
-      const whySelected = escapeHtml(selected.why_selected || 'Ordenado por menor coste efectivo total.');
+      const modeSummary = renderOptimizationModeSummary(state.renderedOptimizationMode);
       const routeNote = routeSourceNote(data, selected);
       const resultWarnings = data.warnings || [];
       const warningsHtml = renderWarnings(resultWarnings);
@@ -2075,7 +2147,12 @@
             </div>
           </div>
           <div class="metrics result-metric-list">${metrics}</div>
+          <div class="why-selected" data-why-selected hidden>
+            <span class="why-selected-label">Por qué aparece aquí</span>
+            <p data-why-selected-text></p>
+          </div>
         </section>
+        ${modeSummary}
         ${routeNote}
         ${warningsHtml}
         <section class="result-alternatives">
@@ -2089,6 +2166,7 @@
           <div id="alternatives_panel" class="${panelClass}" aria-hidden="${String(!alternativesOpen)}">${rows}</div>
         </section>
       `;
+      setWhySelectedText(resultElement, selected.why_selected);
       resultElement.querySelectorAll('[data-open-maps]').forEach(button => {
         button.addEventListener('click', handleOpenMaps);
       });
@@ -2223,13 +2301,14 @@
           $('status').textContent = 'Puedes elegir hasta 10 marcas concretas. Usa "Todas" para buscar en todo el catalogo.';
           return;
         }
+        const requestedOptimizationMode = getSelectedOptimizationMode();
         const payload = {
           origin_lat: state.origin.lat,
           origin_lon: state.origin.lon,
           destination_lat: destination.lat,
           destination_lon: destination.lon,
           fuel_type: getPddValue('fuel_type'),
-          optimization_mode: getPddValue('optimization_mode'),
+          optimization_mode: requestedOptimizationMode,
           input_mode: state.inputMode,
           liters: state.inputMode === 'liters' ? amount : 1,
           consumption_l_100km: consumption,
@@ -2252,7 +2331,11 @@
         }
         startOptimizeLoadingMessages();
         const { data, fallbackUsed } = await requestOptimization(payload);
+        if (data.optimization_mode !== requestedOptimizationMode) {
+          throw new Error('La respuesta no coincide con el objetivo de optimización solicitado.');
+        }
         state.resultHasFit = false;
+        state.renderedOptimizationMode = requestedOptimizationMode;
         stopOptimizeLoadingMessages();
         renderResult(data, 0, false);
         $('status').textContent = fallbackUsed
@@ -2362,7 +2445,6 @@
     })();
 
     initPDD('fuel_type');
-    initPDD('optimization_mode');
 
     $('submit').addEventListener('click', optimize);
     loadCatalogStatus().then(startCatalogStatusPolling).catch(error => {

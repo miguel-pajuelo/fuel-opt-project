@@ -46,7 +46,7 @@
 
       <section class="controls">
         <div class="config-grid">
-          <div class="config-field">
+          <div class="config-field span-2">
             <label class="label" for="fuel_type_trigger">Combustible</label>
             <div class="pdd" id="fuel_type" data-value="">
               <button class="pdd-trigger" id="fuel_type_trigger" type="button" aria-expanded="false" aria-haspopup="listbox" aria-label="Combustible">
@@ -57,20 +57,32 @@
             </div>
           </div>
 
-          <div class="config-field">
-            <label class="label" for="optimization_mode_trigger">Objetivo</label>
-            <div class="pdd" id="optimization_mode" data-value="economic">
-              <button class="pdd-trigger" id="optimization_mode_trigger" type="button" aria-expanded="false" aria-haspopup="listbox" aria-label="Objetivo">
-                <span class="pdd-selected">M&#225;ximo ahorro</span>
-                <svg class="pdd-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
-              <div class="pdd-menu" role="listbox">
-                <div class="pdd-option active" data-value="economic" role="option" aria-selected="true" tabindex="-1">M&#225;ximo ahorro</div>
-                <div class="pdd-option" data-value="balanced" role="option" aria-selected="false" tabindex="-1">Equilibrado</div>
-                <div class="pdd-option" data-value="minimal_detour" role="option" aria-selected="false" tabindex="-1">M&#237;nimo desv&#237;o</div>
-              </div>
+          <fieldset class="config-field optimization-mode-field span-2">
+            <legend class="label">Objetivo de optimizaci&#243;n</legend>
+            <div class="optimization-mode-options">
+              <label class="optimization-mode-option" for="optimization_mode_economic">
+                <input id="optimization_mode_economic" type="radio" name="optimization_mode" value="economic" checked aria-describedby="optimization_mode_economic_description">
+                <span class="optimization-mode-copy">
+                  <strong>M&#225;s ahorro</strong>
+                  <span id="optimization_mode_economic_description">Prioriza el mayor ahorro neto estimado, descontando el coste del desplazamiento.</span>
+                </span>
+              </label>
+              <label class="optimization-mode-option" for="optimization_mode_minimal_detour">
+                <input id="optimization_mode_minimal_detour" type="radio" name="optimization_mode" value="minimal_detour" aria-describedby="optimization_mode_minimal_detour_description">
+                <span class="optimization-mode-copy">
+                  <strong>Menor desv&#237;o</strong>
+                  <span id="optimization_mode_minimal_detour_description">Prioriza la estaci&#243;n que exige menos distancia adicional. En b&#250;squedas locales, prioriza la estaci&#243;n m&#225;s cercana.</span>
+                </span>
+              </label>
+              <label class="optimization-mode-option" for="optimization_mode_balanced">
+                <input id="optimization_mode_balanced" type="radio" name="optimization_mode" value="balanced" aria-describedby="optimization_mode_balanced_description">
+                <span class="optimization-mode-copy">
+                  <strong>Equilibrado</strong>
+                  <span id="optimization_mode_balanced_description">Equilibra por igual el ahorro estimado y el desv&#237;o entre las opciones encontradas.</span>
+                </span>
+              </label>
             </div>
-          </div>
+          </fieldset>
 
           <div class="config-field amount-field span-2">
             <label class="label" for="liters">Cantidad</label>

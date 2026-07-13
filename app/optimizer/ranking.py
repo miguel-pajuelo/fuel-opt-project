@@ -723,21 +723,29 @@ def optimize_candidates(
                 route_source=provider.route_source,
             )
         )
-    return _annotate_results(_rank_results(results, request))
+    return _annotate_results(_rank_results(results, request), request)
 
 
-def _annotate_results(results: list[CandidateResult]) -> list[CandidateResult]:
+def _annotate_results(
+    results: list[CandidateResult],
+    request: OptimizationInput,
+) -> list[CandidateResult]:
     if not results:
         return []
     reference = min(results, key=lambda item: (item.extra_detour_km, item.effective_total_cost_eur))
     reference_cost = reference.effective_total_cost_eur
     reference_net_liters = reference.net_liters
     is_budget = results[0].input_mode == "budget"
+    is_local_search = _same_place(
+        request.origin,
+        request.destination,
+        request.same_place_threshold_km,
+    )
     annotated: list[CandidateResult] = []
-    for idx, item in enumerate(results):
+    for item in results:
         savings = reference_cost - item.effective_total_cost_eur
         liters_delta = item.net_liters - reference_net_liters
-        why = _why_selected(item, liters_delta if is_budget else savings, idx == 0)
+        why = _why_selected(item, is_local_search=is_local_search)
         annotated.append(
             replace(
                 item,
@@ -750,20 +758,32 @@ def _annotate_results(results: list[CandidateResult]) -> list[CandidateResult]:
     return annotated
 
 
-def _why_selected(item: CandidateResult, comparison_delta: float, is_best: bool) -> str:
-    if not is_best:
-        return ""
-    if item.input_mode == "budget":
-        if comparison_delta > 0.05 and item.extra_detour_km > 1.0:
-            return "Gana porque permite repostar mas litros con el mismo presupuesto, incluso contando el desvio."
-        if item.extra_detour_km <= 1.0:
-            return "Gana porque combina buen precio por litro con desvio practicamente nulo."
-        return "Gana por maximizar los litros netos obtenidos con el presupuesto indicado."
-    if comparison_delta > ECONOMIC_EPSILON_EUR and item.extra_detour_km > 1.0:
-        return "El precio por litro compensa el desvio adicional frente a la alternativa de menor desvio."
-    if item.extra_detour_km <= 1.0:
-        return "Gana porque combina precio competitivo con desvio practicamente nulo."
-    return "Gana por menor coste efectivo total dentro de las opciones exploradas."
+def _why_selected(item: CandidateResult, *, is_local_search: bool) -> str:
+    if item.optimization_mode == "economic":
+        if item.input_mode == "budget":
+            return (
+                "Prioriza la mayor cantidad neta estimada de combustible después de considerar "
+                "el desplazamiento."
+            )
+        return (
+            "Prioriza el menor coste total estimado después de considerar el desplazamiento."
+        )
+    if item.optimization_mode == "minimal_detour":
+        if is_local_search:
+            return (
+                "Prioriza la estación más cercana estimada; el resultado económico se utiliza "
+                "para desempatar."
+            )
+        return (
+            "Prioriza el menor desvío adicional estimado; el resultado económico se utiliza "
+            "para desempatar."
+        )
+    if item.optimization_mode == "balanced":
+        return (
+            "Busca un compromiso entre el resultado económico estimado y el desvío entre las "
+            "opciones encontradas. Ambos criterios tienen el mismo peso en la ordenación."
+        )
+    raise ValueError(f"Unsupported optimization mode: {item.optimization_mode}")
 
 
 def optimize_from_db(
