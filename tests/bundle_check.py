@@ -57,6 +57,9 @@ def validate_bundle(bundle: Path) -> None:
         internal / "static" / "index.html",
         internal / "static" / "app.js",
         internal / "static" / "styles.css",
+        internal / "static" / "favicon.ico",
+        internal / "static" / "icons" / "fuelopt-32.png",
+        internal / "static" / "icons" / "fuelopt-180.png",
         internal / "static" / "vendor" / "leaflet" / "leaflet.js",
         internal / "static" / "vendor" / "leaflet" / "leaflet.css",
         internal / "static" / "vendor" / "leaflet" / "LICENSE",
@@ -70,6 +73,7 @@ def validate_bundle(bundle: Path) -> None:
     _assert(any(internal.rglob("cacert.pem")), "Certifi CA bundle is missing.")
     _assert(any(internal.glob("slowapi-*.dist-info")), "SlowAPI metadata/license is missing.")
     _assert(not (internal / "data").exists(), "Developer cache data must not be bundled.")
+    _assert(not (internal / "assets").exists(), "Brand source and build-only assets must not be bundled.")
     for optional_runtime in ("httptools", "watchfiles", "websockets"):
         _assert(not (internal / optional_runtime).exists(), f"Unused optional runtime was bundled: {optional_runtime}")
 

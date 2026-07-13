@@ -36,9 +36,7 @@ VersionInfoCompany={#AppPublisher}
 VersionInfoDescription=FuelOpt installer
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#AppVersion}
-#if FileExists(AppIconSource)
 SetupIconFile={#AppIconSource}
-#endif
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"

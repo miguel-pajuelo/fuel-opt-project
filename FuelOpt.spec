@@ -11,6 +11,9 @@ DIAGNOSTIC_CONSOLE = os.environ.get("FUELOPT_DIAGNOSTIC_CONSOLE") == "1"
 BUILD_NAME = "FuelOptDiagnostic" if DIAGNOSTIC_CONSOLE else "FuelOpt"
 ICON_PATH = ROOT / "assets" / "fuelopt.ico"
 
+if not ICON_PATH.is_file():
+    raise FileNotFoundError(f"Required application icon is missing: {ICON_PATH}")
+
 datas = [
     (str(ROOT / "static"), "static"),
     (str(ROOT / "data" / "db" / "gas_stations.sqlite"), "resources/seed"),
@@ -95,7 +98,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=DIAGNOSTIC_CONSOLE,
-    icon=str(ICON_PATH) if ICON_PATH.is_file() else None,
+    icon=str(ICON_PATH),
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
