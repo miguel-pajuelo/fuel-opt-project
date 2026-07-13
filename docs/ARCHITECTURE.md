@@ -25,6 +25,14 @@ Usuario
 
 En primer arranque, el bootstrap conserva una base activa válida; si falta, copia la semilla con backup SQLite y fuente inmutable o reconstruye desde snapshot. Un refresco fallido conserva la activa y, cuando corresponde, una copia `previous` recuperable.
 
+## Optimización y presentación
+
+El contrato público admite `economic`, `minimal_detour` y `balanced`. La pipeline construye el universo válido, calcula sus métricas, aplica una ordenación determinista y limita la respuesta únicamente después del ranking.
+
+`economic` conserva la clave económica neta; `minimal_detour` usa el desvío adicional en trayectos o la distancia a la estación en búsquedas locales, con la economía como desempate. `balanced` combina al 50 % los rangos normalizados económico y de desvío, tratando empates semánticos con competition ranking. La puntuación y los rangos son internos: la API solo conserva `why_selected` como explicación pública.
+
+OpenRouteService y la aproximación Haversine no cambian el contrato de modos. El frontend identifica cuál se utilizó y presenta Haversine como estimación. La versión 0.1.0 no implementa autonomía ni `remaining_fuel_liters`.
+
 ## Refresco y Scheduler
 
 `refresh_service` ejecuta el pipeline sin HTTP. Windows Task Scheduler invoca `FuelOpt.exe --refresh-direct --silent` para el usuario actual. `config.json` es la fuente de verdad de la política y los locks evitan refrescos simultáneos.

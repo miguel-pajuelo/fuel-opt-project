@@ -6,7 +6,7 @@ Estados permitidos: `pendiente`, `en curso`, `validado`, `riesgo aceptado`, `des
 
 Categorías permitidas: `BLOCKER DE RELEASE`, `OBLIGATORIO ANTES DE PUBLICACIÓN`, `RECOMENDADO`, `MEJORA FUTURA` y `RIESGO ACEPTADO`.
 
-## Registro FR-001–FR-047
+## Registro FR-001–FR-048
 
 Cada fila contiene: categoría y bloqueo; prioridad, estado y responsable; descripción; evidencia disponible y faltante; archivos; riesgo; acción; aceptación; pruebas y dependencias.
 
@@ -59,6 +59,7 @@ Cada fila contiene: categoría y bloqueo; prioridad, estado y responsable; descr
 | **FR-045 — Procedencia de datos MINETUR/Ballenoil** | OBLIGATORIO ANTES DE PUBLICACIÓN; no; P1; pendiente; producto/asesor | Adaptadores y snapshots identifican fuentes; condiciones de reutilización no revisadas. | Datos/docs; procedencia/licencia/frescura. | Documentar origen, fecha, términos y actualización; aceptar permiso y atribución claros; revisión documental; depende de FR-033/041. |
 | **FR-046 — Accesibilidad y experiencia de usuario** | RECOMENDADO; no; P2; pendiente; producto/QA | Existen tests de frontend, no auditoría manual completa. | Frontend/installer; barreras de uso. | Revisar teclado, contraste, zoom, lectores y mensajes; aceptar criterios acordados; auditoría manual/automatizada; depende de UI final. |
 | **FR-047 — Metadatos VERSIONINFO de FuelOpt.exe** | OBLIGATORIO ANTES DE PUBLICACIÓN; sí; P0; validado; titular/release | Build limpio local de Patch 8B contiene `ProductName`, `FileDescription`, `InternalName`, `OriginalFilename`, `ProductVersion` y `FileVersion`; 0.1.0 textual y 0,1,0,0 numérico coinciden, `CompanyName` está omitido y permanecen `RT_ICON`/`RT_GROUP_ICON`. | `FuelOpt.spec`, generador, check, workflow y artefacto PE; queda repetir la misma evidencia en el runner, sin reabrir el metadato ya validado localmente. | Mantener `FUELOPT_VERSION` como parámetro común y `version_info_check.py` en builds locales/remotos; reabrir si divergen PE, instalador o nombres. FR-047 no resuelve FR-002/040 ni autoriza publicación. |
+| **FR-048 — Overflow horizontal móvil en mapa y selector de marcas** | RECOMENDADO; no; P2; pendiente; frontend/QA | Observado a 320 px durante la validación visual de 8C.3. No está causado por el selector de modos y parece proceder del mapa o del filtro de marcas; falta reproducir y localizar el origen exacto. | Frontend responsive; scroll horizontal involuntario o pérdida de usabilidad. No bloquea la reconciliación, pero debe revisarse manualmente antes de publicar. | Reproducir antes de corregir; aceptar sin scroll horizontal involuntario, con mapa y marcas utilizables, zoom 200 % revisado y sin regresión desktop; validación visual final; depende de FR-046. |
 
 ## Criterio de salida
 

@@ -7,6 +7,7 @@ FuelOpt es una aplicación local que compara estaciones de servicio y estima el 
 ## Funciones principales
 
 - Optimización por coste efectivo, ahorro estimado o aprovechamiento del presupuesto.
+- Tres objetivos explícitos: más ahorro, menor desvío y equilibrio entre ambos criterios.
 - Viaje de ida o ida y vuelta, entrada por litros o presupuesto y filtro de marcas.
 - Estimación del coste del desvío y presentación de alternativas.
 - Rutas de OpenRouteService (ORS) cuando el usuario configura una clave.
@@ -16,6 +17,8 @@ FuelOpt es una aplicación local que compara estaciones de servicio y estima el 
 - Datos mutables separados de los recursos instalados.
 
 FuelOpt se abre en el navegador mediante una dirección local `http://127.0.0.1:<puerto>`. El launcher utiliza los puertos 8001–8010 y verifica la identidad del servidor antes de reutilizar una instancia. No se publica un servidor en Internet.
+
+Los objetivos no se reducen al precio por litro: consideran el desplazamiento y ordenan todas las alternativas válidas antes de aplicar el límite de resultados. Consulta el detalle en la [guía de usuario](docs/USER_GUIDE.md#objetivos-de-optimizacion).
 
 ## Datos, red y privacidad
 
@@ -73,6 +76,7 @@ Consulta [Desarrollo](docs/DEVELOPMENT.md), [Arquitectura](docs/ARCHITECTURE.md)
 - [Changelog](CHANGELOG.md)
 - [Avisos de terceros](docs/THIRD_PARTY_NOTICES.md)
 - [Backlog previo a release](docs/FINAL_REVIEW_BACKLOG.md)
+- [Reconciliación de la PR #2](docs/PR2_RECONCILIATION.md)
 
 ## Licencia
 

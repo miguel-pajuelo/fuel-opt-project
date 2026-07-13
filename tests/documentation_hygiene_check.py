@@ -22,6 +22,7 @@ CANONICAL_DOCUMENTS = (
     "docs/DEVELOPMENT.md",
     "docs/ARCHITECTURE.md",
     "docs/RELEASING.md",
+    "docs/PR2_RECONCILIATION.md",
     "docs/FINAL_REVIEW_BACKLOG.md",
     "docs/THIRD_PARTY_NOTICES.md",
     "docs/archive/README.md",
@@ -109,8 +110,13 @@ def _check_hygiene() -> None:
     railway_allowed = {
         *ARCHIVED_DOCUMENTS,
         "docs/archive/README.md",
+        "docs/PR2_RECONCILIATION.md",
         "tests/documentation_hygiene_check.py",
         "tests/installer_check.py",
+    }
+    retired_reference_allowed = {
+        "docs/PR2_RECONCILIATION.md",
+        "tests/documentation_hygiene_check.py",
     }
     personal_pattern_allowed = {
         "tests/brand_assets_check.py",
@@ -122,9 +128,11 @@ def _check_hygiene() -> None:
     for path in _repository_text_files():
         relative = path.relative_to(ROOT).as_posix()
         lowered = path.read_text(encoding="utf-8", errors="replace").lower()
-        _assert(analytics_name not in lowered, f"Retired analytics name found in {relative}")
+        if analytics_name in lowered:
+            _assert(relative in retired_reference_allowed, f"Retired analytics name found in {relative}")
         _assert(analytics_host not in lowered, f"Retired analytics host found in {relative}")
-        _assert(retired_domain not in lowered, f"Retired public domain found in {relative}")
+        if retired_domain in lowered:
+            _assert(relative in retired_reference_allowed, f"Retired public domain found in {relative}")
         for donation_name in donation_names:
             _assert(donation_name not in lowered, f"Donation reference found in {relative}")
         if relative not in personal_pattern_allowed:
@@ -136,7 +144,7 @@ def _check_hygiene() -> None:
 
 def _check_backlog() -> None:
     backlog = _read("docs/FINAL_REVIEW_BACKLOG.md")
-    for number in range(1, 48):
+    for number in range(1, 49):
         identifier = f"FR-{number:03d}"
         _assert(identifier in backlog, f"Backlog item missing: {identifier}")
     required_terms = (
@@ -162,6 +170,22 @@ def _check_backlog() -> None:
     fr037 = next(line for line in backlog.splitlines() if line.startswith("| **FR-037"))
     _assert("validado" in fr001, "FR-001 must remain validated")
     _assert("en curso" in fr037, "FR-037 must remain in progress")
+    fr048 = next(line for line in backlog.splitlines() if line.startswith("| **FR-048"))
+    _assert("320 px" in fr048 and "no; P2; pendiente" in fr048, "FR-048 mobile overflow is not tracked correctly")
+
+
+def _check_pr2_reconciliation() -> None:
+    reconciliation = _read("docs/PR2_RECONCILIATION.md")
+    for heading in (
+        "## A. Recuperado",
+        "## B. Ya existía de forma equivalente",
+        "## C. Pospuesto a 0.2.0",
+        "## D. Descartado",
+    ):
+        _assert(heading in reconciliation, f"PR #2 reconciliation category missing: {heading}")
+    for mode in ("economic", "minimal_detour", "balanced"):
+        _assert(mode in reconciliation, f"Optimization mode missing from PR #2 reconciliation: {mode}")
+    _assert("remaining_fuel_liters" in reconciliation and "0.2.0" in reconciliation, "Autonomy deferral is missing")
 
 
 def _check_repository_state() -> None:
@@ -200,6 +224,7 @@ def run() -> None:
     _check_internal_links()
     _check_hygiene()
     _check_backlog()
+    _check_pr2_reconciliation()
     _check_repository_state()
     print("OK: documentation hygiene checks passed")
 

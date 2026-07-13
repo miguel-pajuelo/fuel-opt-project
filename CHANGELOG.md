@@ -6,6 +6,9 @@
 
 - Aplicación local para Windows orientada a optimizar el coste de combustible.
 - Frontend local con comparación de alternativas, marcas y mapa.
+- Tres modos de optimización (`economic`, `minimal_detour` y `balanced`) con ranking determinista y límite de resultados aplicado después de ordenar.
+- Selector accesible y explicaciones específicas del criterio utilizado en cada resultado.
+- Identificación visible de rutas OpenRouteService y estimaciones Haversine.
 - Base semilla y snapshot para primer arranque y recuperación offline.
 - Refresco directo, atómico y configurable: 1h, 2h, 4h, 8h, 12h, 24h, al abrir o manual.
 - Integración por usuario con Windows Task Scheduler y Credential Manager para ORS.
