@@ -1,5 +1,12 @@
 # Secrets & environment handling (H5)
 
+> **Estado: SUPERSEDED**
+> **Fecha de archivo:** 2026-07-12
+> **Documento canónico sustituto:** [Configuración](../CONFIGURATION.md), [seguridad](../../SECURITY.md) y [desarrollo](../DEVELOPMENT.md)
+> **Motivo:** describe un despliegue web y gestión de secretos anteriores.
+> **Valor histórico:** conserva reglas de rotación y exclusión de secretos.
+> **Advertencia:** las menciones a Railway/hosting son históricas y no representan la arquitectura vigente.
+
 FuelOpt keeps all real secrets out of the repository. This note explains the
 rules and the manual rotation actions that follow from the security audit.
 

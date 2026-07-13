@@ -1,135 +1,79 @@
 # FuelOpt
 
-FuelOpt es un optimizador de repostaje para España. Combina precios de gasolineras, rutas por carretera y coste estimado del desvío para recomendar dónde repostar de forma más eficiente.
+FuelOpt es una aplicación local que compara estaciones de servicio y estima el coste económico de repostar teniendo en cuenta el precio, la cantidad de combustible y el desvío. Está orientada a España y presenta los resultados en una interfaz web servida únicamente desde el equipo del usuario.
 
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![SQLite](https://img.shields.io/badge/SQLite-003B57?style=flat&logo=sqlite&logoColor=white)](https://sqlite.org)
+> **Estado: pre-release.** La plataforma objetivo es Windows 10/11 x64. El bundle y el instalador se compilan y auditan en GitHub Actions `windows-latest`, pero la instalación limpia en una máquina virtual sin Python sigue pendiente. Las versiones instalables se publicarán en GitHub Releases cuando la primera versión sea aprobada.
 
-## Qué problema resuelve
+## Funciones principales
 
-El precio por litro más barato no siempre es la opción más barata en la práctica. Una gasolinera puede requerir un desvío que consume tiempo y combustible. FuelOpt compara estaciones cercanas a la ruta, estima el coste adicional del desvío y calcula el ahorro neto para que la recomendación tenga sentido económico.
+- Optimización por coste efectivo, ahorro estimado o aprovechamiento del presupuesto.
+- Viaje de ida o ida y vuelta, entrada por litros o presupuesto y filtro de marcas.
+- Estimación del coste del desvío y presentación de alternativas.
+- Rutas de OpenRouteService (ORS) cuando el usuario configura una clave.
+- Aproximación geográfica Haversine cuando ORS no está disponible; no equivale a una ruta por carretera.
+- Base semilla incluida y uso offline con los últimos datos válidos disponibles.
+- Refresco manual, al abrir o programado cada 1, 2, 4, 8, 12 o 24 horas.
+- Datos mutables separados de los recursos instalados.
 
-## Funcionalidades principales
+FuelOpt se abre en el navegador mediante una dirección local `http://127.0.0.1:<puerto>`. El launcher utiliza los puertos 8001–8010 y verifica la identidad del servidor antes de reutilizar una instancia. No se publica un servidor en Internet.
 
-- Optimización de gasolineras basada en ruta.
-- Selección de la opción de repostaje más barata según coste efectivo, no solo precio por litro.
-- Cálculo de coste de desvío usando consumo medio, kilómetros extra y precio de referencia.
-- Modo de entrada por litros o por euros.
-- Filtrado por marcas, con catálogo visual de logos.
-- Rutas y geocodificación con OpenRouteService cuando hay clave configurada.
-- Fallback por Haversine cuando ORS no está disponible o no devuelve una ruta utilizable.
-- Estado de frescura del catálogo para distinguir datos recientes, antiguos o degradados.
-- Formulario de feedback para recibir sugerencias de usuarios.
+## Datos, red y privacidad
 
-## Cómo funciona la optimización
+La aplicación se instala por usuario en `%LOCALAPPDATA%\Programs\FuelOpt` y conserva configuración, base activa, caché y logs en `%LOCALAPPDATA%\FuelOpt`. La base semilla instalada es de solo lectura y se copia o reconstruye en el primer arranque sin sustituir una base activa válida.
 
-1. El usuario selecciona origen, destino, combustible, cantidad o presupuesto, consumo medio y marcas permitidas.
-2. FuelOpt calcula la ruta principal con ORS o, si falla, usa una aproximación por distancia.
-3. El sistema busca estaciones candidatas cercanas a la ruta o al área relevante.
-4. Para cada estación compara el precio del combustible con una referencia.
-5. Estima los kilómetros extra necesarios para desviarse.
-6. Convierte ese desvío en coste de combustible.
-7. Ordena las alternativas por ahorro neto o por litros útiles en modo presupuesto.
+Sin conexión se puede consultar el último catálogo disponible, pero no se pueden obtener precios nuevos, teselas de mapa ni rutas ORS. Sin clave ORS, FuelOpt conserva una funcionalidad limitada basada en aproximaciones geométricas. No incluye telemetría propia. Los proveedores externos pueden recibir la dirección IP al realizar solicitudes; consulta [Privacidad y configuración](docs/CONFIGURATION.md#privacidad-y-servicios-externos).
 
-## Stack
+## Instalación para usuarios
 
-- Python
-- FastAPI
-- SQLite
-- HTML, CSS y JavaScript
-- Leaflet
-- OpenRouteService
-- OpenStreetMap
+El instalador previsto es per-user, no requiere Python, Git ni privilegios de administrador. Todavía no está firmado y la validación manual en una VM limpia es un blocker de la primera release. Consulta la [guía de instalación](docs/INSTALLATION.md).
 
-## Estructura del proyecto
+## Desarrollo
 
-```text
-app/
-  api/              API FastAPI y endpoints web
-  data_sources/     Fuentes de precios, catálogo de marcas y normalización
-  optimizer/        Ranking económico y cálculo de alternativas
-  routing/          ORS, geocoding y fallback de distancia
-  storage/          Persistencia SQLite
-data/
-  cache/            Snapshot de precios
-  db/               Base SQLite local del catálogo
-scripts/            Refresco de catálogo, checks y utilidades
-static/             Interfaz web, estilos, JS, logos y páginas públicas
-tests/              Checks ligeros de frontend, adapters y pipeline
-```
-
-## Instalación local
-
-```bash
-git clone https://github.com/miguel-pajuelo/fuel-route-optimizer
-cd fuel-route-optimizer
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements-web.txt
-copy .env.example .env
-```
-
-Edita `.env` y añade solo los valores necesarios para tu entorno local. No subas `.env` al repositorio.
-
-## Variables de entorno
-
-Usa `.env.example` como plantilla. Las variables más relevantes son:
-
-- `ORS_API_KEY`: clave de OpenRouteService para geocoding y rutas reales.
-- `FUELOPT_ADMIN_TOKEN`: token requerido para ejecutar refrescos manuales desde `/catalog/refresh`.
-- `FUELOPT_ENABLE_API_DOCS`: activa `/docs`, `/redoc` y `/openapi.json` solo si se establece en `true`.
-- `GAS_DB_PATH`: ruta de la base SQLite.
-- `MINETUR_SNAPSHOT_PATH`: ruta del snapshot de precios.
-- `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `FEEDBACK_RECIPIENT`: SMTP opcional para el formulario de feedback.
-
-## Ejecutar la app
-
-```bash
-uvicorn app.api.main:app --reload --host 127.0.0.1 --port 8001
-```
-
-Abre `http://127.0.0.1:8001/`.
-
-## Refrescar el catálogo
-
-El proyecto incluye scripts para actualizar el catálogo desde MINETUR:
-
-```bash
-python scripts/refresh_catalog.py --source minetur
-```
-
-En Windows también puedes usar:
+Repositorio: <https://github.com/miguel-pajuelo/fuel-opt-project>
 
 ```bat
-scripts\run_refresh_catalog.cmd
+git clone https://github.com/miguel-pajuelo/fuel-opt-project.git
+cd fuel-opt-project
+py -3.12 -m venv .venv
+.venv\Scripts\activate
+python -m pip install -r requirements-web.txt
 ```
 
-Si el catálogo aparece como `degraded`, significa que la app no ha conseguido confirmar una descarga fresca completa y puede estar usando un snapshot/cache anterior. Revisa conectividad, respuesta de MINETUR y logs del script antes de publicar resultados.
+El entorno de CI está fijado a Python 3.12.10. Para ejecutar la aplicación en desarrollo:
 
-## Seguridad
+```bat
+python fuelopt_launcher.py
+```
 
-- No expongas claves de ORS, tokens de administración ni credenciales SMTP.
-- No subas `.env`, credenciales locales, dumps privados, cachés temporales ni entornos virtuales.
-- `/catalog/refresh` está protegido por `FUELOPT_ADMIN_TOKEN`.
-- La documentación automática de FastAPI queda oculta salvo que `FUELOPT_ENABLE_API_DOCS=true`.
-- Ten cuidado al desplegar públicamente: las búsquedas de ruta pueden pasar por ORS y los mapas por proveedores externos de tiles.
+Tests y checks principales:
 
-## Limitaciones conocidas
+```bat
+python -m pytest
+scripts\release_check.cmd
+git diff --check
+```
 
-- Proyecto en estado prototipo/demo.
-- La frescura de datos depende de la disponibilidad de las fuentes externas.
-- Algunas estimaciones pueden usar aproximaciones por distancia cuando ORS no responde.
-- No está endurecido para producción sin configurar observabilidad, límites, despliegue seguro y gestión robusta de secretos.
+Builds de Windows:
 
-## Roadmap
+```bat
+scripts\build_onedir.cmd
+scripts\build_installer.cmd
+```
 
-- Despliegue público con HTTPS, variables secretas y refresco programado.
-- Monitorización de catálogo y alertas cuando el estado pase a degradado.
-- Mejora de scoring para tiempo de desvío, peajes y tráfico.
-- Historial de frescura de precios por fuente.
-- Tests end-to-end de la experiencia web.
+Consulta [Desarrollo](docs/DEVELOPMENT.md), [Arquitectura](docs/ARCHITECTURE.md) y [Publicación](docs/RELEASING.md).
+
+## Documentación
+
+- [Índice de documentación](docs/README.md)
+- [Instalación y desinstalación](docs/INSTALLATION.md)
+- [Guía de usuario](docs/USER_GUIDE.md)
+- [Configuración, ORS y CLI](docs/CONFIGURATION.md)
+- [Solución de problemas](docs/TROUBLESHOOTING.md)
+- [Seguridad](SECURITY.md) y [contribución](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
+- [Avisos de terceros](docs/THIRD_PARTY_NOTICES.md)
+- [Backlog previo a release](docs/FINAL_REVIEW_BACKLOG.md)
 
 ## Licencia
 
-License not specified yet.
+La licencia principal aún no ha sido elegida. Hasta que exista un archivo `LICENSE` aprobado, el código no se ofrece bajo una licencia de código abierto y la publicación pública es un blocker. Los componentes de terceros conservan sus propias licencias; consulta [THIRD_PARTY_NOTICES](docs/THIRD_PARTY_NOTICES.md).

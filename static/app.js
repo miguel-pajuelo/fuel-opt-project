@@ -1,9 +1,4 @@
     const $ = (id) => document.getElementById(id);
-    function track(eventName, _props) {
-      if (window.goatcounter && typeof window.goatcounter.count === 'function') {
-        window.goatcounter.count({ path: eventName, event: true });
-      }
-    }
     const fmtEuro = (n) => `${Number(n).toFixed(2)} €`;
     const fmtKm = (n) => `${Number(n).toFixed(2)} km`;
     const fmtPrice = (n) => `${Number(n).toFixed(3)} €/L`;
@@ -543,7 +538,6 @@
         state.userLocationAccuracyCircle = null;
       }
       focusUserLocation(latLng, accuracy);
-      track('Geolocalización usada', { precision_m: String(Number.isFinite(accuracy) ? Math.round(accuracy) : -1) });
       if (Number.isFinite(accuracy) && accuracy > LOW_LOCATION_ACCURACY_M) {
         setRouteStatus('Ubicación aproximada: precisión baja.');
       } else {
@@ -1436,7 +1430,6 @@
     $('refill_mode_liters').addEventListener('click', () => setInputMode('liters'));
     $('refill_mode_budget').addEventListener('click', () => {
       setInputMode('budget');
-      track('Modo presupuesto activado');
     });
 
     syncRefuelInputUI();
@@ -2262,7 +2255,6 @@
         state.resultHasFit = false;
         stopOptimizeLoadingMessages();
         renderResult(data, 0, false);
-        track('Optimización calculada', { resultados: String(data.returned), fallback: String(fallbackUsed) });
         $('status').textContent = fallbackUsed
           ? `${data.returned} alternativas evaluadas con estimación por distancia`
           : `${data.returned} alternativas evaluadas`;

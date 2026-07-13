@@ -1,41 +1,44 @@
 # Publicar una versión de FuelOpt para Windows
 
-El workflow `Windows release` crea una GitHub Release únicamente al publicar un tag con formato estricto `vMAJOR.MINOR.PATCH`, por ejemplo `v0.1.0`.
+El workflow `Windows release` crea una GitHub Release únicamente al publicar un tag con formato estricto `vMAJOR.MINOR.PATCH`, por ejemplo `v0.1.0`. `workflow_dispatch` es siempre dry-run: construye artefactos, pero omite el job con permiso `contents: write`.
 
-También admite ejecución manual mediante `workflow_dispatch`. Las ejecuciones manuales son siempre dry-run: construyen y conservan artefactos del workflow, pero el job con permiso `contents: write` queda omitido y no puede crear una GitHub Release.
+## Antes del tag
 
-## Antes de crear el tag
+1. Parte de un commit limpio y ejecuta `scripts\release_check.cmd`.
+2. Confirma que versión, instalador, metadatos, CHANGELOG y nombres de artefactos coinciden.
+3. Confirma semilla y snapshot aprobados mediante hashes.
+4. Resuelve todos los blockers de [FINAL_REVIEW_BACKLOG.md](FINAL_REVIEW_BACKLOG.md), incluida una licencia principal.
+5. Ejecuta `workflow_dispatch`, descarga instalador, ZIP y `SHA256SUMS.txt`, y verifica contenido y hashes.
+6. Confirma que la firma está aplicada o que su ausencia tiene una aceptación de riesgo explícita.
+7. Solo entonces crea el tag sobre el commit exacto:
 
-1. Trabaja desde un commit limpio que haya pasado `scripts\release_check.cmd`.
-2. Confirma que la versión todavía no existe como tag o GitHub Release.
-3. Confirma que los datos semilla y el snapshot rastreados son los aprobados para esa versión.
-4. Crea y publica el tag sobre el commit exacto que se quiere distribuir:
-
-   ```powershell
+   ```bat
    git tag -a v0.1.0 -m "FuelOpt 0.1.0"
    git push origin v0.1.0
    ```
 
-Los tags como `v0.1`, `v0.1.0-beta` o cualquier valor que no sea `vX.Y.Z` hacen fallar el workflow antes del build.
+Tags incompletos o con sufijos no admitidos deben fallar antes del build.
 
-## Qué ejecuta el workflow
+## Pipeline
 
-- Instala Python 3.12.10, disponible para `windows-latest`, y las dependencias fijadas.
-- Ejecuta todos los release checks.
+- instala Python 3.12.10 y dependencias fijadas;
+- ejecuta release checks;
 - limpia `build\` y `dist\`;
-- genera el bundle PyInstaller onedir;
-- descarga Inno Setup 6.7.3, verificando SHA-256 y firma de Pyrsys B.V.;
+- genera PyInstaller `onedir`;
+- obtiene Inno Setup 6.7.3 verificando hash y firma del proveedor;
 - compila el instalador con la versión derivada del tag;
-- genera el ZIP del bundle y `SHA256SUMS.txt`;
-- conserva los tres archivos como artefacto del workflow;
-- crea la GitHub Release o reemplaza sus archivos si se reintenta el mismo tag.
+- genera `FuelOpt-X.Y.Z-windows-x64.zip` y `SHA256SUMS.txt`;
+- conserva instalador, ZIP y hashes como artefactos;
+- publica solo para tag y reemplaza assets del mismo nombre en un reintento.
 
-La Release contiene:
+## Verificación posterior
 
-- `FuelOpt-Setup-X.Y.Z.exe`;
-- `FuelOpt-X.Y.Z-windows-x64.zip`;
-- `SHA256SUMS.txt`.
+Descarga los assets desde GitHub, recalcula SHA-256, verifica firma y metadatos y audita que no existan secretos, rutas personales, tests o datos mutables. Confirma una sola Release y un solo conjunto coherente de assets. La idempotencia real de una Release permanece pendiente hasta la primera publicación controlada.
+
+## Rollback y retirada
+
+Un fallo previo al job de publicación no debe crear Release. Si una Release publicada es defectuosa, retírala o conviértela en borrador, documenta el motivo y verifica separadamente Release y tag. No reutilices una versión para contenido diferente: publica la corrección con un número nuevo. Conserva hashes y logs saneados para trazabilidad.
 
 ## Límites actuales
 
-Los binarios permanecen sin firma digital hasta configurar un certificado de code signing. No añadas certificados, contraseñas, claves ORS ni otros secretos directamente al workflow o al repositorio.
+No hay licencia principal, firma digital ni validación completa en VM. No añadas certificados, contraseñas, claves ORS ni otros secretos al workflow. Patch 8B deberá añadir un bloqueo técnico para impedir publicar sin `LICENSE` y validarlo remotamente; Patch 8A no modifica el workflow validado.

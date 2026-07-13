@@ -1,5 +1,12 @@
 # Database artifact policy (audit finding H7)
 
+> **Estado: SUPERSEDED**
+> **Fecha de archivo:** 2026-07-12
+> **Documento canónico sustituto:** [Arquitectura](../ARCHITECTURE.md) y [desarrollo](../DEVELOPMENT.md)
+> **Motivo:** la política precede al bootstrap y publicación atómica actuales.
+> **Valor histórico:** conserva la justificación de rastrear semilla y snapshot.
+> **Advertencia:** no representa la arquitectura vigente.
+
 ## Finding
 
 `data/db/gas_stations.sqlite` is tracked in git:

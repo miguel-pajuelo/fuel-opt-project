@@ -1,5 +1,12 @@
 # Supply-chain hardening: H4 (Leaflet SRI) / H9 (dependency audit)
 
+> **Estado: SUPERSEDED**
+> **Fecha de archivo:** 2026-07-12
+> **Documento canónico sustituto:** [Avisos de terceros](../THIRD_PARTY_NOTICES.md) y [backlog](../FINAL_REVIEW_BACKLOG.md)
+> **Motivo:** Leaflet se distribuye ahora localmente y el proceso de release cambió.
+> **Valor histórico:** conserva hashes SRI y metodología de auditoría anterior.
+> **Advertencia:** los CDN enumerados son evidencia histórica y no representan recursos cargados actualmente.
+
 ## H4 — Subresource Integrity for Leaflet
 
 Leaflet 1.9.4 is still loaded from the unpkg CDN in `static/index.html`. Both

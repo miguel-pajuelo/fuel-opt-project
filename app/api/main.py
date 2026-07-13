@@ -199,8 +199,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 # Baseline security headers applied to every response (H6). No CSP is set:
-# the UI loads OSM tiles, GoatCounter, and uses inline
-# event handlers/styles, so a strict CSP would break current behavior. The
+# the UI loads OSM tiles and uses inline event handlers/styles, so a strict
+# CSP would break current behavior. The
 # Permissions-Policy keeps geolocation enabled for same-origin (the map uses it)
 # while disabling camera/microphone.
 _SECURITY_HEADERS = {

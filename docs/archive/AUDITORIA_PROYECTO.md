@@ -1,7 +1,14 @@
 # Auditoria tecnica y funcional del proyecto FuelOpt
 
+> **Estado: SUPERSEDED**
+> **Fecha de archivo:** 2026-07-12
+> **Documento canónico sustituto:** [Arquitectura](../ARCHITECTURE.md) y [backlog final](../FINAL_REVIEW_BACKLOG.md)
+> **Motivo:** describe el estado anterior a los Patches 1–8.
+> **Valor histórico:** conserva hallazgos y decisiones que motivaron el endurecimiento.
+> **Advertencia:** no representa la arquitectura, comandos ni validaciones vigentes.
+
 Fecha de revision: 2026-05-04
-Raiz analizada: `C:\Users\migue\OneDrive\Escritorio\MIGUEL\SIDE PROJECTS\GAS SCRAPING`
+Raiz analizada: copia local del repositorio (ruta personal eliminada al archivar).
 
 ## 1. Resumen ejecutivo
 

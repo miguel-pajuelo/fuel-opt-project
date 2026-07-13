@@ -1,16 +1,51 @@
-# Instalación de FuelOpt
+# Instalación y desinstalación
 
-FuelOpt se distribuye como instalador por usuario para Windows 10/11 x64. El instalador previsto se genera en `dist\installer` y el bundle onedir en `dist\FuelOpt`; ambos son artefactos locales no rastreados.
+## Estado de validación
 
-El icono aprobado se integra en `FuelOpt.exe`, el instalador, Aplicaciones instaladas, el menú Inicio y el acceso directo opcional del escritorio. Los accesos directos apuntan al ejecutable instalado para reutilizar su icono embebido. `UninstallDisplayIcon` también apunta al ejecutable instalado.
+Windows 10/11 x64 es la plataforma objetivo, no una matriz certificada. El análisis estático, los tests automatizados y el build se han ejecutado; bundle e instalador se validaron en un runner GitHub `windows-latest`. Sigue pendiente una instalación real completa en una VM limpia sin Python, Git, `.env` ni variables `FUELOPT_*`.
 
-La aplicación y el instalador no están firmados. No debe interpretarse un build local satisfactorio como autorización para publicar una release o instalarla en un sistema real.
+El ejecutable y el instalador todavía no están firmados. Windows SmartScreen puede mostrar una advertencia; la firma y la experiencia SmartScreen deben resolverse o aceptarse expresamente antes de publicar.
 
-Comandos de build para un entorno de desarrollo preparado:
+## Instalación prevista
+
+El instalador trabaja por usuario, con privilegios mínimos:
+
+- programa: `%LOCALAPPDATA%\Programs\FuelOpt`;
+- datos: `%LOCALAPPDATA%\FuelOpt`;
+- sin necesidad de Python, Git ni permisos administrativos;
+- acceso directo en Inicio y acceso de escritorio opcional;
+- frecuencia predeterminada: 4 horas.
+
+Durante la instalación se puede elegir 1h, 2h, 4h, 8h, 12h, 24h, al abrir o solo manual. La primera apertura crea el directorio del usuario y copia o reconstruye la base activa desde los recursos instalados. Una base activa válida no se sobrescribe con la semilla.
+
+Instalación silenciosa prevista:
 
 ```bat
-scripts\build_onedir.cmd
-scripts\build_installer.cmd
+FuelOpt-Setup-0.1.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /REFRESH=4h
 ```
 
-La configuración de la tarea real `FuelOpt Catalog Refresh` se realiza únicamente durante un flujo de instalación autorizado; los checks de packaging no deben crearla, eliminarla ni modificarla.
+Solo se admiten los ocho valores documentados. La matriz silenciosa completa sigue pendiente de VM.
+
+## Apertura y uso offline
+
+FuelOpt inicia un servidor local y abre el navegador. Sin red puede usar la última base válida; no podrá descargar precios, rutas ORS ni teselas de mapa. Consulta [TROUBLESHOOTING.md](TROUBLESHOOTING.md) si el bootstrap falla.
+
+## Actualización
+
+Una actualización reutiliza el AppId estable y el mismo directorio. Debe cerrar cooperativamente launcher y servidor antes de sustituir `_internal`. Configuración, clave ORS, frecuencia, base activa, cache y logs viven fuera de la instalación y deben conservarse. Este flujo tiene checks automatizados, pero la actualización real entre dos instaladores permanece pendiente.
+
+## Desinstalación
+
+La desinstalación detiene FuelOpt, elimina la tarea programada y los accesos directos, y retira los archivos del programa. Los datos se conservan por defecto. La opción “Eliminar también mis datos, configuración y precios almacenados” permite borrar `%LOCALAPPDATA%\FuelOpt` explícitamente.
+
+En modo silencioso, borrar datos requiere:
+
+```bat
+unins000.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /REMOVEDATA=1
+```
+
+Sin `/REMOVEDATA=1` deben conservarse. Ambos comportamientos necesitan validación final en VM.
+
+## Identidad visual
+
+El icono aprobado está integrado en ejecutable, instalador y accesos directos. Su validación técnica se conserva en los checks de marca. La procedencia jurídica permanece en revisión; consulta FR-001 y FR-037 en el [backlog](FINAL_REVIEW_BACKLOG.md).

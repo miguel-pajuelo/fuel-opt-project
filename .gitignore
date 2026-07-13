@@ -1,6 +1,8 @@
 # Local secrets
 .env
 .env.local
+config.json
+*.private.json
 
 # Local tool state
 .claude/
@@ -9,6 +11,13 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
 
 # Local runtime logs
 *.log
@@ -22,6 +31,12 @@ data/db/*-wal
 data/db/*-shm
 catalog_refresh.lock
 catalog_refresh_report.json
+*.lock
+*.pid
+*.runtime.json
+runtime-record*.json
+runtime/
+user-data/
 *.next.sqlite
 *.previous-*.sqlite
 
@@ -30,3 +45,20 @@ build/
 dist/
 *.spec
 !FuelOpt.spec
+FuelOpt-Setup-*.exe
+FuelOpt-*-windows-x64.zip
+SHA256SUMS.txt
+*.sha256
+Output/
+installer/Output/
+*.tmp
+*.temp
+*.dmp
+launcher_console*.txt
+
+# IDE and operating-system artifacts
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -6,149 +6,53 @@
   <link rel="icon" href="/static/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/fuelopt-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/fuelopt-180.png">
-  <title>Política de privacidad — FuelOpt</title>
+  <title>Privacidad — FuelOpt</title>
   <style>
-    :root {
-      --bg: #f4f0e8; --paper: #fbf8f1; --ink: #171411; --muted: #6f675d;
-      --line: #c8bcaa; --green: #285848;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-      background: var(--bg); color: var(--ink); line-height: 1.65;
-    }
-    .wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 80px; }
-    header { margin-bottom: 48px; }
-    .wordmark { font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
-    .wordmark span { color: var(--green); }
-    h1 { font-size: 28px; font-weight: 600; margin: 16px 0 8px; }
-    .lead { color: var(--muted); margin: 0 0 40px; }
-    h2 { font-size: 16px; font-weight: 600; margin: 32px 0 8px; text-transform: uppercase;
-         letter-spacing: .06em; color: var(--green); }
-    p, ul { margin: 0 0 16px; }
-    ul { padding-left: 20px; }
-    li { margin-bottom: 6px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px; }
-    th, td { text-align: left; padding: 8px 12px; border: 1px solid var(--line); }
-    th { background: var(--paper); font-weight: 600; }
-    a { color: var(--green); text-decoration: underline; }
-    footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--line);
-             font-size: 13px; color: var(--muted); }
-    .back { display: inline-block; margin-bottom: 32px; font-size: 14px; color: var(--green); }
+    :root { --bg:#f4f0e8; --paper:#fbf8f1; --ink:#171411; --muted:#6f675d; --line:#c8bcaa; --green:#285848; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:Inter,ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--ink); line-height:1.65; }
+    .wrap { max-width:760px; margin:0 auto; padding:48px 24px 80px; }
+    .wordmark { font-family:Georgia,serif; font-size:24px; }
+    .wordmark span, a { color:var(--green); }
+    h1 { font-size:28px; margin:16px 0 8px; }
+    h2 { font-size:17px; margin:32px 0 8px; color:var(--green); }
+    p, ul { margin:0 0 16px; }
+    code { background:var(--paper); padding:2px 5px; }
+    .lead, footer { color:var(--muted); }
+    .back { display:inline-block; margin:28px 0; }
+    footer { margin-top:48px; padding-top:24px; border-top:1px solid var(--line); font-size:13px; }
   </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <div class="wordmark">Fuel<span>Opt</span></div>
-  </header>
+<main class="wrap">
+  <div class="wordmark">Fuel<span>Opt</span></div>
+  <a class="back" href="/">← Volver a FuelOpt</a>
+  <h1>Privacidad</h1>
+  <p class="lead">Información técnica provisional para la versión pre-release. La política definitiva y el contacto responsable siguen pendientes antes de publicación.</p>
 
-  <a class="back" href="/">&#8592; Volver a FuelOpt</a>
+  <h2>Datos guardados en el equipo</h2>
+  <p>FuelOpt se ejecuta localmente. Guarda configuración no secreta en <code>%LOCALAPPDATA%\FuelOpt\config.json</code>, la base activa y copias recuperables bajo <code>data\db</code>, caché bajo <code>data\cache</code> y logs técnicos bajo <code>logs</code>. La clave de OpenRouteService se guarda en Windows Credential Manager, no en <code>config.json</code>.</p>
+  <p>Origen, destino y parámetros de cálculo se procesan para responder a la consulta. FuelOpt no incorpora un sistema propio de perfiles, cuentas, historial de búsquedas ni telemetría. Los logs pueden conservar errores, fechas, puertos y rutas técnicas; no deberían registrar claves o credenciales. No se afirma anonimato absoluto.</p>
 
-  <h1>Política de privacidad</h1>
-  <p class="lead">Última actualización: 2026-05-13</p>
-
-  <h2>1. Responsable del tratamiento</h2>
-  <p>
-    Responsable: <strong>Miguel Pajuelo G&oacute;mez</strong><br>
-    Contacto RGPD: <a href="mailto:fueloptsupport@gmail.com">fueloptsupport@gmail.com</a>
-  </p>
-
-  <h2>2. Datos que se procesan</h2>
-  <p>FuelOpt procesa únicamente los datos que tú introduces voluntariamente:</p>
+  <h2>Servicios externos</h2>
   <ul>
-    <li><strong>Coordenadas de origen y destino</strong> de tu ruta (introducidas manualmente o mediante geolocalización del navegador).</li>
-    <li><strong>Parámetros de búsqueda</strong>: tipo de combustible, litros o presupuesto, consumo del vehículo y marcas preferidas.</li>
+    <li><strong>OpenRouteService (ORS):</strong> si hay clave, recibe direcciones o coordenadas necesarias para geocodificación y rutas. Sin clave se usa una aproximación local limitada.</li>
+    <li><strong>OpenStreetMap Standard Tile Layer:</strong> Leaflet se incluye localmente, pero el navegador solicita por Internet las teselas a <code>tile.openstreetmap.org</code>. Ese servicio puede ver la IP, fecha, agente de usuario y datos técnicos de la solicitud.</li>
+    <li><strong>MINETUR y Ballenoil:</strong> el refresco consulta fuentes de precios cuando corresponda. Normalmente no necesitan la consulta de ruta del usuario, pero ven la IP del equipo que refresca.</li>
+    <li><strong>SMTP/Gmail:</strong> el formulario de feedback puede enviar el texto y datos aportados mediante un servicio SMTP configurado por el operador. En una instalación pública sin esa configuración puede no estar disponible.</li>
   </ul>
-  <p>
-    <strong>FuelOpt no almacena ninguna búsqueda, ni coordenadas, ni historial de uso en base de datos.</strong>
-    Cada petición se procesa en memoria y los datos se descartan inmediatamente al responder.
-  </p>
+  <p>La disponibilidad, condiciones y políticas de esos servicios pertenecen a sus proveedores. Consulta los avisos del repositorio para las fuentes y revisiones pendientes.</p>
 
-  <h2>3. Finalidad del tratamiento</h2>
-  <p>
-    Los datos se utilizan exclusivamente para calcular en tiempo real qué gasolinera
-    te resulta económicamente más conveniente teniendo en cuenta el precio del combustible
-    y el coste del desvío desde tu ruta.
-  </p>
+  <h2>Telemetría, cookies y almacenamiento del navegador</h2>
+  <p>FuelOpt no carga analítica externa ni telemetría propia. No utiliza cookies propias para seguimiento. Los servicios externos pueden aplicar sus propias políticas cuando el navegador o la aplicación los contacta.</p>
 
-  <h2>4. Terceros que reciben datos</h2>
-  <table>
-    <tr>
-      <th>Proveedor</th>
-      <th>Datos transferidos</th>
-      <th>Finalidad</th>
-      <th>Sede</th>
-    </tr>
-    <tr>
-      <td><a href="https://openrouteservice.org" target="_blank" rel="noopener">OpenRouteService GmbH (HeiGIT)</a></td>
-      <td>Coordenadas de origen y destino</td>
-      <td>Geocodificación de direcciones, cálculo de matrices de distancias y trazado de rutas</td>
-      <td>Alemania (UE)</td>
-    </tr>
-    <tr>
-      <td><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap Foundation</a></td>
-      <td>Solicitudes de tiles del mapa (IP del usuario)</td>
-      <td>Renderizado del mapa en el navegador</td>
-      <td>Reino Unido</td>
-    </tr>
-    <tr>
-      <td><a href="https://unpkg.com" target="_blank" rel="noopener">unpkg.com (Cloudflare)</a></td>
-      <td>IP del usuario (solicitud de recurso estático)</td>
-      <td>Distribución de la librería Leaflet (mapa)</td>
-      <td>Estados Unidos</td>
-    </tr>
-  </table>
-  <p>
-    Los datos de precio de combustible provienen de la API pública del
-    <strong>Ministerio para la Transición Ecológica y el Reto Demográfico (MITECO)</strong>
-    de España. No se transfieren datos del usuario a este organismo.
-  </p>
+  <h2>Conservación y eliminación</h2>
+  <p>Los datos locales permanecen hasta que el usuario los borra. La desinstalación conserva por defecto <code>%LOCALAPPDATA%\FuelOpt</code>; solo se elimina mediante la opción explícita del desinstalador o <code>/REMOVEDATA=1</code>. Las credenciales pueden borrarse con <code>FuelOpt.exe --clear-ors-key</code>.</p>
 
-  <h2>5. Base legal del tratamiento</h2>
-  <p>
-    El tratamiento se basa en el <strong>consentimiento del usuario</strong> (art. 6.1.a RGPD),
-    que se manifiesta al introducir voluntariamente sus datos en el formulario y pulsar
-    "Calcular mejor repostaje". No es obligatorio facilitar ningún dato; sin ellos,
-    el servicio no puede funcionar.
-  </p>
+  <h2>Feedback y contacto provisional</h2>
+  <p>La experiencia pública de feedback y el contacto definitivo son blockers de release. Mientras tanto, puede abrirse un Issue en el repositorio sin incluir secretos ni datos sensibles. Para vulnerabilidades, sigue la política de seguridad del repositorio y solicita primero un canal privado.</p>
 
-  <h2>6. Plazo de conservación</h2>
-  <p>
-    Los datos de búsqueda (coordenadas y parámetros) <strong>no se conservan</strong>.
-    Se procesan en tiempo real y se eliminan tras devolver el resultado.
-  </p>
-
-  <h2>7. Cookies y almacenamiento local</h2>
-  <p>
-    FuelOpt <strong>no usa cookies propias</strong> ni almacena datos personales
-    en <code>localStorage</code> o <code>sessionStorage</code>. Los proveedores de
-    CDN (unpkg) y de mapa (OpenStreetMap) pueden establecer sus propias cookies técnicas
-    según sus políticas respectivas.
-  </p>
-
-  <h2>8. Derechos del usuario</h2>
-  <p>Puedes ejercer en cualquier momento los derechos de:</p>
-  <ul>
-    <li><strong>Acceso</strong>: solicitar qué datos tenemos sobre ti.</li>
-    <li><strong>Rectificación</strong>: corregir datos inexactos.</li>
-    <li><strong>Supresión</strong>: solicitar la eliminación de tus datos.</li>
-    <li><strong>Portabilidad</strong>: recibir tus datos en formato estructurado.</li>
-    <li><strong>Oposición</strong> y <strong>limitación</strong> del tratamiento.</li>
-  </ul>
-  <p>
-    Dado que no almacenamos datos, el ejercicio de estos derechos se aplica
-    principalmente a las transferencias a proveedores externos listados en la sección 4.
-  </p>
-  <p>
-    Para cualquier consulta: <a href="mailto:fueloptsupport@gmail.com">fueloptsupport@gmail.com</a>.
-    También puedes presentar una reclamación ante la
-    <a href="https://www.aepd.es" target="_blank" rel="noopener">Agencia Española de Protección de Datos (AEPD)</a>.
-  </p>
-
-  <footer>
-    <p>FuelOpt &mdash; Optimizador de repostaje para España &mdash; <a href="/">Volver al inicio</a></p>
-  </footer>
-</div>
+  <footer>FuelOpt — aplicación local en estado pre-release.</footer>
+</main>
 </body>
 </html>

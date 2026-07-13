@@ -805,9 +805,27 @@ def test_external_leaflet_has_sri() -> None:
             )
 
 
+def test_no_unauthorized_analytics_or_retired_domains() -> None:
+    files = ("static/index.html", "static/app.js", "static/privacy.html", "static/robots.txt")
+    combined = "\n".join((ROOT / relative).read_text(encoding="utf-8").lower() for relative in files)
+    forbidden = (
+        "goat" + "counter",
+        "gc" + ".zgo.at",
+        "fuelopt" + ".es",
+        "ko" + "-fi",
+        "buyme" + "acoffee",
+    )
+    for value in forbidden:
+        _assert(value not in combined, f"Retired or unauthorized frontend integration found: {value}")
+    html = (ROOT / "static/index.html").read_text(encoding="utf-8")
+    external_script = re.compile(r"<script\b[^>]*\bsrc\s*=\s*['\"](?:https?:)?//", re.IGNORECASE)
+    _assert(not external_script.search(html), "Frontend must not load unauthorized external scripts")
+
+
 def run() -> None:
     test_frontend_is_extracted()
     test_external_leaflet_has_sri()
+    test_no_unauthorized_analytics_or_retired_domains()
     test_dynamic_html_uses_escape_helper()
     test_frontend_has_no_visible_mojibake()
     test_result_metrics_are_rendered_once()
