@@ -4,18 +4,23 @@ import math
 from dataclasses import replace
 from pathlib import Path
 from statistics import median
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
-from app.models import CandidateResult, Coordinates, FUEL_FIELDS, OptimizationInput, Station
+from app.models import (
+    CandidateResult,
+    Coordinates,
+    FUEL_FIELDS,
+    OptimizationInput,
+    OptimizationMode,
+    Station,
+    validate_optimization_mode,
+)
 from app.storage.database import get_candidates_with_price, get_candidates_with_price_in_bbox
 
 
 ECONOMIC_EPSILON_EUR = 0.10
-MODE_DETOUR_PENALTY_EUR_KM = {
-    "economic": 0.0,
-    "balanced": 0.08,
-    "minimal_detour": 0.25,
-}
+BALANCED_ECONOMIC_WEIGHT = 0.5
+BALANCED_DISTANCE_WEIGHT = 0.5
 
 
 class RouteProvider(Protocol):
@@ -86,7 +91,7 @@ def _prefilter_by_distance(
         distance = haversine_km(origin, Coordinates(station.lat, station.lon))
         if distance <= radius_km:
             scored.append((station, price, distance))
-    scored.sort(key=lambda row: (row[2], row[1]))
+    scored.sort(key=lambda row: (row[2], row[1], row[0].station_id))
     return scored[:max_candidates]
 
 
@@ -178,7 +183,7 @@ def _prefilter_by_corridor(
         distance = _distance_to_geometry_km(Coordinates(station.lat, station.lon), geometry)
         if distance <= corridor_radius_km:
             scored.append((station, price, distance))
-    scored.sort(key=lambda row: (row[2], row[1]))
+    scored.sort(key=lambda row: (row[2], row[1], row[0].station_id))
     return scored[:max_candidates]
 
 
@@ -186,9 +191,8 @@ def _same_place(origin: Coordinates, destination: Coordinates, threshold_km: flo
     return haversine_km(origin, destination) <= threshold_km
 
 
-def _optimization_mode(request: OptimizationInput) -> str:
-    mode = (request.optimization_mode or "economic").strip().lower()
-    return mode if mode in MODE_DETOUR_PENALTY_EUR_KM else "economic"
+def _optimization_mode(request: OptimizationInput) -> OptimizationMode:
+    return validate_optimization_mode(request.optimization_mode)
 
 
 def _reference_price(prices: list[float]) -> float:
@@ -238,13 +242,11 @@ def _approx_score(
 ) -> float:
     extra_km = _estimated_extra_km(request, station, spatial_metric_km, is_local_search)
     detour_cost = extra_km * _cost_per_km(request, reference_price_eur_l)
-    detour_penalty = extra_km * MODE_DETOUR_PENALTY_EUR_KM[_optimization_mode(request)]
     if _is_budget_mode(request):
         gross_liters = _candidate_gross_liters(request, price)
         liters_spent = extra_km / 100.0 * request.consumption_l_100km
-        detour_penalty_liters = detour_penalty / reference_price_eur_l if reference_price_eur_l > 0 else 0.0
-        return -(gross_liters - liters_spent) + detour_penalty_liters
-    return price * request.liters + detour_cost + detour_penalty
+        return -(gross_liters - liters_spent)
+    return price * request.liters + detour_cost
 
 
 def _select_profiled_pool(
@@ -255,14 +257,15 @@ def _select_profiled_pool(
     if not scored:
         return []
     reference_price = _reference_price([price for _, price, _ in scored])
-    by_distance = sorted(scored, key=lambda row: (row[2], row[1]))
-    by_price = sorted(scored, key=lambda row: (row[1], row[2]))
+    by_distance = sorted(scored, key=lambda row: (row[2], row[1], row[0].station_id))
+    by_price = sorted(scored, key=lambda row: (row[1], row[2], row[0].station_id))
     by_score = sorted(
         scored,
         key=lambda row: (
             _approx_score(request, row[0], row[1], row[2], reference_price, is_local_search),
             row[2],
             row[1],
+            row[0].station_id,
         ),
     )
     quota = max(5, request.max_candidates // 3)
@@ -513,7 +516,7 @@ def prefilter_candidates_with_trace(
                 (station, price, _distance_to_geometry_km(Coordinates(station.lat, station.lon), geometry))
                 for station, price in all_candidates
             ]
-        selected.sort(key=lambda row: (row[2], row[1]))
+        selected.sort(key=lambda row: (row[2], row[1], row[0].station_id))
         pool = _select_profiled_pool(
             selected,
             request,
@@ -525,6 +528,131 @@ def prefilter_candidates_with_trace(
         return pool, trace
 
     return candidates[:request.max_candidates], trace
+
+
+def _economic_semantic_key(item: CandidateResult) -> tuple[float]:
+    primary = -item.net_liters if item.input_mode == "budget" else item.optimization_score_eur
+    return (primary,)
+
+
+def _economic_rank_key(item: CandidateResult) -> tuple[float, float, float, str]:
+    economic = _economic_semantic_key(item)
+    return (
+        economic[0],
+        item.total_detour_km,
+        item.price_eur_l,
+        item.station.station_id,
+    )
+
+
+def _distance_semantic_key(
+    item: CandidateResult,
+    *,
+    is_local_search: bool,
+) -> tuple[float]:
+    distance_metric = item.distance_to_station_km if is_local_search else item.extra_detour_km
+    return (distance_metric,)
+
+
+def _minimal_detour_rank_key(
+    item: CandidateResult,
+    *,
+    is_local_search: bool,
+) -> tuple[float, float, float, float, str]:
+    distance = _distance_semantic_key(item, is_local_search=is_local_search)
+    economic = _economic_rank_key(item)
+    return (distance[0], economic[0], economic[1], economic[2], economic[3])
+
+
+def _normalized_position(position: int, candidate_count: int) -> float:
+    if candidate_count == 1:
+        return 0.0
+    return position / (candidate_count - 1)
+
+
+def _competition_normalized_ranks(
+    results: list[CandidateResult],
+    *,
+    semantic_key: Callable[[CandidateResult], tuple[float, ...]],
+    stable_key: Callable[[CandidateResult], tuple[Any, ...]],
+) -> dict[int, float]:
+    """Assign the first position of each tied group, then normalize it."""
+    ordered = sorted(results, key=stable_key)
+    candidate_count = len(ordered)
+    ranks: dict[int, float] = {}
+    previous_key: tuple[float, ...] | None = None
+    group_position = 0
+    for position, item in enumerate(ordered):
+        item_key = semantic_key(item)
+        if previous_key is None or item_key != previous_key:
+            group_position = position
+            previous_key = item_key
+        ranks[id(item)] = _normalized_position(group_position, candidate_count)
+    return ranks
+
+
+def _balanced_rank_components(
+    results: list[CandidateResult],
+    request: OptimizationInput,
+) -> dict[int, tuple[float, float, float]]:
+    is_local_search = _same_place(
+        request.origin,
+        request.destination,
+        request.same_place_threshold_km,
+    )
+
+    def distance_semantic_key(item: CandidateResult) -> tuple[float]:
+        return _distance_semantic_key(item, is_local_search=is_local_search)
+
+    def distance_stable_key(item: CandidateResult) -> tuple[float, float, float, float, str]:
+        return _minimal_detour_rank_key(item, is_local_search=is_local_search)
+
+    economic_ranks = _competition_normalized_ranks(
+        results,
+        semantic_key=_economic_semantic_key,
+        stable_key=_economic_rank_key,
+    )
+    distance_ranks = _competition_normalized_ranks(
+        results,
+        semantic_key=distance_semantic_key,
+        stable_key=distance_stable_key,
+    )
+    return {
+        id(item): (
+            economic_ranks[id(item)],
+            distance_ranks[id(item)],
+            BALANCED_ECONOMIC_WEIGHT * economic_ranks[id(item)]
+            + BALANCED_DISTANCE_WEIGHT * distance_ranks[id(item)],
+        )
+        for item in results
+    }
+
+
+def _rank_results(results: list[CandidateResult], request: OptimizationInput) -> list[CandidateResult]:
+    mode = _optimization_mode(request)
+    if mode == "economic":
+        return sorted(results, key=_economic_rank_key)
+
+    is_local_search = _same_place(
+        request.origin,
+        request.destination,
+        request.same_place_threshold_km,
+    )
+    def distance_key(item: CandidateResult) -> tuple[float, float, float, float, str]:
+        return _minimal_detour_rank_key(item, is_local_search=is_local_search)
+    if mode == "minimal_detour":
+        return sorted(results, key=distance_key)
+
+    components = _balanced_rank_components(results, request)
+    return sorted(
+        results,
+        key=lambda item: (
+            components[id(item)][2],
+            components[id(item)][0],
+            components[id(item)][1],
+            item.station.station_id,
+        ),
+    )
 
 
 def optimize_candidates(
@@ -556,13 +684,12 @@ def optimize_candidates(
             continue
         travel_cost = liters_spent * reference_price
         refuel_cost = _candidate_purchase_cost(request, price)
-        detour_penalty = extra_detour * MODE_DETOUR_PENALTY_EUR_KM[_optimization_mode(request)]
+        detour_penalty = 0.0
         effective_total = refuel_cost + travel_cost
         if _is_budget_mode(request):
-            detour_penalty_liters = detour_penalty / reference_price if reference_price > 0 else 0.0
-            optimization_score = -net_liters + detour_penalty_liters
+            optimization_score = -net_liters
         else:
-            optimization_score = effective_total + detour_penalty
+            optimization_score = effective_total
         results.append(
             CandidateResult(
                 station=station,
@@ -596,11 +723,7 @@ def optimize_candidates(
                 route_source=provider.route_source,
             )
         )
-    if _is_budget_mode(request):
-        results.sort(key=lambda item: (-item.net_liters, item.total_detour_km, item.price_eur_l))
-    else:
-        results.sort(key=lambda item: (item.optimization_score_eur, item.total_detour_km, item.price_eur_l))
-    return _annotate_results(results)
+    return _annotate_results(_rank_results(results, request))
 
 
 def _annotate_results(results: list[CandidateResult]) -> list[CandidateResult]:

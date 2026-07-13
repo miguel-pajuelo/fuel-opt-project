@@ -54,7 +54,7 @@ from app.paths import APP_PATHS
 from app.windows_credentials import install_secret_redaction
 from app.api.warnings import build_optimize_warnings
 from app.data_sources.brand_catalog import canonical_brand_id, ui_brand_catalog
-from app.models import Coordinates, FUEL_FIELDS, OptimizationInput
+from app.models import Coordinates, FUEL_FIELDS, OptimizationInput, OptimizationMode
 from app.optimizer.ranking import HaversineEstimateProvider, optimize_from_db_with_context
 from app.api.ui import STATIC_DIR, load_index_html
 from app.routing.ors import (
@@ -353,7 +353,10 @@ class OptimizeRequest(BaseModel):
     )
     max_search_extent_km: float = Field(default=settings.max_search_extent_km, gt=0, le=800.0)
     economic_expansion_enabled: bool = True
-    optimization_mode: str = Field(default=settings.default_optimization_mode)
+    optimization_mode: OptimizationMode = Field(
+        default=settings.default_optimization_mode,
+        validate_default=True,
+    )
     local_search_radius_km: float | None = Field(default=None, gt=0, le=500.0)
     corridor_radius_km: float | None = Field(default=None, gt=0, le=200.0)
     max_candidates: int = Field(default=settings.max_route_candidates, gt=0, le=250)
