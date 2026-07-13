@@ -117,6 +117,7 @@ def _check_hygiene() -> None:
         "tests/bundle_check.py",
         "tests/documentation_hygiene_check.py",
         "tests/secrets_check.py",
+        "tests/version_info_check.py",
     }
     for path in _repository_text_files():
         relative = path.relative_to(ROOT).as_posix()

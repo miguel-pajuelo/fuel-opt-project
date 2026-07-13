@@ -59,4 +59,6 @@ scripts\build_installer.cmd
 
 El bundle es PyInstaller `onedir`. Los recursos se localizan desde el runtime congelado, no desde `cwd`. `build/` y `dist/` son regenerables. No incluyas `.env`, tests, logs, caches, datos mutables ni `.git`.
 
-El workflow de Windows ejecuta checks, construye bundle e instalador, y genera ZIP y SHA-256. `workflow_dispatch` es dry-run; solo un tag válido puede publicar. Consulta [RELEASING.md](RELEASING.md).
+`FUELOPT_VERSION` es el parámetro común del build. En CI se deriva del tag o del input dry-run; localmente los scripts resuelven el valor predeterminado validado. `generate_version_info.py` genera de forma determinista el recurso PE en `build/metadata/`, y `version_info_check.py` exige que versión textual, versión numérica e iconos coincidan. El bundle distribuye la fuente rastreada `docs/THIRD_PARTY_NOTICES.md` como `_internal/licenses/THIRD_PARTY_NOTICES.md`.
+
+El workflow de Windows ejecuta checks, construye bundle e instalador, y genera ZIP y SHA-256. `workflow_dispatch` es dry-run y puede compilar sin licencia; un tag solo puede alcanzar el job de publicación cuando el guard valida un `LICENSE` regular, no vacío y sin placeholders. Consulta [RELEASING.md](RELEASING.md).

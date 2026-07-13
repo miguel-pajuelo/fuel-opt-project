@@ -10,14 +10,18 @@ ROOT = Path(SPECPATH).resolve()
 DIAGNOSTIC_CONSOLE = os.environ.get("FUELOPT_DIAGNOSTIC_CONSOLE") == "1"
 BUILD_NAME = "FuelOptDiagnostic" if DIAGNOSTIC_CONSOLE else "FuelOpt"
 ICON_PATH = ROOT / "assets" / "fuelopt.ico"
+VERSION_FILE = ROOT / "build" / "metadata" / "FuelOpt.version.txt"
 
 if not ICON_PATH.is_file():
     raise FileNotFoundError(f"Required application icon is missing: {ICON_PATH}")
+if not VERSION_FILE.is_file():
+    raise FileNotFoundError(f"Generated VERSIONINFO is missing: {VERSION_FILE}")
 
 datas = [
     (str(ROOT / "static"), "static"),
     (str(ROOT / "data" / "db" / "gas_stations.sqlite"), "resources/seed"),
     (str(ROOT / "data" / "cache" / "minetur_snapshot.json"), "resources/snapshot"),
+    (str(ROOT / "docs" / "THIRD_PARTY_NOTICES.md"), "licenses"),
 ]
 
 # Keep the installed seed's name distinct from the mutable user database.
@@ -99,6 +103,7 @@ exe = EXE(
     upx=False,
     console=DIAGNOSTIC_CONSOLE,
     icon=str(ICON_PATH),
+    version=str(VERSION_FILE),
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

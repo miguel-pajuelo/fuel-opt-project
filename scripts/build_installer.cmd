@@ -2,7 +2,10 @@
 setlocal EnableExtensions
 cd /d "%~dp0\.."
 
-if not defined FUELOPT_VERSION set "FUELOPT_VERSION=0.1.0"
+if not defined FUELOPT_VERSION for /f "delims=" %%V in ('python scripts\generate_version_info.py --resolve-default') do set "FUELOPT_VERSION=%%V"
+
+python tests\version_info_check.py --exe dist\FuelOpt\FuelOpt.exe --expected-version "%FUELOPT_VERSION%"
+if errorlevel 1 exit /b 1
 
 python tests\bundle_check.py --bundle dist\FuelOpt
 if errorlevel 1 exit /b 1

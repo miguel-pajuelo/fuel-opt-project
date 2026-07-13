@@ -39,6 +39,8 @@ El entry point ejecuta `multiprocessing.freeze_support()` temprano. En frozen, p
 
 ## Packaging, seguridad y servicios
 
-PyInstaller produce `onedir`; Inno Setup instala por usuario con AppId estable y datos externos. GitHub Actions fija Python, ejecuta release checks y genera instalador, ZIP y checksums.
+PyInstaller produce `onedir`; Inno Setup instala por usuario con AppId estable y datos externos. La versión derivada por el workflow o los scripts alimenta tanto el `VERSIONINFO` de `FuelOpt.exe` como los metadatos del instalador y los nombres de artefactos. El bundle incorpora los avisos rastreados en `_internal/licenses/`, sin documentación interna de auditoría.
+
+GitHub Actions fija Python, ejecuta release checks y genera instalador, ZIP y checksums. El build permite dry-runs sin licencia para obtener evidencia técnica, pero la ruta de tag falla antes de compilar y el job con `contents: write` exige una aprobación positiva del guard de `LICENSE`.
 
 La clave ORS vive en Credential Manager y los logs aplican redacción. El endpoint administrativo legacy sigue protegido por `FUELOPT_ADMIN_TOKEN`. Servicios externos: ORS, fuentes de precios y teselas OpenStreetMap. No existe hosting público ni analítica propia vigente.

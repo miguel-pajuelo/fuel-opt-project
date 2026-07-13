@@ -28,6 +28,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       artifact-name: ${{ steps.version.outputs.artifact-name }}
+      license-approved: ${{ steps.license.outputs.license-approved }}
     env:
       EVENT_NAME: ${{ github.event_name }}
       REF_NAME: ${{ github.ref_name }}
@@ -62,6 +63,16 @@ jobs:
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "artifact-name=$artifactName" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "Release mode: $isReleaseTag; version: $version"
+
+      - name: Enforce release LICENSE gate
+        id: license
+        shell: pwsh
+        run: |
+          $mode = if ($env:EVENT_NAME -eq 'push' -and $env:REF_TYPE -eq 'tag') { 'tag' } else { 'dry-run' }
+          python scripts\check_release_license.py --mode $mode --github-output $env:GITHUB_OUTPUT
+          if ($LASTEXITCODE -ne 0) {
+            throw 'LICENSE gate rejected this release context.'
+          }
 
       - name: Set up pinned Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -135,6 +146,8 @@ jobs:
         shell: pwsh
         run: |
           python tests\bundle_check.py --bundle dist\FuelOpt
+          python tests\version_info_check.py --exe dist\FuelOpt\FuelOpt.exe --expected-version $env:FUELOPT_VERSION
+          python tests\bundle_smoke_check.py --bundle dist\FuelOpt
           python tests\installer_check.py --require-bundle
           $releaseFiles = @(Get-ChildItem -LiteralPath 'dist\release' -File)
           if ($releaseFiles.Count -ne 3) {
@@ -160,7 +173,7 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release assets
-    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' && needs.build.outputs.license-approved == 'true' }}
     needs: build
     runs-on: windows-latest
     permissions:

@@ -1,6 +1,6 @@
 # Publicar una versión de FuelOpt para Windows
 
-El workflow `Windows release` crea una GitHub Release únicamente al publicar un tag con formato estricto `vMAJOR.MINOR.PATCH`, por ejemplo `v0.1.0`. `workflow_dispatch` es siempre dry-run: construye artefactos, pero omite el job con permiso `contents: write`.
+El workflow `Windows release` crea una GitHub Release únicamente al publicar un tag con formato estricto `vMAJOR.MINOR.PATCH`, por ejemplo `v0.1.0`. `workflow_dispatch` es siempre dry-run: puede construir artefactos sin `LICENSE`, informa que la publicación está bloqueada y omite el job con permiso `contents: write`.
 
 ## Antes del tag
 
@@ -19,12 +19,16 @@ El workflow `Windows release` crea una GitHub Release únicamente al publicar un
 
 Tags incompletos o con sufijos no admitidos deben fallar antes del build.
 
+El guard de publicación exige que `LICENSE` exista como archivo regular, tenga contenido y no contenga `TODO`, `CHOOSE LICENSE`, `LICENSE PENDING` ni `TBD`. En un tag, un fallo del guard detiene el job antes de instalar dependencias; el job de publicación exige además la salida positiva del guard. El dry-run no elude el blocker: solo permite validar técnicamente los artefactos mientras la licencia principal sigue pendiente.
+
 ## Pipeline
 
 - instala Python 3.12.10 y dependencias fijadas;
 - ejecuta release checks;
 - limpia `build\` y `dist\`;
 - genera PyInstaller `onedir`;
+- deriva un único `FUELOPT_VERSION` y valida el `VERSIONINFO` de `FuelOpt.exe`;
+- incorpora `THIRD_PARTY_NOTICES.md` en `_internal/licenses/`;
 - obtiene Inno Setup 6.7.3 verificando hash y firma del proveedor;
 - compila el instalador con la versión derivada del tag;
 - genera `FuelOpt-X.Y.Z-windows-x64.zip` y `SHA256SUMS.txt`;
@@ -41,4 +45,4 @@ Un fallo previo al job de publicación no debe crear Release. Si una Release pub
 
 ## Límites actuales
 
-No hay licencia principal, firma digital ni validación completa en VM. No añadas certificados, contraseñas, claves ORS ni otros secretos al workflow. Patch 8B deberá añadir un bloqueo técnico para impedir publicar sin `LICENSE` y validarlo remotamente; Patch 8A no modifica el workflow validado.
+No hay licencia principal, firma digital ni validación completa en VM. No añadas certificados, contraseñas, claves ORS ni otros secretos al workflow. El guard técnico impide publicar sin `LICENSE`; su dry-run debe validarse remotamente antes de cerrar Patch 8B, pero esa evidencia no resuelve la elección de licencia ni los demás blockers humanos.

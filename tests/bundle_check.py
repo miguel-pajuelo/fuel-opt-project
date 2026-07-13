@@ -64,6 +64,7 @@ def validate_bundle(bundle: Path) -> None:
         internal / "static" / "vendor" / "leaflet" / "leaflet.css",
         internal / "static" / "vendor" / "leaflet" / "LICENSE",
         internal / "resources" / "snapshot" / "minetur_snapshot.json",
+        internal / "licenses" / "THIRD_PARTY_NOTICES.md",
     )
     for path in required:
         _assert(path.is_file(), f"Required onedir resource is missing: {path.relative_to(bundle)}")
@@ -72,6 +73,16 @@ def validate_bundle(bundle: Path) -> None:
     _validate_seed(seed)
     _assert(any(internal.rglob("cacert.pem")), "Certifi CA bundle is missing.")
     _assert(any(internal.glob("slowapi-*.dist-info")), "SlowAPI metadata/license is missing.")
+    notices = (internal / "licenses" / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+    _assert(notices.strip(), "THIRD_PARTY_NOTICES.md is empty.")
+    for heading in (
+        "## A. Componentes distribuidos en el bundle",
+        "## B. Servicios externos utilizados en ejecución",
+        "## C. Herramientas de desarrollo y compilación",
+    ):
+        _assert(heading in notices, f"Third-party notices section is missing: {heading}")
+    for forbidden_document in ("FINAL_REVIEW_BACKLOG.md", "AUDITORIA_PROYECTO.md"):
+        _assert(not any(internal.rglob(forbidden_document)), f"Internal document was bundled: {forbidden_document}")
     _assert(not (internal / "data").exists(), "Developer cache data must not be bundled.")
     _assert(not (internal / "assets").exists(), "Brand source and build-only assets must not be bundled.")
     for optional_runtime in ("httptools", "watchfiles", "websockets"):

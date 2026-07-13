@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 import re
+import sys
+import tempfile
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "windows-release.yml"
+sys.path.insert(0, str(ROOT))
+
+from scripts.check_release_license import evaluate_gate, validate_license
+from scripts.generate_version_info import DEFAULT_VERSION
 
 
 def _assert(condition: bool, message: object) -> None:
@@ -24,6 +30,11 @@ def run() -> None:
     _assert("windows-latest" in lowered, "Windows runner is required")
     _assert(lowered.count("contents: write") == 1, "write permission must exist only on the publish job")
     _assert("github.ref_type == 'tag'" in text, "release publication must be tag-only")
+    _assert("id: license" in text, "LICENSE gate step is missing")
+    _assert("license-approved: ${{ steps.license.outputs.license-approved }}" in text, "LICENSE approval is not exported")
+    _assert("needs.build.outputs.license-approved == 'true'" in text, "publish job can bypass LICENSE approval")
+    _assert(r"scripts\check_release_license.py --mode $mode" in text, "workflow does not execute the LICENSE validator")
+    _assert(text.index("Enforce release LICENSE gate") < text.index("Install pinned dependencies"), "tag guard must run before build setup")
     _assert("cancel-in-progress: false" in lowered, "release builds must not cancel one another")
     _assert(r"^v(?<version>\d+\.\d+\.\d+)$" in text, "release tags must be validated strictly")
     _assert("id: version" in text and "GITHUB_OUTPUT" in text, "derived version must be available to action inputs")
@@ -49,6 +60,22 @@ def run() -> None:
     _assert("workflow_run" not in lowered, "release must not accept untrusted workflow artifacts")
     _assert("branches:" not in text and "codex/patch-7a" not in text, "temporary branch triggers must not remain")
     _assert("fail_before_build" not in text, "temporary failure simulation must not remain")
+
+    with tempfile.TemporaryDirectory(prefix="fuelopt-license-gate-") as temp_dir:
+        license_path = Path(temp_dir) / "LICENSE"
+        approved, blocked, problems = evaluate_gate("dry-run", license_path)
+        _assert(not approved and not blocked and problems, "dry-run without LICENSE must continue but remain unapproved")
+        approved, blocked, problems = evaluate_gate("tag", license_path)
+        _assert(not approved and blocked and problems, "tag without LICENSE must be blocked")
+        for placeholder in ("TODO", "CHOOSE LICENSE", "LICENSE PENDING", "TBD"):
+            license_path.write_text(placeholder, encoding="utf-8")
+            _assert(validate_license(license_path), f"LICENSE placeholder was accepted: {placeholder}")
+        license_path.write_text("Approved fixture license text for gate testing.\n", encoding="utf-8")
+        approved, blocked, problems = evaluate_gate("tag", license_path)
+        _assert(approved and not blocked and not problems, "valid fixture should pass the future tag gate")
+
+    dispatch_default = re.search(r'(?ms)workflow_dispatch:.*?default:\s*"(\d+\.\d+\.\d+)"', text)
+    _assert(dispatch_default and dispatch_default.group(1) == DEFAULT_VERSION, "workflow dry-run default diverges from local build default")
     print("OK: Windows GitHub Release workflow checks passed")
 
 
