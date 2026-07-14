@@ -471,7 +471,7 @@ h1 {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 4px;
+  padding-right: 12px;
 }
 
 .controls::-webkit-scrollbar,
@@ -537,7 +537,7 @@ select:focus {
 
 .optimization-mode-field > legend {
   width: 100%;
-  margin: 0 0 24px;
+  margin: 0;
   padding: 0;
 }
 
@@ -545,6 +545,7 @@ select:focus {
   display: grid;
   grid-template-columns: 1fr;
   gap: 7px;
+  margin-top: 15px;
   min-width: 0;
 }
 

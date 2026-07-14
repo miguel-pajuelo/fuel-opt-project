@@ -102,7 +102,9 @@ def test_optimization_mode_selector_is_native_and_accessible() -> None:
     _assert(".optimization-mode-option:has(input:focus-visible)" in styles, "Visible keyboard focus styling missing.")
     legend_rule = re.search(r"\.optimization-mode-field > legend\s*\{(?P<body>[^}]*)\}", styles)
     _assert(legend_rule is not None, "Optimization legend style rule missing.")
-    _assert("margin: 0 0 24px" in legend_rule.group("body"), "Optimization legend needs clear separation from mode cards.")
+    options_rule = re.search(r"\.optimization-mode-options\s*\{(?P<body>[^}]*)\}", styles)
+    _assert(options_rule is not None, "Optimization options style rule missing.")
+    _assert("margin-top: 15px" in options_rule.group("body"), "Optimization cards need visible separation from the legend.")
 
 
 def test_optimization_mode_request_and_result_state_are_separate() -> None:
@@ -372,6 +374,9 @@ def test_sidebar_and_floating_search_layout() -> None:
     js = _read("static/app.js")
     combined = "\n".join([html, styles, js])
     _assert("config_sidebar" in html, "Left configuration sidebar should exist.")
+    controls_rule = re.search(r"\.controls\s*\{(?P<body>[^}]*)\}", styles)
+    _assert(controls_rule and "padding-right: 12px" in controls_rule.group("body"), "Scrollable sidebar content needs clearance from its scrollbar.")
+    _assert(controls_rule and "overflow-x: hidden" in controls_rule.group("body"), "Sidebar clearance must not introduce horizontal scrolling.")
     _assert("floating-sidebar" in html, "Sidebar should use the compact floating visual treatment.")
     _assert("Llena tu depósito" in html, "Sidebar headline should match the target visual direction.")
     _assert("Ahorra en cada repostaje" not in html, "Temporary sidebar headline should not remain.")
