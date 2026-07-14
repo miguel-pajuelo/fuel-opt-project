@@ -116,6 +116,7 @@ def _check_hygiene() -> None:
     }
     retired_reference_allowed = {
         "docs/PR2_RECONCILIATION.md",
+        "static/privacy.html",
         "tests/documentation_hygiene_check.py",
     }
     personal_pattern_allowed = {
@@ -188,6 +189,52 @@ def _check_pr2_reconciliation() -> None:
     _assert("remaining_fuel_liters" in reconciliation and "0.2.0" in reconciliation, "Autonomy deferral is missing")
 
 
+def _check_public_explanations() -> None:
+    privacy = _read("static/privacy.html")
+    for term in (
+        "fuelopt:onboarding:v1:dismissed",
+        "OpenRouteService",
+        "OpenStreetMap",
+        "Google Maps",
+        "GitHub Issues",
+        "Windows Credential Manager",
+        "MINETUR",
+        "Ballenoil",
+    ):
+        _assert(term in privacy, f"Privacy page is missing current behavior: {term}")
+    _assert("ya no utiliza SMTP" in privacy, "Privacy page must describe SMTP as removed")
+
+    how_it_works = _read("static/como-funciona.html")
+    for section in (
+        "Qu&eacute; hace FuelOpt",
+        "C&oacute;mo indicar un lugar",
+        "Datos de la b&uacute;squeda",
+        "Modos de optimizaci&oacute;n",
+        "C&oacute;mo se calcula el coste real",
+        "C&oacute;mo se calculan las rutas",
+        "C&oacute;mo se ordenan las alternativas",
+        "De d&oacute;nde proceden los precios",
+        "Qu&eacute; ocurre dentro de la aplicaci&oacute;n",
+        "Privacidad y servicios externos",
+        "L&iacute;mites y supuestos",
+    ):
+        _assert(section in how_it_works, f"How-it-works section is missing: {section}")
+
+    security = _read("SECURITY.md")
+    _assert("GitHub Issues se reserva" in security, "SECURITY must define the public Issues boundary")
+    _assert("canal privado de seguridad de GitHub" in security, "SECURITY must direct sensitive reports to GitHub private security")
+
+    configuration = _read("docs/CONFIGURATION.md")
+    for retired_variable in ("GMAIL_USER", "GMAIL_APP_PASSWORD", "FEEDBACK_RECIPIENT"):
+        _assert(retired_variable not in configuration, f"Retired mail variable remains active: {retired_variable}")
+
+    backlog = _read("docs/FINAL_REVIEW_BACKLOG.md")
+    fr022 = next(line for line in backlog.splitlines() if line.startswith("| **FR-022"))
+    fr048 = next(line for line in backlog.splitlines() if line.startswith("| **FR-048"))
+    _assert("validado" in fr022 and "Resuelto mediante" in fr022, "FR-022 must be resolved through GitHub Issues")
+    _assert("pendiente" in fr048, "FR-048 must remain pending")
+
+
 def _check_repository_state() -> None:
     tracked = subprocess.run(
         ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True, shell=False
@@ -225,6 +272,7 @@ def run() -> None:
     _check_hygiene()
     _check_backlog()
     _check_pr2_reconciliation()
+    _check_public_explanations()
     _check_repository_state()
     print("OK: documentation hygiene checks passed")
 

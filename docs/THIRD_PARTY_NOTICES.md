@@ -27,7 +27,8 @@ Las dependencias transitivas, módulos congelados y metadatos de licencia del bu
 | OpenStreetMap Standard Tile Layer | Servicio/datos | Teselas desde `tile.openstreetmap.org` y atribución | ODbL para datos; política de teselas separada | No | [Copyright OSM](https://www.openstreetmap.org/copyright), [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) | Revisar carga, cache, atribución y política de uso antes de publicar (FR-038). |
 | MINETUR | Fuente de datos | Precios de carburantes | Condiciones y procedencia pendientes de revisión | No | [Geoportal de gasolineras](https://geoportalgasolineras.es/) | No se afirma una licencia de reutilización; resolver FR-045. |
 | Ballenoil | Fuente complementaria | Precios/catálogo cuando aplica | Condiciones pendientes de revisión | No | [Ballenoil](https://www.ballenoil.es/) | Revisar procedencia, frecuencia y permiso antes de release. |
-| SMTP/Gmail | Servicio opcional | Envío de feedback | Condiciones del proveedor | No | [Gmail](https://www.google.com/gmail/about/) | Sin credenciales públicas puede no funcionar; blocker FR-022. |
+| Google Maps | Servicio abierto por el usuario | Mostrar origen, estación y destino al pulsar **Abrir en Maps** | Condiciones del servicio | No | [Google Maps](https://www.google.com/maps) | No recibe puntos automáticamente; revisar sus condiciones y privacidad antes de usar el enlace. |
+| GitHub Issues | Servicio abierto por el usuario | Ideas y errores no sensibles mediante **Mándanos tu idea** | Condiciones de GitHub | No | [GitHub Terms](https://docs.github.com/site-policy/github-terms/github-terms-of-service) | FuelOpt no adjunta datos de la búsqueda; el usuario decide qué publica. No usar para secretos o vulnerabilidades. |
 
 Los proveedores externos pueden recibir la IP y los parámetros necesarios. Leaflet local no convierte las teselas en un recurso offline.
 

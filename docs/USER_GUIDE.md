@@ -2,6 +2,8 @@
 
 ## Preparar una consulta
 
+En la primera apertura, una ayuda rápida resume los tres pasos básicos. Al cerrarla, el navegador guarda únicamente `fuelopt:onboarding:v1:dismissed` para no mostrarla automáticamente otra vez; puede reabrirse desde **Ayuda rápida**.
+
 1. Selecciona origen y destino.
 2. Indica si el viaje es solo de ida o de ida y vuelta.
 3. Elige el combustible.
@@ -36,6 +38,8 @@ La última base válida permite consultas limitadas sin conexión. El mapa puede
 
 ## Privacidad, logs y soporte
 
-La consulta se procesa en el servidor local, aunque ORS, las teselas y las fuentes de precios reciben las solicitudes necesarias y pueden ver la IP. FuelOpt no incorpora telemetría propia. Los logs técnicos se guardan bajo `%LOCALAPPDATA%\FuelOpt\logs` y pueden incluir errores o rutas técnicas, pero no deberían incluir la clave ORS.
+La consulta se procesa en el servidor local. ORS recibe direcciones y coordenadas cuando se utiliza para geocodificar o calcular rutas; OpenStreetMap recibe las peticiones de teselas del mapa. MINETUR y Ballenoil se consultan durante las actualizaciones del catálogo, no para enviar búsquedas personales. FuelOpt no incorpora telemetría propia.
 
-El formulario de feedback depende de una configuración SMTP que puede no estar disponible en instalaciones públicas. Para problemas consulta [TROUBLESHOOTING.md](TROUBLESHOOTING.md) y [SECURITY.md](../SECURITY.md).
+**Abrir en Maps** comparte origen, destino y estación con Google Maps solo después de que el usuario pulse el botón. **Mándanos tu idea** abre GitHub Issues sin adjuntar automáticamente datos de la búsqueda; el usuario decide qué publica. FuelOpt no solicita correo ni incluye un formulario de envío.
+
+Los logs técnicos se guardan bajo `%LOCALAPPDATA%\FuelOpt\logs`. Los logs normales no registran la clave ORS, URLs sensibles, cabeceras de autorización ni texto crudo de excepciones ORS. El modo diagnóstico puede contener más contexto técnico y debe revisarse antes de compartirlo. Para problemas consulta [TROUBLESHOOTING.md](TROUBLESHOOTING.md), [CONFIGURATION.md](CONFIGURATION.md) y [SECURITY.md](../SECURITY.md).

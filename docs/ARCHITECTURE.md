@@ -51,4 +51,6 @@ PyInstaller produce `onedir`; Inno Setup instala por usuario con AppId estable y
 
 GitHub Actions fija Python, ejecuta release checks y genera instalador, ZIP y checksums. El build permite dry-runs sin licencia para obtener evidencia técnica, pero la ruta de tag falla antes de compilar y el job con `contents: write` exige una aprobación positiva del guard de `LICENSE`.
 
-La clave ORS vive en Credential Manager y los logs aplican redacción. El endpoint administrativo legacy sigue protegido por `FUELOPT_ADMIN_TOKEN`. Servicios externos: ORS, fuentes de precios y teselas OpenStreetMap. No existe hosting público ni analítica propia vigente.
+La clave ORS vive preferentemente en Credential Manager y los logs aplican redacción. Las fronteras ORS convierten errores externos en mensajes públicos estables y registran solo operación, clase general y estado remoto seguro; no propagan URL, query, cabeceras ni texto arbitrario del proveedor. `tests/security_check.py` se ejecuta obligatoriamente dentro del release gate.
+
+El endpoint administrativo legacy sigue protegido por `FUELOPT_ADMIN_TOKEN`. Servicios externos: ORS, fuentes de precios y teselas OpenStreetMap; Google Maps y GitHub se abren solo por una acción explícita del usuario. No existe hosting público, formulario de correo ni analítica propia vigente.

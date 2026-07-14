@@ -24,7 +24,7 @@ FuelOpt.exe --clear-ors-key
 FuelOpt.exe --show-settings
 ```
 
-`--set-ors-key` solicita la clave sin incluirla en la línea de comandos. `--show-settings` no revela secretos.
+`--set-ors-key` solicita la clave sin incluirla en la línea de comandos. `--show-settings` no revela secretos. Los fallos de ORS se traducen a mensajes públicos estables; los logs normales conservan operación, tipo general de fallo y, cuando es seguro, estado remoto, sin URL preparada, parámetros, cabeceras ni texto crudo del proveedor.
 
 ## Frecuencia de refresco
 
@@ -56,4 +56,6 @@ Este comando es público para instalador y mantenimiento. Solicita el cierre de 
 
 ## Privacidad y servicios externos
 
-FuelOpt puede contactar con ORS, fuentes MINETUR/Ballenoil y el servicio estándar de teselas `tile.openstreetmap.org`. Esos proveedores pueden recibir IP, parámetros técnicos y ubicaciones necesarias. Leaflet está alojado localmente, pero las teselas no son offline. No hay telemetría propia. El formulario de feedback requiere SMTP y permanece bloqueado para release hasta definir su experiencia pública.
+FuelOpt puede contactar con ORS, fuentes MINETUR/Ballenoil y el servicio estándar de teselas `tile.openstreetmap.org`. Esos proveedores pueden recibir la IP y los parámetros necesarios para su operación. Leaflet está alojado localmente, pero las teselas no son offline. Google Maps recibe los puntos de ruta solo cuando el usuario pulsa **Abrir en Maps**. GitHub recibe información solo cuando el usuario abre **Mándanos tu idea** y decide publicar un Issue.
+
+No hay telemetría propia ni formulario de correo. El navegador utiliza `localStorage` únicamente para `fuelopt:onboarding:v1:dismissed`. Consulta la página de privacidad incluida con la aplicación para el detalle y las limitaciones.

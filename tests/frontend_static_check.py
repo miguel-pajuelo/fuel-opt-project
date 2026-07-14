@@ -1045,7 +1045,7 @@ def test_external_leaflet_has_sri() -> None:
 
 
 def test_no_unauthorized_analytics_or_retired_domains() -> None:
-    files = ("static/index.html", "static/app.js", "static/privacy.html", "static/robots.txt")
+    files = ("static/index.html", "static/app.js", "static/robots.txt")
     combined = "\n".join((ROOT / relative).read_text(encoding="utf-8").lower() for relative in files)
     forbidden = (
         "goat" + "counter",
@@ -1061,10 +1061,42 @@ def test_no_unauthorized_analytics_or_retired_domains() -> None:
     _assert(not external_script.search(html), "Frontend must not load unauthorized external scripts")
 
 
+def test_public_privacy_and_how_it_works_match_current_frontend() -> None:
+    privacy = _read("static/privacy.html")
+    how_it_works = _read("static/como-funciona.html")
+
+    for term in (
+        "fuelopt:onboarding:v1:dismissed",
+        "OpenRouteService",
+        "OpenStreetMap",
+        "Google Maps",
+        "GitHub Issues",
+    ):
+        _assert(term in privacy, f"Privacy page is missing the current integration: {term}")
+    _assert("ya no utiliza SMTP" in privacy, "Privacy page must not describe mail feedback as active")
+    _assert("formulario de feedback" not in privacy.lower(), "Retired feedback form remains in privacy copy")
+
+    for term in (
+        "M&aacute;s ahorro",
+        "Menor desv&iacute;o",
+        "Equilibrado",
+        "result_limit",
+        "OpenRouteService",
+        "Haversine",
+        "FastAPI",
+        "SQLite",
+        "remaining_fuel_liters",
+    ):
+        _assert(term in how_it_works, f"How-it-works page is missing current behavior: {term}")
+    for retired in ("GMAIL_USER", "GMAIL_APP_PASSWORD", "FEEDBACK_RECIPIENT", "fuelopt" + ".es"):
+        _assert(retired not in privacy and retired not in how_it_works, f"Retired public reference remains: {retired}")
+
+
 def run() -> None:
     test_frontend_is_extracted()
     test_external_leaflet_has_sri()
     test_no_unauthorized_analytics_or_retired_domains()
+    test_public_privacy_and_how_it_works_match_current_frontend()
     test_dynamic_html_uses_escape_helper()
     test_optimization_mode_selector_is_native_and_accessible()
     test_optimization_mode_request_and_result_state_are_separate()

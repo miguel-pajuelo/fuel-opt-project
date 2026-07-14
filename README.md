@@ -15,6 +15,7 @@ FuelOpt es una aplicación local que compara estaciones de servicio y estima el 
 - Base semilla incluida y uso offline con los últimos datos válidos disponibles.
 - Refresco manual, al abrir o programado cada 1, 2, 4, 8, 12 o 24 horas.
 - Datos mutables separados de los recursos instalados.
+- Ayuda rápida en la primera apertura, que solo guarda localmente si ya fue cerrada.
 
 FuelOpt se abre en el navegador mediante una dirección local `http://127.0.0.1:<puerto>`. El launcher utiliza los puertos 8001–8010 y verifica la identidad del servidor antes de reutilizar una instancia. No se publica un servidor en Internet.
 
@@ -24,7 +25,7 @@ Los objetivos no se reducen al precio por litro: consideran el desplazamiento y 
 
 La aplicación se instala por usuario en `%LOCALAPPDATA%\Programs\FuelOpt` y conserva configuración, base activa, caché y logs en `%LOCALAPPDATA%\FuelOpt`. La base semilla instalada es de solo lectura y se copia o reconstruye en el primer arranque sin sustituir una base activa válida.
 
-Sin conexión se puede consultar el último catálogo disponible, pero no se pueden obtener precios nuevos, teselas de mapa ni rutas ORS. Sin clave ORS, FuelOpt conserva una funcionalidad limitada basada en aproximaciones geométricas. No incluye telemetría propia. Los proveedores externos pueden recibir la dirección IP al realizar solicitudes; consulta [Privacidad y configuración](docs/CONFIGURATION.md#privacidad-y-servicios-externos).
+Sin conexión se puede consultar el último catálogo disponible, pero no se pueden obtener precios nuevos, teselas de mapa ni rutas ORS. Sin clave ORS, FuelOpt conserva una funcionalidad limitada basada en aproximaciones geométricas. No incluye telemetría propia ni un servidor central de búsquedas. ORS, OpenStreetMap, Google Maps y GitHub solo intervienen en las acciones descritas en la [guía de usuario](docs/USER_GUIDE.md#privacidad-logs-y-soporte) y en [Privacidad y configuración](docs/CONFIGURATION.md#privacidad-y-servicios-externos).
 
 ## Instalación para usuarios
 
@@ -70,6 +71,7 @@ Consulta [Desarrollo](docs/DEVELOPMENT.md), [Arquitectura](docs/ARCHITECTURE.md)
 - [Índice de documentación](docs/README.md)
 - [Instalación y desinstalación](docs/INSTALLATION.md)
 - [Guía de usuario](docs/USER_GUIDE.md)
+- [Cómo funciona FuelOpt](static/como-funciona.html)
 - [Configuración, ORS y CLI](docs/CONFIGURATION.md)
 - [Solución de problemas](docs/TROUBLESHOOTING.md)
 - [Seguridad](SECURITY.md) y [contribución](CONTRIBUTING.md)

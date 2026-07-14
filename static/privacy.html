@@ -28,29 +28,34 @@
   <div class="wordmark">Fuel<span>Opt</span></div>
   <a class="back" href="/">← Volver a FuelOpt</a>
   <h1>Privacidad</h1>
-  <p class="lead">Información técnica provisional para la versión pre-release. La política definitiva y el contacto responsable siguen pendientes antes de publicación.</p>
+  <p class="lead">Cómo trata FuelOpt los datos en la versión pre-release actual. La revisión jurídica y el contacto responsable definitivo siguen pendientes antes de la publicación.</p>
 
-  <h2>Datos guardados en el equipo</h2>
-  <p>FuelOpt se ejecuta localmente. Guarda configuración no secreta en <code>%LOCALAPPDATA%\FuelOpt\config.json</code>, la base activa y copias recuperables bajo <code>data\db</code>, caché bajo <code>data\cache</code> y logs técnicos bajo <code>logs</code>. La clave de OpenRouteService se guarda en Windows Credential Manager, no en <code>config.json</code>.</p>
-  <p>Origen, destino y parámetros de cálculo se procesan para responder a la consulta. FuelOpt no incorpora un sistema propio de perfiles, cuentas, historial de búsquedas ni telemetría. Los logs pueden conservar errores, fechas, puertos y rutas técnicas; no deberían registrar claves o credenciales. No se afirma anonimato absoluto.</p>
+  <h2>Funcionamiento local</h2>
+  <p>FuelOpt se ejecuta en tu equipo y sirve la interfaz desde una dirección local. No existe un servidor central de FuelOpt, telemetría propia, analítica, GoatCounter ni otros trackers. Tus búsquedas no se envían automáticamente a FuelOpt ni se asocian a una cuenta o perfil.</p>
+  <p>SQLite almacena localmente el catálogo, los precios y sus metadatos. La configuración no secreta vive en <code>%LOCALAPPDATA%\FuelOpt\config.json</code>; la base activa, caché y logs se guardan bajo <code>%LOCALAPPDATA%\FuelOpt</code>. El navegador utiliza <code>localStorage</code> únicamente para recordar que cerraste la ayuda inicial, mediante la clave <code>fuelopt:onboarding:v1:dismissed</code>.</p>
 
-  <h2>Servicios externos</h2>
+  <h2>OpenRouteService y rutas aproximadas</h2>
+  <p>La clave de OpenRouteService (ORS) se guarda preferentemente como credencial del usuario en Windows Credential Manager. En desarrollo puede utilizarse una variable de entorno local. FuelOpt no la guarda en <code>config.json</code>.</p>
+  <p>Cuando se usa ORS, el servicio puede recibir las direcciones, coordenadas y puntos necesarios para geocodificar o calcular una ruta. Si ORS no está disponible, FuelOpt puede utilizar Haversine: una estimación geográfica calculada localmente que no conoce carreteras, sentidos, barreras ni tráfico.</p>
+
+  <h2>Otros servicios externos</h2>
   <ul>
-    <li><strong>OpenRouteService (ORS):</strong> si hay clave, recibe direcciones o coordenadas necesarias para geocodificación y rutas. Sin clave se usa una aproximación local limitada.</li>
-    <li><strong>OpenStreetMap Standard Tile Layer:</strong> Leaflet se incluye localmente, pero el navegador solicita por Internet las teselas a <code>tile.openstreetmap.org</code>. Ese servicio puede ver la IP, fecha, agente de usuario y datos técnicos de la solicitud.</li>
-    <li><strong>MINETUR y Ballenoil:</strong> el refresco consulta fuentes de precios cuando corresponda. Normalmente no necesitan la consulta de ruta del usuario, pero ven la IP del equipo que refresca.</li>
-    <li><strong>SMTP/Gmail:</strong> el formulario de feedback puede enviar el texto y datos aportados mediante un servicio SMTP configurado por el operador. En una instalación pública sin esa configuración puede no estar disponible.</li>
+    <li><strong>OpenStreetMap:</strong> Leaflet se incluye localmente, pero el navegador solicita a <code>tile.openstreetmap.org</code> las teselas del área visualizada. El proveedor puede recibir la IP y datos técnicos de esas solicitudes.</li>
+    <li><strong>Google Maps:</strong> no recibe una consulta automáticamente. Solo recibe el origen, el destino y la estación cuando pulsas voluntariamente <strong>Abrir en Maps</strong>.</li>
+    <li><strong>GitHub:</strong> solo recibe información cuando abres <strong>Mándanos tu idea</strong> y decides crear o publicar un Issue. FuelOpt no completa el Issue con datos de tu búsqueda.</li>
+    <li><strong>MINETUR y Ballenoil:</strong> se consultan al actualizar el catálogo y los precios. Esas peticiones no envían tus búsquedas personales, aunque los proveedores pueden ver la IP y datos técnicos de la actualización.</li>
   </ul>
-  <p>La disponibilidad, condiciones y políticas de esos servicios pertenecen a sus proveedores. Consulta los avisos del repositorio para las fuentes y revisiones pendientes.</p>
+  <p>FuelOpt ya no utiliza SMTP ni solicita una dirección de correo dentro de la aplicación. Cada servicio externo aplica sus propias condiciones y políticas.</p>
 
-  <h2>Telemetría, cookies y almacenamiento del navegador</h2>
-  <p>FuelOpt no carga analítica externa ni telemetría propia. No utiliza cookies propias para seguimiento. Los servicios externos pueden aplicar sus propias políticas cuando el navegador o la aplicación los contacta.</p>
+  <h2>Logs y diagnóstico</h2>
+  <p>Los logs normales pueden registrar fechas, operaciones y tipos generales de fallo. Las fronteras ORS evitan registrar claves, URLs sensibles, parámetros de consulta, cabeceras <code>Authorization</code> o texto crudo de excepciones de red. El modo diagnóstico puede generar más información técnica y debe utilizarse con prudencia antes de compartir archivos.</p>
+  <p>Estas medidas reducen el riesgo de exposición, pero no implican seguridad total ni anonimato garantizado. Los servicios externos pueden ver la IP desde la que reciben una solicitud.</p>
 
   <h2>Conservación y eliminación</h2>
-  <p>Los datos locales permanecen hasta que el usuario los borra. La desinstalación conserva por defecto <code>%LOCALAPPDATA%\FuelOpt</code>; solo se elimina mediante la opción explícita del desinstalador o <code>/REMOVEDATA=1</code>. Las credenciales pueden borrarse con <code>FuelOpt.exe --clear-ors-key</code>.</p>
+  <p>Los datos locales permanecen hasta que los borras. La desinstalación conserva por defecto <code>%LOCALAPPDATA%\FuelOpt</code>; solo lo elimina si eliges la opción explícita o utilizas <code>/REMOVEDATA=1</code>. La credencial ORS puede borrarse con <code>FuelOpt.exe --clear-ors-key</code>.</p>
 
-  <h2>Feedback y contacto provisional</h2>
-  <p>La experiencia pública de feedback y el contacto definitivo son blockers de release. Mientras tanto, puede abrirse un Issue en el repositorio sin incluir secretos ni datos sensibles. Para vulnerabilidades, sigue la política de seguridad del repositorio y solicita primero un canal privado.</p>
+  <h2>Ideas, errores y seguridad</h2>
+  <p><strong>Mándanos tu idea</strong> abre GitHub Issues para ideas y errores no sensibles. No publiques allí claves, credenciales, datos personales ni detalles explotables. Para vulnerabilidades, sigue <a href="https://github.com/miguel-pajuelo/fuel-opt-project/security">la política y las opciones privadas de seguridad del repositorio</a> cuando estén disponibles.</p>
 
   <footer>FuelOpt — aplicación local en estado pre-release.</footer>
 </main>
