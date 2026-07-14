@@ -58,7 +58,11 @@ from app.models import Coordinates, FUEL_FIELDS, OptimizationInput, Optimization
 from app.optimizer.ranking import HaversineEstimateProvider, optimize_from_db_with_context
 from app.api.ui import STATIC_DIR, load_index_html
 from app.routing.ors import (
+    ORSServiceError,
     ORSRouteProvider,
+    PUBLIC_GEOCODING_ERROR,
+    PUBLIC_ROUTE_ERROR,
+    PUBLIC_ROUTING_SERVICE_ERROR,
     geocode_address,
     geocode_candidates,
     geocode_candidates_autocomplete,
@@ -251,9 +255,8 @@ async def _log_requests(request: Request, call_next):
 def _validate_startup() -> None:
     logger.info("fastapi startup entered; bootstrap verification starting")
     if not settings.ors_api_key:
-        logging.warning(
-            "ORS_API_KEY no está configurada. "
-            "Geocodificación y rutas reales no estarán disponibles."
+        logger.warning(
+            "ors_configuration_missing: geocoding and road routing unavailable"
         )
     try:
         bootstrap = bootstrap_if_managed(settings.db_path, settings.minetur_snapshot_path)
@@ -429,13 +432,17 @@ def _resolve_coordinates(address: str | None, lat: float | None, lon: float | No
     if address:
         try:
             return geocode_address(address, settings=settings)
+        except ORSServiceError as exc:
+            status_code = 400 if exc.configuration_error else 502
+            raise HTTPException(status_code=status_code, detail=exc.public_message) from None
         except RuntimeError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            logger.warning("geocode_runtime_error failure_type=%s", exc.__class__.__name__)
+            raise HTTPException(status_code=400, detail=PUBLIC_GEOCODING_ERROR) from None
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RequestException as exc:
             logger.warning("geocode_provider_error: %s", exc.__class__.__name__)
-            raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
+            raise HTTPException(status_code=502, detail=PUBLIC_GEOCODING_ERROR) from None
     raise HTTPException(status_code=400, detail=f"{label} requires address or lat/lon.")
 
 
@@ -581,11 +588,15 @@ def geocode(
         return {
             "items": _geocode_search_variants(q, size=size, focus_lat=focus_lat, focus_lon=focus_lon)
         }
+    except ORSServiceError as exc:
+        status_code = 400 if exc.configuration_error else 502
+        raise HTTPException(status_code=status_code, detail=exc.public_message) from None
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.warning("geocode_runtime_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=400, detail=PUBLIC_GEOCODING_ERROR) from None
     except RequestException as exc:
         logger.warning("geocode_provider_error: %s", exc.__class__.__name__)
-        raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
+        raise HTTPException(status_code=502, detail=PUBLIC_GEOCODING_ERROR) from None
 
 
 @app.get("/geocode")
@@ -605,11 +616,15 @@ def reverse_geocode(lat: float, lon: float) -> dict[str, Any]:
     try:
         item = reverse_geocode_coordinates(lat=lat, lon=lon, settings=settings)
         return {"item": item}
+    except ORSServiceError as exc:
+        status_code = 400 if exc.configuration_error else 502
+        raise HTTPException(status_code=status_code, detail=exc.public_message) from None
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.warning("reverse_geocode_runtime_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=400, detail=PUBLIC_GEOCODING_ERROR) from None
     except RequestException as exc:
         logger.warning("reverse_geocode_provider_error: %s", exc.__class__.__name__)
-        raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
+        raise HTTPException(status_code=502, detail=PUBLIC_GEOCODING_ERROR) from None
 
 
 @app.get("/reverse-geocode")
@@ -636,10 +651,14 @@ def route_stopover(payload: RouteStopoverRequest) -> dict[str, Any]:
         provider = ORSRouteProvider(settings=settings)
         first_leg = provider.route_geometry(origin, station)
         second_leg = provider.route_geometry(station, destination)
+    except ORSServiceError as exc:
+        raise HTTPException(status_code=502, detail=exc.public_message) from None
     except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.warning("route_runtime_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=502, detail=PUBLIC_ROUTE_ERROR) from None
     except RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Routing provider failed: {exc}") from exc
+        logger.warning("route_provider_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=502, detail=PUBLIC_ROUTE_ERROR) from None
     return {
         "route_source": "openrouteservice_directions",
         "legs": [
@@ -679,10 +698,11 @@ def health() -> dict[str, Any]:
     try:
         db_status = database_health(settings.db_path)
     except Exception as exc:
+        logger.error("health_database_unavailable failure_type=%s", exc.__class__.__name__)
         raise HTTPException(
             status_code=503,
-            detail={"status": "down", "database": "unavailable", "error": str(exc)},
-        ) from exc
+            detail={"status": "down", "database": "unavailable"},
+        ) from None
     return {"status": "ok", "service": "FuelOpt", **db_status}
 
 
@@ -880,8 +900,11 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
             if payload.use_ors
             else HaversineEstimateProvider(detour_factor=settings.route_detour_factor)
         )
+    except ORSServiceError as exc:
+        raise HTTPException(status_code=400, detail=exc.public_message) from None
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.warning("route_configuration_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=400, detail=PUBLIC_ROUTING_SERVICE_ERROR) from None
     try:
         results, search_context = optimize_from_db_with_context(
             settings.db_path,
@@ -892,8 +915,11 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ORSServiceError as exc:
+        raise HTTPException(status_code=502, detail=exc.public_message) from None
     except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.warning("optimization_runtime_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=502, detail="No se pudo completar la optimización en este momento.") from None
     items = [item.to_dict() for item in results[:payload.result_limit]]
     deprecated_parameters = payload.deprecated_parameters_used()
     try:
