@@ -32,10 +32,13 @@ data/db/*-shm
 catalog_refresh.lock
 catalog_refresh_report.json
 *.lock
+!requirements-runtime.lock
 *.pid
 *.runtime.json
 runtime-record*.json
 runtime/
+!legal/runtime/
+!legal/runtime/*.txt
 user-data/
 *.next.sqlite
 *.previous-*.sqlite

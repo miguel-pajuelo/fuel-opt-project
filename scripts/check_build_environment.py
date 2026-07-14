@@ -13,7 +13,7 @@ REQUIREMENT_RE = re.compile(r"^([A-Za-z0-9_.-]+)(?:\[[^]]+\])?==([^\s;]+)$")
 
 def pinned_requirements() -> list[tuple[str, str]]:
     requirements: list[tuple[str, str]] = []
-    for name in ("requirements-web.txt", "requirements-build.txt"):
+    for name in ("requirements-runtime.lock", "requirements-build.txt"):
         for raw_line in (ROOT / name).read_text(encoding="utf-8").splitlines():
             line = raw_line.strip()
             if not line or line.startswith("#"):
@@ -27,6 +27,8 @@ def pinned_requirements() -> list[tuple[str, str]]:
 
 def main() -> int:
     errors: list[str] = []
+    if sys.version_info[:3] != (3, 12, 10):
+        errors.append(f"Python: installed {sys.version.split()[0]}, expected 3.12.10")
     for distribution, expected in pinned_requirements():
         try:
             installed = version(distribution)

@@ -11,11 +11,16 @@ DIAGNOSTIC_CONSOLE = os.environ.get("FUELOPT_DIAGNOSTIC_CONSOLE") == "1"
 BUILD_NAME = "FuelOptDiagnostic" if DIAGNOSTIC_CONSOLE else "FuelOpt"
 ICON_PATH = ROOT / "assets" / "fuelopt.ico"
 VERSION_FILE = ROOT / "build" / "metadata" / "FuelOpt.version.txt"
+LEGAL_BUILD = ROOT / "build" / "legal-runtime"
+LEGAL_INVENTORY = LEGAL_BUILD / "THIRD_PARTY_COMPONENTS.json"
+LEGAL_TEXTS = LEGAL_BUILD / "third_party"
 
 if not ICON_PATH.is_file():
     raise FileNotFoundError(f"Required application icon is missing: {ICON_PATH}")
 if not VERSION_FILE.is_file():
     raise FileNotFoundError(f"Generated VERSIONINFO is missing: {VERSION_FILE}")
+if not LEGAL_INVENTORY.is_file() or not LEGAL_TEXTS.is_dir():
+    raise FileNotFoundError("Generated runtime legal inventory is missing; run scripts/build_onedir.cmd")
 
 datas = [
     (str(ROOT / "static"), "static"),
@@ -26,6 +31,8 @@ datas = [
     (str(ROOT / "NOTICE"), "licenses"),
     (str(ROOT / "docs" / "DATA_SOURCES_AND_ATTRIBUTION.md"), "licenses"),
     (str(ROOT / "docs" / "THIRD_PARTY_NOTICES.md"), "licenses"),
+    (str(LEGAL_INVENTORY), "licenses"),
+    (str(LEGAL_TEXTS), "licenses/third_party"),
 ]
 
 # Keep the installed seed's name distinct from the mutable user database.
@@ -34,7 +41,6 @@ datas = [
 seed_source = str(ROOT / "data" / "db" / "gas_stations.sqlite")
 
 for distribution in (
-    "beautifulsoup4",
     "certifi",
     "fastapi",
     "pydantic",
@@ -68,19 +74,33 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         "IPython",
+        "PyInstaller",
+        "_pytest",
         "app.legacy_cli",
+        "bcrypt",
+        "bs4",
+        "cryptography",
+        "h2",
+        "httpcore",
+        "httpx",
         "httptools",
         "jupyter",
         "matplotlib",
         "numpy",
         "pandas",
+        "PIL",
+        "pymongo",
+        "pytest",
         "PySide6",
         "scipy",
+        "setuptools",
+        "soupsieve",
         "tkinter",
         "uvloop",
         "watchfiles",
         "websockets",
         "wsproto",
+        "zstandard",
         "zmq",
     ],
     noarchive=False,

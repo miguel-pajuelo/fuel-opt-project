@@ -4,7 +4,8 @@ Copyright 2026 Miguel Pajuelo Gómez
 FuelOpt is distributed under the Apache License, Version 2.0.
 
 Third-party components retain their own terms; see
-THIRD_PARTY_NOTICES.md.
+THIRD_PARTY_NOTICES.md, THIRD_PARTY_COMPONENTS.json, and the complete legal
+texts under _internal/licenses/third_party/ in the distributed bundle.
 
 Data sources, attribution, retrieval dates, and transformations are described
 in DATA_SOURCES_AND_ATTRIBUTION.md.

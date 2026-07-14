@@ -14,6 +14,9 @@ if errorlevel 1 exit /b 1
 python scripts\check_build_environment.py
 if errorlevel 1 exit /b 1
 
+python scripts\generate_runtime_legal_inventory.py
+if errorlevel 1 exit /b 1
+
 python -m PyInstaller --clean --noconfirm --workpath build\pyinstaller FuelOpt.spec
 if errorlevel 1 exit /b 1
 

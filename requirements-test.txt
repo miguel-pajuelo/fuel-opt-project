@@ -1,3 +1,4 @@
-# Test-only dependencies. Runtime dependencies remain in requirements-web.txt.
+# Test-only dependencies. Runtime dependencies are fixed in requirements-runtime.lock.
 pytest==9.1.1
 httpx==0.28.1
+beautifulsoup4==4.14.3
