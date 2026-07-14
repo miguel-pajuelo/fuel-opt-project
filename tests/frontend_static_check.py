@@ -42,7 +42,6 @@ def test_dynamic_html_uses_escape_helper() -> None:
     _assert("function escapeHtml" in js, "escapeHtml helper missing.")
     risky_patterns = [
         r"\$\('result'\)\.innerHTML = `[\s\S]*\$\{station\.name\}",
-        r"\$\('result'\)\.innerHTML = `[\s\S]*\$\{selected\.why_selected\}",
         r"box\.innerHTML = `<button[\s\S]*\$\{error\.message\}",
         r"\.map\(f => `<option value=\"\$\{f\.key\}",
     ]
@@ -53,7 +52,6 @@ def test_dynamic_html_uses_escape_helper() -> None:
         "escapeHtml(opt.key)",
         "escapeHtml(opt.label)",
         "const stationName = escapeHtml(station.name ||",
-        "text.textContent = explanation",
     ]
     for fragment in required_safe_fragments:
         _assert(fragment in js, f"Expected escaped fragment missing: {fragment}")
@@ -102,6 +100,9 @@ def test_optimization_mode_selector_is_native_and_accessible() -> None:
     _assert("optimization_mode_trigger" not in html, "Legacy optimization dropdown trigger remains.")
     _assert(".optimization-mode-option:has(input:checked)" in styles, "Selected radio card styling missing.")
     _assert(".optimization-mode-option:has(input:focus-visible)" in styles, "Visible keyboard focus styling missing.")
+    legend_rule = re.search(r"\.optimization-mode-field > legend\s*\{(?P<body>[^}]*)\}", styles)
+    _assert(legend_rule is not None, "Optimization legend style rule missing.")
+    _assert("margin: 0 0 12px" in legend_rule.group("body"), "Optimization legend needs 12px separation from mode cards.")
 
 
 def test_optimization_mode_request_and_result_state_are_separate() -> None:
@@ -121,7 +122,7 @@ def test_optimization_mode_request_and_result_state_are_separate() -> None:
         "Rendered mode must update only from a successful requested mode.",
     )
     _assert(
-        js.index("const { data, fallbackUsed } = await requestOptimization(payload);")
+        js.index("const { data } = await requestOptimization(payload);")
         < js.index("state.renderedOptimizationMode = requestedOptimizationMode;"),
         "Rendered mode changed before a successful response.",
     )
@@ -130,28 +131,86 @@ def test_optimization_mode_request_and_result_state_are_separate() -> None:
     _assert("remaining_fuel_liters" not in js, "Autonomy entered the frontend payload.")
 
 
-def test_optimization_result_explanations_and_route_sources_are_visible() -> None:
+def test_result_presentation_is_simplified_and_route_warning_is_plain() -> None:
     js = _read("static/app.js")
     styles = _read("static/styles.css")
-    for copy in (
+    for removed_copy in (
         "Ordenado por:",
-        "Más ahorro",
-        "Menor desvío",
-        "Equilibrado",
         "Por qué aparece aquí",
+        "Fuente de ruta",
         "Ruta calculada con OpenRouteService",
         "Estimación mediante distancia geográfica",
     ):
-        _assert(copy in js, f"Result presentation copy missing: {copy}")
-    _assert("function setWhySelectedText(container, value)" in js, "Safe why_selected renderer missing.")
-    _assert("text.textContent = explanation" in js, "why_selected must use textContent.")
-    _assert("block.hidden = !explanation" in js, "Missing why_selected must hide its block.")
-    _assert("selected.why_selected ||" not in js, "Frontend must not invent a why_selected fallback.")
+        _assert(removed_copy not in js, f"Redundant result copy remains: {removed_copy}")
+    _assert("why_selected" not in js, "Frontend must not render the backend why_selected field.")
     _assert("balanced_score" not in js, "Internal balanced score leaked into frontend code.")
     _assert("economic_rank" not in js and "distance_rank" not in js, "Internal ranks leaked into frontend code.")
-    _assert(".result-mode-summary" in styles, "Mode summary styling missing.")
-    _assert(".why-selected[hidden]" in styles, "Empty explanation block must stay hidden.")
-    _assert(js.count("Ruta estimada por distancia") == 1, "Structured Haversine warning copy changed unexpectedly.")
+    for removed_selector in (".result-mode-summary", ".why-selected", ".result-route-source"):
+        _assert(removed_selector not in styles, f"Unused result style remains: {removed_selector}")
+    _assert(js.count("Ruta estimada por distancia") == 1, "Approximate route title must appear exactly once.")
+    _assert(
+        js.count("El coste de ruta se ha calculado con una aproximación de distancia.") == 1,
+        "Approximate route warning must use the approved plain-language copy exactly once.",
+    )
+    _assert("warning.code === 'using_haversine_estimate'" in js, "Approximate route copy must be limited to its structured warning.")
+
+
+def test_optimize_loading_state_is_accessible_and_bounded() -> None:
+    html = _read("static/index.html")
+    js = _read("static/app.js")
+    styles = _read("static/styles.css")
+    decoded_html = unescape(html)
+    _assert('id="submit" type="button" aria-busy="false"' in html, "Submit button needs an explicit idle aria-busy state.")
+    _assert('class="primary-spinner" aria-hidden="true" hidden' in html, "Decorative submit spinner is missing.")
+    _assert("data-submit-label" in html, "Submit label needs a stable update target.")
+    _assert("Calcular mejor repostaje" in decoded_html, "Idle submit label changed unexpectedly.")
+    for message in ("Buscando estaciones…", "Calculando recorridos…", "Ordenando alternativas…"):
+        _assert(js.count(message) == 1, f"Loading message must exist exactly once: {message}")
+    _assert("}, 1700);" in js, "Loading messages should advance every 1.7 seconds.")
+    _assert("window.clearInterval(optimizeLoadingTimer)" in js, "Loading timer is not cleared.")
+    _assert("if (state.optimizeInFlight) return;" in js, "Concurrent optimization requests are not guarded.")
+    _assert("state.optimizeInFlight = true;" in js and "state.optimizeInFlight = false;" in js, "Request guard is not restored.")
+    _assert("function setOptimizeLoadingState(isLoading)" in js, "Submit loading state helper missing.")
+    _assert("button.setAttribute('aria-busy', String(isLoading))" in js, "Submit aria-busy is not synchronized.")
+    _assert("Calculando mejor repostaje…" in js, "Busy submit label missing.")
+    _assert("function renderOptimizeLoadingResult()" in js, "Result loading renderer missing.")
+    _assert('class="result-loading-skeleton" aria-hidden="true"' in js, "Decorative result skeleton must be hidden from assistive technology.")
+    _assert('role="status" aria-live="polite" data-optimize-loading-message' in js, "Result progress needs one polite live region.")
+    _assert("resultElement.setAttribute('aria-busy', 'true')" in js, "Result panel does not enter aria-busy state.")
+    optimize_region = js[js.index("async function optimize()") : js.index("// ── FeedbackModal")]
+    _assert("finally" in optimize_region, "Optimization cleanup must run in a finally block.")
+    _assert("stopOptimizeLoadingMessages();" in optimize_region, "Optimization cleanup must stop its timer.")
+    _assert("setOptimizeLoadingState(false);" in optimize_region, "Submit button is not restored after success or error.")
+    _assert('role="alert"' in optimize_region, "Optimization errors need an accessible alert.")
+    start_region = js[js.index("function startOptimizeLoadingMessages()") : js.index("function stopOptimizeLoadingMessages()")]
+    _assert("$('status')" not in start_region, "Progress must not be duplicated below the submit button.")
+    _assert(".result-loading-skeleton" in styles and ".primary-spinner" in styles, "Loading visuals are not styled.")
+    _assert(".primary:focus-visible" in styles, "Submit button needs an explicit visible keyboard focus.")
+    _assert("@media (prefers-reduced-motion: reduce)" in styles, "Reduced motion is not respected.")
+
+
+def test_brand_loading_and_all_button_state_are_unambiguous() -> None:
+    html = _read("static/index.html")
+    js = _read("static/app.js")
+    styles = _read("static/styles.css")
+    decoded_html = unescape(html)
+    brand_start = decoded_html.index('id="brand_checks"')
+    brand_region = decoded_html[brand_start : decoded_html.index('class="side-footer"', brand_start)]
+    _assert("Cargando marcas…" in brand_region, "Initial brand loading message missing.")
+    _assert("0 estaciones" not in brand_region, "Brand loading state must not claim zero stations.")
+    _assert('aria-busy="true"' in html[html.index('id="brand_checks"') : html.index('id="brand_checks"') + 100], "Brand list needs an initial busy state.")
+    _assert('class="brand-loading-skeleton" aria-hidden="true"' in html, "Brand skeleton must be decorative.")
+    _assert("function renderBrandsLoading()" in js, "Reusable brand loading renderer missing.")
+    load_region = js[js.index("async function loadOptions()") : js.index("$('select_all_brands').addEventListener")]
+    _assert(load_region.index("renderBrandsLoading();") < load_region.index("Promise.all"), "Brand loading state must appear before the existing requests.")
+    _assert("container.setAttribute('aria-busy', 'false')" in js, "Brand busy state is not cleared after rendering.")
+    _assert("$('select_all_brands').textContent = 'Todas';" in js, "All-brands button text must remain stable.")
+    _assert("Todas excepto" not in js and "Todas excepto" not in decoded_html, "Dynamic all-except label remains.")
+    _assert("classList.toggle('active', allSelected)" in js, "All-brands active state must mean every brand is selected.")
+    _assert("setAttribute('aria-pressed', String(allSelected))" in js, "All-brands pressed state is ambiguous.")
+    _assert("$('brand_checks').addEventListener('change'" in js, "Individual brand switches lost their handler.")
+    _assert(".brand-loading" in styles and ".brand-loading-skeleton" in styles, "Brand loading state is not styled.")
+    _assert(".link-button:focus-visible" in styles, "All-brands button needs an explicit visible keyboard focus.")
 
 
 def test_frontend_has_no_visible_mojibake() -> None:
@@ -206,7 +265,7 @@ def test_catalog_and_route_status_copy_present() -> None:
     _assert("function catalogFreshnessClass" in js, "Catalog freshness color helper missing.")
     _assert("freshness-fresh" in js and "freshness-recent" in js and "freshness-stale" in js, "Freshness color classes should be assigned by JS.")
     _assert("Ruta estimada por distancia" in js, "Haversine route status copy missing.")
-    _assert("Ruta calculada con OpenRouteService" in js, "ORS route source should be identified in results.")
+    _assert("Ruta calculada con OpenRouteService" not in js, "ORS must not add a technical route-source block.")
     _assert("emptyResultHtml" in js, "No-result helper missing.")
 
 
@@ -280,6 +339,10 @@ def test_haversine_copy_appears_once() -> None:
     _assert(
         js.count("Ruta estimada por distancia") == 1,
         "Haversine copy should appear once, only as structured warning.",
+    )
+    _assert(
+        js.count("El coste de ruta se ha calculado con una aproximación de distancia.") == 1,
+        "Plain-language approximate route message should appear once.",
     )
 
 
@@ -936,7 +999,9 @@ def run() -> None:
     test_dynamic_html_uses_escape_helper()
     test_optimization_mode_selector_is_native_and_accessible()
     test_optimization_mode_request_and_result_state_are_separate()
-    test_optimization_result_explanations_and_route_sources_are_visible()
+    test_result_presentation_is_simplified_and_route_warning_is_plain()
+    test_optimize_loading_state_is_accessible_and_bounded()
+    test_brand_loading_and_all_button_state_are_unambiguous()
     test_frontend_has_no_visible_mojibake()
     test_result_metrics_are_rendered_once()
     test_catalog_and_route_status_copy_present()

@@ -15,11 +15,9 @@
     let lastCatalogStatus = null;
     let catalogStatusPoller = null;
     const OPTIMIZE_LOADING_MESSAGES = [
-      'Buscando gasolineras cercanas...',
-      'Comparando precios disponibles...',
-      'Estimando desvíos de ruta...',
-      'Ordenando mejores alternativas...',
-      'Preparando resultado...',
+      'Buscando estaciones…',
+      'Calculando recorridos…',
+      'Ordenando alternativas…',
     ];
     const OPTIMIZATION_MODE_PRESENTATION = Object.freeze({
       economic: Object.freeze({
@@ -226,14 +224,12 @@
 
     function updateBrandFilterState() {
       const allSelected = allBrandsSelected();
-      const excludedCount = excludedBrands().length;
       if (allSelected) {
         state.brandFilterMode = 'all';
       }
-      const allExcept = state.brandFilterMode === 'all_except' && excludedCount > 0;
-      $('select_all_brands').classList.toggle('active', allSelected || allExcept);
-      $('select_all_brands').setAttribute('aria-pressed', allExcept ? 'mixed' : String(allSelected));
-      $('select_all_brands').textContent = allExcept ? `Todas excepto ${excludedCount}` : 'Todas';
+      $('select_all_brands').classList.toggle('active', allSelected);
+      $('select_all_brands').setAttribute('aria-pressed', String(allSelected));
+      $('select_all_brands').textContent = 'Todas';
     }
 
     const BRAND_LOGOS = {
@@ -322,7 +318,9 @@
       const realBrands = brands.filter(brand => !brand.is_virtual);
       const virtualBrands = brands.filter(brand => brand.is_virtual);
       const visible = [...realBrands.slice(0, 24), ...virtualBrands];
-      $('brand_checks').innerHTML = visible.map((brand) => {
+      const container = $('brand_checks');
+      container.setAttribute('aria-busy', 'false');
+      container.innerHTML = visible.map((brand) => {
         const logoSrc = brandLogoFor(brand);
         const hasSpecificLogo = Boolean(BRAND_LOGOS[brand.canonical]);
         const logoClass = hasSpecificLogo ? 'brand-logo' : 'brand-logo brand-logo--generic';
@@ -346,6 +344,21 @@
       updateBrandFilterState();
     }
 
+    function renderBrandsLoading() {
+      const container = $('brand_checks');
+      container.setAttribute('aria-busy', 'true');
+      container.innerHTML = `
+        <div class="brand-loading" role="status" aria-live="polite">
+          <p>Cargando marcas…</p>
+          <div class="brand-loading-skeleton" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </div>
+      `;
+    }
+
     const state = {
       active: 'origin',
       inputMode: 'liters',
@@ -363,6 +376,7 @@
       reverseGeocodeRequestId: 0,
       alternativesOpen: false,
       resultHasFit: false,
+      optimizeInFlight: false,
       sidebarCollapsed: false,
       brandFilterMode: 'all',
       userLocationMarker: null,
@@ -1631,6 +1645,7 @@
     // ─────────────────────────────────────────────────────────────────
 
     async function loadOptions() {
+      renderBrandsLoading();
       const [fuels, brands] = await Promise.all([
         fetch('/fuels').then(r => r.json()),
         fetch('/brands').then(r => r.json()),
@@ -1691,36 +1706,6 @@
       return Number.isFinite(amount) ? amount : null;
     }
 
-    function routeSourceNote(data, selected) {
-      const routeSource = String(data.route_source || selected.route_source || '').toLowerCase();
-      if (!routeSource) return '';
-      if (routeSource.includes('openrouteservice')) {
-        return '<div class="result-note result-route-source"><strong>Fuente de ruta:</strong> Ruta calculada con OpenRouteService</div>';
-      }
-      if (routeSource.includes('haversine')) {
-        return '<div class="result-note result-route-source"><strong>Fuente de ruta:</strong> Estimación mediante distancia geográfica</div>';
-      }
-      return '';
-    }
-
-    function optimizationModePresentation(mode) {
-      const presentation = OPTIMIZATION_MODE_PRESENTATION[mode];
-      if (!presentation) {
-        throw new Error('La respuesta contiene un objetivo de optimización no reconocido.');
-      }
-      return presentation;
-    }
-
-    function renderOptimizationModeSummary(mode) {
-      const presentation = optimizationModePresentation(mode);
-      return `
-        <section class="result-mode-summary" aria-label="Criterio de ordenación aplicado">
-          <p class="result-mode-order">Ordenado por: <strong>${escapeHtml(presentation.label)}</strong></p>
-          <p class="result-mode-description">${escapeHtml(presentation.description)}</p>
-        </section>
-      `;
-    }
-
     function alternativesSubtitleForMode(mode, data, isBudgetMode) {
       if (mode === 'minimal_detour') {
         return data.search?.search_shape === 'local_radius'
@@ -1733,15 +1718,6 @@
       return isBudgetMode
         ? 'Ordenadas por litros útiles estimados'
         : 'Ordenadas por coste efectivo neto';
-    }
-
-    function setWhySelectedText(container, value) {
-      const block = container.querySelector('[data-why-selected]');
-      const text = block?.querySelector('[data-why-selected-text]');
-      const explanation = typeof value === 'string' ? value.trim() : '';
-      if (!block || !text) return;
-      text.textContent = explanation;
-      block.hidden = !explanation;
     }
 
     function warningByCode(warnings, code) {
@@ -1766,16 +1742,21 @@
         }
         if (!warning || typeof warning !== 'object') return '';
         if (hiddenCodes.has(warning.code)) return '';
+        if (warning.code === 'using_haversine_estimate') {
+          return `
+            <div class="result-warning result-warning--info">
+              <strong>Ruta estimada por distancia</strong>
+              <p>El coste de ruta se ha calculado con una aproximación de distancia.</p>
+            </div>
+          `;
+        }
         const severity = ['info', 'warning', 'critical'].includes(warning.severity) ? warning.severity : 'info';
         const classBySeverity = {
           info: 'result-warning--info',
           warning: 'result-warning--warning',
           critical: 'result-warning--critical',
         };
-        const titleFallbacks = {
-          using_haversine_estimate: 'Ruta estimada por distancia',
-        };
-        const title = String(warning.title || titleFallbacks[warning.code] || '').trim();
+        const title = String(warning.title || '').trim();
         const message = String(warning.message || '').trim();
         if (!title || !message) return '';
         return `
@@ -2099,10 +2080,11 @@
 
     function renderResult(data, selectedIndex = 0, keepAlternativesOpen = false) {
       const resultElement = $('result');
+      resultElement.setAttribute('aria-busy', 'false');
       resultElement.removeAttribute('data-empty');
       resultElement.classList.remove('result-panel--expanded', 'result-panel--collapsed');
       if (!data.best) {
-        resultElement.innerHTML = `${renderOptimizationModeSummary(state.renderedOptimizationMode)}${emptyResultHtml(data)}`;
+        resultElement.innerHTML = emptyResultHtml(data);
         resultElement.insertAdjacentHTML('afterbegin', resultCloseButton());
         bindResultCloseButton();
         return;
@@ -2132,8 +2114,6 @@
       resultElement.classList.toggle('result-panel--expanded', alternativesOpen);
       resultElement.classList.toggle('result-panel--collapsed', !alternativesOpen);
       state.alternativesOpen = alternativesOpen;
-      const modeSummary = renderOptimizationModeSummary(state.renderedOptimizationMode);
-      const routeNote = routeSourceNote(data, selected);
       const resultWarnings = data.warnings || [];
       const warningsHtml = renderWarnings(resultWarnings);
       const metrics = renderResultMetricRows(selected, resultWarnings, saving, isBudgetMode);
@@ -2147,13 +2127,7 @@
             </div>
           </div>
           <div class="metrics result-metric-list">${metrics}</div>
-          <div class="why-selected" data-why-selected hidden>
-            <span class="why-selected-label">Por qué aparece aquí</span>
-            <p data-why-selected-text></p>
-          </div>
         </section>
-        ${modeSummary}
-        ${routeNote}
         ${warningsHtml}
         <section class="result-alternatives">
           <button id="toggle_alternatives" class="alternatives-toggle" type="button" aria-expanded="${String(alternativesOpen)}">
@@ -2166,7 +2140,6 @@
           <div id="alternatives_panel" class="${panelClass}" aria-hidden="${String(!alternativesOpen)}">${rows}</div>
         </section>
       `;
-      setWhySelectedText(resultElement, selected.why_selected);
       resultElement.querySelectorAll('[data-open-maps]').forEach(button => {
         button.addEventListener('click', handleOpenMaps);
       });
@@ -2245,28 +2218,61 @@
     function startOptimizeLoadingMessages() {
       stopOptimizeLoadingMessages();
       optimizeLoadingMessageIndex = 0;
-      $('status').textContent = OPTIMIZE_LOADING_MESSAGES[0];
       optimizeLoadingTimer = window.setInterval(() => {
         optimizeLoadingMessageIndex = Math.min(
           optimizeLoadingMessageIndex + 1,
           OPTIMIZE_LOADING_MESSAGES.length - 1,
         );
-        $('status').textContent = OPTIMIZE_LOADING_MESSAGES[optimizeLoadingMessageIndex];
-      }, 1100);
+        const message = document.querySelector('[data-optimize-loading-message]');
+        if (message) {
+          message.textContent = OPTIMIZE_LOADING_MESSAGES[optimizeLoadingMessageIndex];
+        }
+      }, 1700);
     }
 
-    function stopOptimizeLoadingMessages(finalMessage) {
+    function stopOptimizeLoadingMessages() {
       if (optimizeLoadingTimer) {
         window.clearInterval(optimizeLoadingTimer);
         optimizeLoadingTimer = null;
       }
       optimizeLoadingMessageIndex = 0;
-      if (finalMessage !== undefined) {
-        $('status').textContent = finalMessage;
-      }
+    }
+
+    function setOptimizeLoadingState(isLoading) {
+      const button = $('submit');
+      const spinner = button.querySelector('.primary-spinner');
+      const label = button.querySelector('[data-submit-label]');
+      button.disabled = isLoading;
+      button.classList.toggle('is-loading', isLoading);
+      button.setAttribute('aria-busy', String(isLoading));
+      spinner.hidden = !isLoading;
+      label.textContent = isLoading
+        ? 'Calculando mejor repostaje…'
+        : 'Calcular mejor repostaje';
+    }
+
+    function renderOptimizeLoadingResult() {
+      const resultElement = $('result');
+      state.resultHasFit = false;
+      setSidebarCollapsed(true);
+      resultElement.removeAttribute('data-empty');
+      resultElement.classList.remove('result-panel--expanded', 'result-panel--collapsed');
+      resultElement.setAttribute('aria-busy', 'true');
+      resultElement.innerHTML = `
+        <section class="result-loading" aria-label="Calculando mejor repostaje">
+          <div class="result-loading-skeleton" aria-hidden="true">
+            <span class="result-loading-saving"></span>
+            <span class="result-loading-line result-loading-line--wide"></span>
+            <span class="result-loading-line"></span>
+            <span class="result-loading-line result-loading-line--short"></span>
+          </div>
+          <p class="result-loading-status" role="status" aria-live="polite" data-optimize-loading-message>${OPTIMIZE_LOADING_MESSAGES[0]}</p>
+        </section>
+      `;
     }
 
     async function optimize() {
+      if (state.optimizeInFlight) return;
       if (!state.origin) {
         $('status').textContent = 'Selecciona una salida.';
         return;
@@ -2276,9 +2282,6 @@
         return;
       }
       const destination = $('return_to_origin').checked ? state.origin : state.destination;
-      const button = $('submit');
-      button.disabled = true;
-      $('status').textContent = 'Calculando...';
       try {
         const amount = parsePositiveDecimal('liters');
         const consumption = parsePositiveDecimal('consumption_l_100km');
@@ -2329,8 +2332,12 @@
         if (shouldExcludeBrands) {
           payload.excluded_brands = excluded;
         }
+        state.optimizeInFlight = true;
+        setOptimizeLoadingState(true);
+        $('status').textContent = '';
+        renderOptimizeLoadingResult();
         startOptimizeLoadingMessages();
-        const { data, fallbackUsed } = await requestOptimization(payload);
+        const { data } = await requestOptimization(payload);
         if (data.optimization_mode !== requestedOptimizationMode) {
           throw new Error('La respuesta no coincide con el objetivo de optimización solicitado.');
         }
@@ -2338,19 +2345,19 @@
         state.renderedOptimizationMode = requestedOptimizationMode;
         stopOptimizeLoadingMessages();
         renderResult(data, 0, false);
-        $('status').textContent = fallbackUsed
-          ? `${data.returned} alternativas evaluadas con estimación por distancia`
-          : `${data.returned} alternativas evaluadas`;
+        $('status').textContent = `${data.returned} alternativas evaluadas`;
       } catch (error) {
         const resultElement = $('result');
+        resultElement.setAttribute('aria-busy', 'false');
         resultElement.removeAttribute('data-empty');
         resultElement.classList.remove('result-panel--expanded', 'result-panel--collapsed');
-        resultElement.innerHTML = `<h2>Error</h2><p class="error">${escapeHtml(error.message)}</p>`;
+        resultElement.innerHTML = `<div role="alert"><h2>Error</h2><p class="error">${escapeHtml(error.message)}</p></div>`;
         resultElement.insertAdjacentHTML('afterbegin', resultCloseButton());
         bindResultCloseButton();
-        stopOptimizeLoadingMessages('');
       } finally {
-        button.disabled = false;
+        stopOptimizeLoadingMessages();
+        state.optimizeInFlight = false;
+        setOptimizeLoadingState(false);
       }
     }
 

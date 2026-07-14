@@ -545,7 +545,7 @@ select:focus {
 
 .optimization-mode-field > legend {
   width: 100%;
-  margin: 0 0 8px;
+  margin: 0 0 12px;
   padding: 0;
 }
 
@@ -855,6 +855,12 @@ select:focus {
   color: var(--ink);
 }
 
+.link-button:focus-visible,
+.primary:focus-visible {
+  outline: 3px solid rgba(159, 122, 58, .28);
+  outline-offset: 2px;
+}
+
 .link-button.active {
   border-color: rgba(135, 99, 43, .72);
   background: var(--gold);
@@ -866,6 +872,32 @@ select:focus {
   display: grid;
   grid-template-columns: 1fr;
   gap: 8px;
+}
+
+.brand-loading {
+  display: grid;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.brand-loading p {
+  margin: 0;
+}
+
+.brand-loading-skeleton {
+  display: grid;
+  gap: 8px;
+}
+
+.brand-loading-skeleton span {
+  display: block;
+  min-height: 38px;
+  border: 1px solid var(--soft);
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, #f2ede4 20%, #faf7f0 50%, #f2ede4 80%);
+  background-size: 220% 100%;
+  animation: loading-sheen 1.7s ease-in-out infinite;
 }
 
 .brand-check {
@@ -1028,6 +1060,24 @@ select:focus {
 .primary:disabled {
   opacity: .55;
   cursor: wait;
+}
+
+.primary-spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 248, 234, .42);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: loading-spin .8s linear infinite;
+}
+
+.primary-spinner[hidden] {
+  display: none;
+}
+
+.primary.is-loading .primary-arrow {
+  display: none;
 }
 
 .primary-arrow {
@@ -1564,6 +1614,58 @@ select:focus {
   line-height: 1.45;
 }
 
+.result-loading {
+  display: grid;
+  gap: 14px;
+}
+
+.result-loading-skeleton {
+  display: grid;
+  gap: 11px;
+  min-height: 180px;
+  padding: 20px;
+  border: 1px solid #E8E0D0;
+  border-radius: 18px;
+  background: #FDFAF5;
+  box-shadow: 0 4px 16px rgba(139, 105, 20, .08);
+}
+
+.result-loading-saving,
+.result-loading-line {
+  display: block;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #eee7dc 20%, #faf7f0 50%, #eee7dc 80%);
+  background-size: 220% 100%;
+  animation: loading-sheen 1.7s ease-in-out infinite;
+}
+
+.result-loading-saving {
+  width: 42%;
+  height: 42px;
+  margin-bottom: 9px;
+}
+
+.result-loading-line {
+  width: 72%;
+  height: 13px;
+}
+
+.result-loading-line--wide {
+  width: 92%;
+}
+
+.result-loading-line--short {
+  width: 56%;
+}
+
+.result-loading-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+}
+
 /* ── Status badge above the card ───────────────────────────────────── */
 .result-status-badge {
   display: inline-flex;
@@ -1732,7 +1834,6 @@ select:focus {
   object-fit: contain;
 }
 
-.result-note,
 .result-warning {
   border: 1px solid var(--soft);
   border-radius: var(--radius);
@@ -1744,61 +1845,6 @@ select:focus {
   line-height: 1.35;
 }
 
-.result-mode-summary {
-  display: grid;
-  gap: 4px;
-  margin: 10px 0 0;
-  padding: 10px 12px;
-  border: 1px solid var(--gold-border);
-  border-radius: var(--radius);
-  background: var(--gold-soft);
-}
-
-.result-mode-order,
-.result-mode-description,
-.why-selected p {
-  margin: 0;
-}
-
-.result-mode-order {
-  color: var(--ink);
-  font-size: 13px;
-  line-height: 1.3;
-}
-
-.result-mode-description {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.why-selected {
-  display: grid;
-  gap: 4px;
-  padding: 12px 20px 14px;
-  border-top: 1px solid #E8E0D0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.why-selected[hidden] {
-  display: none;
-}
-
-.why-selected-label {
-  color: var(--ink);
-  font-size: 11px;
-  font-weight: 720;
-  letter-spacing: .045em;
-  text-transform: uppercase;
-}
-
-.result-route-source {
-  font-size: 12px;
-}
-
-.result-note strong,
 .result-warning strong {
   color: var(--ink);
 }
@@ -2454,6 +2500,31 @@ select:focus {
 @keyframes refresh-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loading-sheen {
+  0%, 100% {
+    background-position: 100% 0;
+  }
+  50% {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary-spinner,
+  .result-loading-saving,
+  .result-loading-line,
+  .brand-loading-skeleton span,
+  .user-location-button.loading svg {
+    animation: none;
   }
 }
 

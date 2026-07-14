@@ -112,14 +112,24 @@
               </div>
               <button id="select_all_brands" class="link-button active" type="button" aria-pressed="true">Todas</button>
             </div>
-            <div id="brand_checks" class="brand-grid"></div>
+            <div id="brand_checks" class="brand-grid" aria-busy="true">
+              <div class="brand-loading" role="status" aria-live="polite">
+                <p>Cargando marcas&#8230;</p>
+                <div class="brand-loading-skeleton" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       <footer class="side-footer">
-        <button class="primary" id="submit" type="button">
-          <span>Calcular mejor repostaje</span>
+        <button class="primary" id="submit" type="button" aria-busy="false">
+          <span class="primary-spinner" aria-hidden="true" hidden></span>
+          <span data-submit-label>Calcular mejor repostaje</span>
           <span class="primary-arrow" aria-hidden="true">&#8594;</span>
         </button>
         <div id="status" class="status" aria-live="polite"></div>
