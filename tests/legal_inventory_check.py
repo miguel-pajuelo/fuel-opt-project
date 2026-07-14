@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.generate_runtime_legal_inventory import generate, read_lock
+from scripts.generate_runtime_legal_inventory import canonical_legal_bytes, generate, legal_text_sha256, read_lock
 
 
 EXPECTED_COMPONENTS = {
@@ -72,7 +72,7 @@ def test_runtime_lock_is_exact_and_separated() -> None:
     web = (ROOT / "requirements-web.txt").read_text(encoding="utf-8").lower()
     _assert("beautifulsoup4" not in web and "uvicorn[standard]" not in web, "Unused runtime extras remain enabled")
     for filename, expected in OFFICIAL_SOURCE_HASHES.items():
-        actual = hashlib.sha256((ROOT / "legal" / "runtime" / filename).read_bytes()).hexdigest().upper()
+        actual = legal_text_sha256(ROOT / "legal" / "runtime" / filename)
         _assert(actual == expected, f"Official legal source changed: {filename}")
     notices = (ROOT / "docs" / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8").lower()
     _assert("identidad visual" not in notices and "static/logos" not in notices, "Logo provenance entered legal notices")
@@ -110,9 +110,54 @@ def test_inventory_is_deterministic_and_complete() -> None:
         _assert(text_count == 37, f"Unexpected legal text count: {text_count}")
 
 
+def test_legal_text_hashes_are_platform_independent() -> None:
+    variants = {
+        "lf": b"First line\nSecond line\n",
+        "crlf": b"First line\r\nSecond line\r\n",
+        "cr": b"First line\rSecond line\r",
+        "bom": b"\xef\xbb\xbfFirst line\nSecond line\n",
+    }
+    with tempfile.TemporaryDirectory(prefix="fuelopt-legal-line-endings-") as temp_raw:
+        temp_root = Path(temp_raw)
+        paths = []
+        for name, raw in variants.items():
+            path = temp_root / f"{name}.txt"
+            path.write_bytes(raw)
+            paths.append(path)
+        hashes = {legal_text_sha256(path) for path in paths}
+        _assert(len(hashes) == 1, f"Equivalent legal text produced different hashes: {hashes}")
+
+
+def test_legal_text_hashes_preserve_meaningful_changes() -> None:
+    baseline = canonical_legal_bytes(b"First line\nInternal spacing\n")
+    changed_spacing = canonical_legal_bytes(b"First line\nInternal  spacing\n")
+    changed_content = canonical_legal_bytes(b"First line\nDifferent content\n")
+    _assert(hashlib.sha256(baseline).digest() != hashlib.sha256(changed_spacing).digest(), "Internal spaces were hidden")
+    _assert(hashlib.sha256(baseline).digest() != hashlib.sha256(changed_content).digest(), "Content change was hidden")
+
+
+def test_bzip2_legal_text_hash_is_line_ending_independent() -> None:
+    source = (ROOT / "legal" / "runtime" / "BZIP2-1.0.8-LICENSE.txt").read_bytes()
+    canonical = canonical_legal_bytes(source)
+    crlf = canonical.replace(b"\n", b"\r\n")
+    cr = canonical.replace(b"\n", b"\r")
+    with tempfile.TemporaryDirectory(prefix="fuelopt-bzip2-line-endings-") as temp_raw:
+        temp_root = Path(temp_raw)
+        paths = []
+        for name, raw in (("lf", canonical), ("crlf", crlf), ("cr", cr)):
+            path = temp_root / f"{name}.txt"
+            path.write_bytes(raw)
+            paths.append(path)
+        hashes = {legal_text_sha256(path) for path in paths}
+        _assert(len(hashes) == 1, f"BZIP2 line endings changed the canonical hash: {hashes}")
+
+
 def run() -> None:
     test_runtime_lock_is_exact_and_separated()
     test_inventory_is_deterministic_and_complete()
+    test_legal_text_hashes_are_platform_independent()
+    test_legal_text_hashes_preserve_meaningful_changes()
+    test_bzip2_legal_text_hash_is_line_ending_independent()
     print("OK: deterministic runtime legal inventory checks passed (35 components, 37 texts)")
 
 

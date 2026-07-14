@@ -19,6 +19,7 @@ LOCK = ROOT / "requirements-runtime.lock"
 DEFAULT_OUTPUT = ROOT / "build" / "legal-runtime"
 LEGAL_SOURCE = ROOT / "legal" / "runtime"
 FORBIDDEN_LICENSE_VALUES = {"", "UNKNOWN", "NOASSERTION"}
+UTF8_BOM = b"\xef\xbb\xbf"
 
 
 @dataclass(frozen=True)
@@ -199,14 +200,22 @@ def safe_filename(path: Path, used: set[str]) -> str:
     return candidate
 
 
-def sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+def canonical_legal_bytes(raw: bytes) -> bytes:
+    """Return platform-independent bytes without changing legal text content."""
+    if raw.startswith(UTF8_BOM):
+        raw = raw[len(UTF8_BOM) :]
+    return raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+
+
+def legal_text_sha256(path: Path) -> str:
+    return hashlib.sha256(canonical_legal_bytes(path.read_bytes())).hexdigest().upper()
 
 
 def copy_text(source: Path, destination: Path) -> None:
-    raw = source.read_text(encoding="utf-8", errors="strict").replace("\r\n", "\n").replace("\r", "\n")
+    raw = canonical_legal_bytes(source.read_bytes())
+    raw.decode("utf-8", errors="strict")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(raw.rstrip() + "\n", encoding="utf-8", newline="\n")
+    destination.write_bytes(raw)
 
 
 def package_components(output: Path, lock: dict[str, str]) -> list[dict[str, object]]:
