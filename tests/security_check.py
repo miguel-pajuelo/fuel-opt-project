@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import inspect
+import asyncio
 import logging
 import sys
 from pathlib import Path
@@ -74,69 +74,69 @@ def test_reverse_geocode_error_does_not_leak_ors_key(monkeypatch, caplog) -> Non
     assert "reverse_geocode_provider_error" in caplog.text
 
 
-def test_feedback_endpoint_has_rate_limit_marker() -> None:
-    """H2 (structural): slowapi only wires a limit when the endpoint exposes a
-    `request: Request` parameter. This is a static guarantee that the decorator
-    is in place; it does NOT prove runtime enforcement (see the functional test).
-    """
-    params = inspect.signature(api_main.submit_feedback).parameters
-    assert "request" in params, "submit_feedback must accept `request` for rate limiting to apply"
+async def _asgi_request(method: str, path: str, body: bytes = b"") -> tuple[int, bytes]:
+    """Exercise the ASGI app in memory without httpx, sockets, or external I/O."""
+    messages: list[dict] = []
+    request_sent = False
+
+    async def receive() -> dict:
+        nonlocal request_sent
+        if not request_sent:
+            request_sent = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict) -> None:
+        messages.append(message)
+
+    await api_main.app(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": method,
+            "scheme": "http",
+            "path": path,
+            "raw_path": path.encode("ascii"),
+            "query_string": b"",
+            "root_path": "",
+            "headers": [],
+            "client": ("127.0.0.1", 50000),
+            "server": ("127.0.0.1", 8001),
+        },
+        receive,
+        send,
+    )
+    status = next(message["status"] for message in messages if message["type"] == "http.response.start")
+    response_body = b"".join(message.get("body", b"") for message in messages if message["type"] == "http.response.body")
+    return status, response_body
 
 
-class _FakeSMTP:
-    """No-op SMTP stand-in so the functional test never sends real email."""
+def test_feedback_endpoint_is_removed_and_home_links_to_github() -> None:
+    feedback_status, _ = asyncio.run(_asgi_request("POST", "/feedback", b"{}"))
+    home_status, home_body = asyncio.run(_asgi_request("GET", "/"))
 
-    def __init__(self, *_args, **_kwargs) -> None:
-        pass
-
-    def __enter__(self) -> "_FakeSMTP":
-        return self
-
-    def __exit__(self, *_args) -> bool:
-        return False
-
-    def ehlo(self, *_args, **_kwargs) -> None:
-        pass
-
-    def starttls(self, *_args, **_kwargs) -> None:
-        pass
-
-    def login(self, *_args, **_kwargs) -> None:
-        pass
-
-    def sendmail(self, *_args, **_kwargs) -> None:
-        pass
+    assert feedback_status == 404
+    assert home_status == 200
+    assert b"https://github.com/miguel-pajuelo/fuel-opt-project/issues/new" in home_body
+    assert not hasattr(api_main, "FeedbackPayload")
+    assert not hasattr(api_main, "submit_feedback")
 
 
-@pytest.mark.skipif(
-    not api_main._slowapi_available,
-    reason="slowapi not installed: limiter is a no-op, runtime 429 cannot be enforced",
-)
-def test_feedback_rate_limit_enforced_returns_429(monkeypatch) -> None:
-    """H2 (functional): exceeding 5/minute on /feedback must yield a 429.
-
-    Only runs when slowapi is actually installed; otherwise it is skipped (never
-    falsely passed). Email sending is stubbed so no SMTP traffic occurs.
-    """
-    try:
-        from fastapi.testclient import TestClient
-    except Exception as exc:  # pragma: no cover - environment dependent
-        pytest.skip(f"TestClient unavailable (httpx not installed): {exc}")
-
-    monkeypatch.setenv("GMAIL_USER", "test@example.com")
-    monkeypatch.setenv("GMAIL_APP_PASSWORD", "dummy-not-a-real-secret")
-    monkeypatch.setenv("FEEDBACK_RECIPIENT", "test@example.com")
-    monkeypatch.setattr("smtplib.SMTP", _FakeSMTP)
-
-    client = TestClient(api_main.app)
-    statuses = [
-        client.post(
-            "/feedback",
-            json={"email": "user@example.com", "message": "functional rate-limit probe"},
-        ).status_code
-        for _ in range(7)
-    ]
-    assert 429 in statuses, f"expected a 429 after exceeding 5/minute, got {statuses}"
+def test_runtime_has_no_feedback_smtp_configuration_or_imports() -> None:
+    runtime_source = (ROOT / "app" / "api" / "main.py").read_text(encoding="utf-8")
+    env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
+    combined = f"{runtime_source}\n{env_example}"
+    for token in (
+        "GMAIL_USER",
+        "GMAIL_APP_PASSWORD",
+        "FEEDBACK_RECIPIENT",
+        "smtplib",
+        "MIMEText",
+        "smtp.gmail.com",
+        "feedback_smtp_error",
+    ):
+        assert token not in combined, f"removed SMTP token remains: {token}"
 
 
 # ---------------------------------------------------------------------------

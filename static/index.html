@@ -30,12 +30,12 @@
         <span id="refresh_status">Precios actualizados: --</span>
       </div>
       <nav class="nav mini-nav" aria-label="Enlaces">
-        <button class="feedback-chip" id="feedback_trigger" type="button">
+        <a class="feedback-chip" href="https://github.com/miguel-pajuelo/fuel-opt-project/issues/new" target="_blank" rel="noopener noreferrer" aria-label="Mándanos tu idea en GitHub (se abre en una pestaña nueva)">
           <span class="feedback-chip__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
           </span>
           <span class="feedback-chip__main">Mándanos tu idea</span>
-        </button>
+        </a>
       </nav>
     </header>
 
@@ -244,33 +244,6 @@
       <button class="onboarding-dialog__primary" id="quick_help_start" type="button">Empezar</button>
     </div>
   </dialog>
-
-  <div id="feedback_overlay" class="feedback-overlay" role="dialog" aria-modal="true" aria-label="Enviar idea" hidden>
-    <div class="feedback-modal">
-      <div class="feedback-modal__head">
-        <div class="feedback-modal__head-top">
-          <span class="feedback-modal__icon-circle" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
-          </span>
-          <button class="feedback-modal__close" id="feedback_close" type="button" aria-label="Cerrar">&#10005;</button>
-        </div>
-        <p class="feedback-modal__title">¿Tienes una idea para mejorar FuelOpt?</p>
-        <p class="feedback-modal__subtitle">Cuéntanosla. Leemos cada sugerencia.</p>
-      </div>
-      <div class="feedback-modal__body">
-        <div class="feedback-field">
-          <label class="feedback-label" for="feedback_email">Correo electrónico</label>
-          <input class="feedback-input" id="feedback_email" type="email" autocomplete="email" placeholder="tu@correo.com">
-        </div>
-        <div class="feedback-field">
-          <label class="feedback-label" for="feedback_message">Cuéntanos tu idea</label>
-          <textarea class="feedback-input feedback-textarea" id="feedback_message" placeholder="Escribe aquí tu idea, sugerencia o mejora…"></textarea>
-        </div>
-        <p id="feedback_success" class="feedback-success" hidden>¡Gracias! Hemos recibido tu mensaje.</p>
-        <button class="feedback-submit" id="feedback_submit" type="button">Enviar idea &#8594;</button>
-      </div>
-    </div>
-  </div>
 
   <script src="/static/vendor/leaflet/leaflet.js?v=1.9.4"></script>
   <script src="/static/app.js?v=onboarding-v1"></script>

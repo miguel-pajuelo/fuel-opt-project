@@ -177,7 +177,7 @@ def test_optimize_loading_state_is_accessible_and_bounded() -> None:
     _assert('class="result-loading-skeleton" aria-hidden="true"' in js, "Decorative result skeleton must be hidden from assistive technology.")
     _assert('role="status" aria-live="polite" data-optimize-loading-message' in js, "Result progress needs one polite live region.")
     _assert("resultElement.setAttribute('aria-busy', 'true')" in js, "Result panel does not enter aria-busy state.")
-    optimize_region = js[js.index("async function optimize()") : js.index("// ── FeedbackModal")]
+    optimize_region = js[js.index("async function optimize()") : js.index("initPDD('fuel_type')")]
     _assert("finally" in optimize_region, "Optimization cleanup must run in a finally block.")
     _assert("stopOptimizeLoadingMessages();" in optimize_region, "Optimization cleanup must stop its timer.")
     _assert("setOptimizeLoadingState(false);" in optimize_region, "Submit button is not restored after success or error.")
@@ -271,6 +271,7 @@ def test_catalog_and_route_status_copy_present() -> None:
 
 def test_header_has_no_support_chip_and_keeps_primary_actions() -> None:
     html = _read("static/index.html")
+    js = _read("static/app.js")
     styles = _read("static/styles.css")
 
     combined = "\n".join([html, styles]).lower()
@@ -289,8 +290,33 @@ def test_header_has_no_support_chip_and_keeps_primary_actions() -> None:
     _assert(".header-privacy-link" in styles, "Header privacy link CSS missing.")
     _assert('href="/privacidad"' in html, "Privacy link should remain in the header.")
     _assert('href="/como-funciona"' in html, "How-it-works link should remain in the header.")
+    issues_url = "https://github.com/miguel-pajuelo/fuel-opt-project/issues/new"
     _assert('class="feedback-chip"' in html, "Feedback action should remain in the header.")
     _assert(".feedback-chip" in styles, "Feedback action styling should remain available.")
+    _assert(f'href="{issues_url}"' in html, "Feedback action must link directly to GitHub Issues.")
+    _assert('target="_blank"' in html, "GitHub Issues link must open in a new tab.")
+    _assert('rel="noopener noreferrer"' in html, "GitHub Issues link must isolate window.opener.")
+    _assert('aria-label="Mándanos tu idea en GitHub (se abre en una pestaña nueva)"' in html, "GitHub Issues link needs an accessible external-link name.")
+    _assert('<span class="feedback-chip__main">Mándanos tu idea</span>\n        </a>' in html, "GitHub Issues action must be a correctly closed anchor.")
+    _assert(f'{issues_url}?' not in html, "GitHub Issues link must not include collected or personal query parameters.")
+
+    removed_feedback_tokens = (
+        "feedback_overlay",
+        "feedback_email",
+        "feedback_message",
+        "feedback_submit",
+        "feedback_success",
+        "initFeedbackModal",
+        "fetch('/feedback'",
+        ".feedback-overlay",
+        ".feedback-modal",
+        ".feedback-field",
+        ".feedback-input",
+        ".feedback-submit",
+    )
+    combined_feedback = "\n".join([html, js, styles])
+    for token in removed_feedback_tokens:
+        _assert(token not in combined_feedback, f"Removed feedback form token remains: {token!r}")
 
 
 def test_first_opening_quick_help_is_accessible_and_non_blocking() -> None:

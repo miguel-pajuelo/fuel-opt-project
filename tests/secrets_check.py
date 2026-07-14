@@ -36,9 +36,6 @@ def _git(*args: str) -> subprocess.CompletedProcess[str] | None:
 SENSITIVE_KEYS = {
     "ORS_API_KEY",
     "FUELOPT_ADMIN_TOKEN",
-    "GMAIL_USER",
-    "GMAIL_APP_PASSWORD",
-    "FEEDBACK_RECIPIENT",
     "ALERT_WEBHOOK_URL",
     "CORS_ORIGINS",
 }
@@ -61,8 +58,6 @@ _REAL_SECRET_PATTERNS = [
 REQUIRED_EXAMPLE_KEYS = [
     "ORS_API_KEY",
     "FUELOPT_ADMIN_TOKEN",
-    "GMAIL_USER",
-    "GMAIL_APP_PASSWORD",
     "CORS_ORIGINS",
     "ALERT_WEBHOOK_URL",
     "FUELOPT_ALLOW_LAN",

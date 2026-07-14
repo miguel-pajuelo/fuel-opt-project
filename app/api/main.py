@@ -669,50 +669,6 @@ def how_it_works() -> str:
     return (STATIC_DIR / "como-funciona.html").read_text(encoding="utf-8")
 
 
-class FeedbackPayload(BaseModel):
-    email: str = Field(..., min_length=1)
-    message: str = Field(..., min_length=10)
-
-
-@app.post("/feedback")
-@limiter.limit("5/minute")
-def submit_feedback(request: Request, payload: FeedbackPayload) -> dict[str, bool]:
-    import re as _re
-    import smtplib
-    from email.mime.text import MIMEText
-
-    if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", payload.email):
-        raise HTTPException(status_code=422, detail="Correo electrónico no válido.")
-
-    gmail_user = os.getenv("GMAIL_USER", "")
-    gmail_password = os.getenv("GMAIL_APP_PASSWORD", "")
-    recipient = os.getenv("FEEDBACK_RECIPIENT", gmail_user)
-
-    if not gmail_user or not gmail_password:
-        logger.error("GMAIL_USER o GMAIL_APP_PASSWORD no configurados")
-        raise HTTPException(status_code=500, detail={"error": "No se pudo enviar el mensaje"})
-
-    subject = f"[FuelOpt Feedback] Nueva idea de {payload.email}"
-    body = f"Remitente: {payload.email}\n\n{payload.message}"
-
-    msg = MIMEText(body, "plain", "utf-8")
-    msg["Subject"] = subject
-    msg["From"] = gmail_user
-    msg["To"] = recipient
-
-    try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as smtp:
-            smtp.ehlo()
-            smtp.starttls()
-            smtp.login(gmail_user, gmail_password)
-            smtp.sendmail(gmail_user, [recipient], msg.as_string())
-    except Exception as exc:
-        logger.error("feedback_smtp_error: %s", exc)
-        raise HTTPException(status_code=500, detail={"error": "No se pudo enviar el mensaje"})
-
-    return {"ok": True}
-
-
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots_txt() -> str:
     return (STATIC_DIR / "robots.txt").read_text(encoding="utf-8")
