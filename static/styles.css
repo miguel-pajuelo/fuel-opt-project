@@ -235,6 +235,7 @@ a {
   border-radius: 24px;
   background: #FFFCF5;
   color: var(--ink);
+  font-family: inherit;
   box-shadow: 0 28px 80px rgba(31, 25, 17, .24);
   overflow-x: hidden;
   overflow-y: auto;
@@ -350,19 +351,19 @@ a {
   width: 100%;
   min-height: 46px;
   margin-top: 26px;
-  border: 0;
+  border: 1px solid var(--gold);
   border-radius: 14px;
-  background: var(--ink);
-  color: #FFFDF8;
+  background: var(--gold);
+  color: #FFF8EA;
   font-family: inherit;
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
-  box-shadow: 0 12px 28px rgba(31, 25, 17, .16);
+  box-shadow: 0 12px 26px rgba(91, 63, 22, .22), inset 0 1px 0 rgba(228, 211, 177, .58);
 }
 
 .onboarding-dialog__primary:hover {
-  background: #2B251F;
+  background: var(--gold-hover);
 }
 
 /* ── Feedback chip (navbar) ─────────────────────────────────── */
@@ -536,7 +537,7 @@ select:focus {
 
 .optimization-mode-field > legend {
   width: 100%;
-  margin: 0 0 12px;
+  margin: 0 0 24px;
   padding: 0;
 }
 
@@ -2074,6 +2075,14 @@ select:focus {
   flex-direction: column;
 }
 
+.alternatives-heading {
+  margin: 0;
+  padding: 14px 16px 10px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
 .alternatives-toggle {
   width: 100%;
   min-width: 0;
@@ -2121,6 +2130,10 @@ select:focus {
   background: rgba(159, 122, 58, .06);
 }
 
+.alternatives-more-toggle {
+  border-top: 1px solid #E8E0D0;
+}
+
 .chevron {
   width: 10px;
   height: 10px;
@@ -2152,6 +2165,22 @@ select:focus {
   min-width: 0;
 }
 
+.ranking--preview {
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.ranking--additional {
+  flex: 1 1 auto;
+}
+
+.alternatives-empty {
+  margin: 0;
+  padding: 0 16px 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .ranking.collapsed {
   flex: 0 0 0;
   max-height: 0;
@@ -2177,19 +2206,6 @@ select:focus {
 
 .rank:hover {
   background: #F5F0E8;
-}
-
-.rank.selected {
-  background: rgba(201, 162, 77, .12);
-}
-
-.rank.selected .rank-num {
-  color: #FFF8EA;
-  background: #A97D2C;
-}
-
-.rank.selected .rank-name {
-  color: #8A681F;
 }
 
 .rank-num {

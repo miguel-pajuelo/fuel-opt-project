@@ -2073,12 +2073,11 @@
       };
     }
 
-    function renderAlternativesList(alternatives, selectedIndex, isBudgetMode) {
+    function renderAlternativesList(alternatives, isBudgetMode) {
       if (!alternatives.length) return '';
       return alternatives.map(({ item, index }) => {
         const altStation = item.station || {};
         const altLocation = stationDetailLine(altStation);
-        const selected = index === selectedIndex;
         const rankMetric = isBudgetMode ? fmtLiters(item.net_liters) : fmtEuro(item.effective_total_cost_eur);
         const subParts = [
           fmtPrice(item.price_eur_l),
@@ -2086,7 +2085,7 @@
           altLocation ? escapeHtml(altLocation) : '',
         ].filter(Boolean);
         return `
-          <button class="rank${selected ? ' selected' : ''}" type="button" data-result-index="${index}" aria-current="${selected ? 'true' : 'false'}">
+          <button class="rank" type="button" data-result-index="${index}">
             <div class="rank-num">${index + 1}</div>
             <div class="rank-body">
               <div class="rank-main-row">
@@ -2125,13 +2124,13 @@
       `;
     }
 
-    function setResultAlternativesState(resultElement, toggle, panel, isOpen, alternativesLabel) {
+    function setResultAlternativesState(resultElement, toggle, panel, isOpen) {
       resultElement.classList.toggle('result-panel--expanded', isOpen);
       resultElement.classList.toggle('result-panel--collapsed', !isOpen);
       toggle.setAttribute('aria-expanded', String(isOpen));
       panel.classList.toggle('collapsed', !isOpen);
       panel.setAttribute('aria-hidden', String(!isOpen));
-      toggle.querySelector('.toggle-label').textContent = 'Otras alternativas';
+      toggle.querySelector('.toggle-label').textContent = isOpen ? 'Ver menos alternativas' : 'Ver más alternativas';
       state.alternativesOpen = isOpen;
       refitVisibleRoute();
       refitVisibleRoute(320);
@@ -2160,16 +2159,19 @@
       renderSelectedStationMarker(station);
       const canDrawRoute = Boolean(state.origin && state.destination && state.selectedStation);
       const alternatives = data.items
-        .map((item, index) => ({ item, index }));
-      const rows = renderAlternativesList(alternatives, selectedIndex, isBudgetMode);
-      const alternativesLabel = alternatives.length === 1 ? 'Ver 1 alternativa' : `Ver ${alternatives.length} alternativas`;
+        .map((item, index) => ({ item, index }))
+        .filter(({ index }) => index !== selectedIndex);
+      const visibleAlternatives = alternatives.slice(0, 2);
+      const additionalAlternatives = alternatives.slice(2);
+      const visibleRows = renderAlternativesList(visibleAlternatives, isBudgetMode);
+      const additionalRows = renderAlternativesList(additionalAlternatives, isBudgetMode);
       const alternativesSubtitle = alternativesSubtitleForMode(
         state.renderedOptimizationMode,
         data,
         isBudgetMode,
       );
-      const alternativesOpen = alternatives.length > 0 && keepAlternativesOpen;
-      const panelClass = alternativesOpen ? 'ranking' : 'ranking collapsed';
+      const alternativesOpen = additionalAlternatives.length > 0 && keepAlternativesOpen;
+      const panelClass = alternativesOpen ? 'ranking ranking--additional' : 'ranking ranking--additional collapsed';
       resultElement.classList.toggle('result-panel--expanded', alternativesOpen);
       resultElement.classList.toggle('result-panel--collapsed', !alternativesOpen);
       state.alternativesOpen = alternativesOpen;
@@ -2189,14 +2191,20 @@
         </section>
         ${warningsHtml}
         <section class="result-alternatives">
-          <button id="toggle_alternatives" class="alternatives-toggle" type="button" aria-expanded="${String(alternativesOpen)}">
+          <h3 class="alternatives-heading">Otras alternativas</h3>
+          ${visibleRows
+            ? `<div class="ranking ranking--preview">${visibleRows}</div>`
+            : '<p class="alternatives-empty">No hay más alternativas para esta búsqueda.</p>'}
+          ${additionalAlternatives.length ? `
+          <button id="toggle_alternatives" class="alternatives-toggle alternatives-more-toggle" type="button" aria-expanded="${String(alternativesOpen)}">
             <span class="alternatives-toggle-text">
-              <span class="toggle-label">Otras alternativas</span>
+              <span class="toggle-label">${alternativesOpen ? 'Ver menos alternativas' : 'Ver más alternativas'}</span>
               <span class="toggle-sublabel">${alternativesSubtitle}</span>
             </span>
             <span class="chevron" aria-hidden="true"></span>
           </button>
-          <div id="alternatives_panel" class="${panelClass}" aria-hidden="${String(!alternativesOpen)}">${rows}</div>
+          <div id="alternatives_panel" class="${panelClass}" aria-hidden="${String(!alternativesOpen)}">${additionalRows}</div>
+          ` : ''}
         </section>
       `;
       resultElement.querySelectorAll('[data-open-maps]').forEach(button => {
@@ -2216,27 +2224,24 @@
       state.resultHasFit = true;
       const toggle = $('toggle_alternatives');
       const panel = $('alternatives_panel');
-      if (!alternatives.length) {
-        toggle.disabled = true;
-        toggle.querySelector('.toggle-label').textContent = 'Sin alternativas adicionales';
-      } else {
+      if (toggle && panel) {
         toggle.addEventListener('click', () => {
           const open = toggle.getAttribute('aria-expanded') === 'true';
-          setResultAlternativesState(resultElement, toggle, panel, !open, alternativesLabel);
-        });
-        panel.querySelectorAll('[data-result-index]').forEach(button => {
-          button.addEventListener('click', () => {
-            const alternativesScrollTop = panel.scrollTop || 0;
-            renderResult(data, Number(button.dataset.resultIndex), true);
-            requestAnimationFrame(() => {
-              const restoredPanel = $('alternatives_panel');
-              if (restoredPanel) {
-                restoredPanel.scrollTop = alternativesScrollTop;
-              }
-            });
-          });
+          setResultAlternativesState(resultElement, toggle, panel, !open);
         });
       }
+      resultElement.querySelectorAll('[data-result-index]').forEach(button => {
+        button.addEventListener('click', () => {
+          const alternativesScrollTop = panel?.scrollTop || 0;
+          renderResult(data, Number(button.dataset.resultIndex), Boolean(panel && toggle?.getAttribute('aria-expanded') === 'true'));
+          requestAnimationFrame(() => {
+            const restoredPanel = $('alternatives_panel');
+            if (restoredPanel) {
+              restoredPanel.scrollTop = alternativesScrollTop;
+            }
+          });
+        });
+      });
     }
 
     async function readJsonOrError(response) {

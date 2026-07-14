@@ -89,12 +89,15 @@
   <p>Los empates se resuelven con reglas deterministas para que el orden no dependa de c&oacute;mo llegaron los datos. Las puntuaciones internas no se presentan como euros, kil&oacute;metros o porcentajes.</p>
 
   <h2>8. De d&oacute;nde proceden los precios</h2>
-  <p>El cat&aacute;logo local se construye con datos de MINETUR y, cuando corresponde, informaci&oacute;n complementaria de Ballenoil. FuelOpt muestra la fecha de frescura disponible y actualiza su copia local mediante el refresco configurado.</p>
-  <p>Una actualizaci&oacute;n fallida conserva la &uacute;ltima base v&aacute;lida. Los precios pueden llegar con retraso, contener errores o cambiar antes de que llegues a la estaci&oacute;n.</p>
+  <p>La fuente principal es el cat&aacute;logo oficial de estaciones de servicio publicado por el Ministerio de Industria y Turismo (MINETUR). FuelOpt descarga y transforma esa informaci&oacute;n para trabajar con una copia local del cat&aacute;logo, que incluye estaciones, combustibles, precios y metadatos de frescura.</p>
+  <p>La copia se almacena en una base de datos SQLite dentro del perfil del usuario. Esto permite consultar y comparar estaciones con rapidez, conservar la &uacute;ltima informaci&oacute;n v&aacute;lida y seguir utilizando las funciones locales cuando una actualización no está disponible.</p>
+  <p>El catálogo se refresca con la frecuencia configurada —manualmente, al abrir o mediante la tarea periódica—. La actualización prepara y valida una base candidata antes de sustituir la activa, de modo que un fallo no elimina la última copia válida.</p>
+  <p>Los datos publicados por la fuente pueden llegar con retraso, contener incidencias o cambiar antes de que llegues a la estación. FuelOpt muestra la frescura disponible para que esa limitación pueda evaluarse.</p>
 
   <h2>9. Qu&eacute; ocurre dentro de la aplicaci&oacute;n</h2>
-  <p>En Windows, el launcher inicia un servidor FastAPI local en <code>127.0.0.1</code> y abre la interfaz en el navegador. SQLite guarda el cat&aacute;logo y los precios en el perfil del usuario.</p>
-  <p>Leaflet dibuja el mapa; sus archivos se incluyen con FuelOpt, aunque las teselas se solicitan a OpenStreetMap. El refresco puede ejecutarse manualmente, al abrir o mediante una tarea programada de Windows, sin depender de una p&aacute;gina web p&uacute;blica.</p>
+  <p>FuelOpt es una aplicación local. En Windows, el launcher inicia un servidor FastAPI enlazado a <code>127.0.0.1</code> y abre la interfaz en el navegador; no depende de un servidor público de FuelOpt para calcular las opciones.</p>
+  <p>Los recursos instalados de la aplicación están separados de los datos mutables del usuario. La base SQLite activa vive en el perfil local y es la fuente sobre la que FuelOpt filtra candidatos, calcula costes y ordena alternativas a partir del catálogo descargado.</p>
+  <p>Leaflet dibuja el mapa con archivos incluidos en la aplicación, aunque las teselas visibles se solicitan a OpenStreetMap. El servicio de refresco mantiene el catálogo y puede ejecutarse manualmente, al abrir o mediante una tarea programada de Windows.</p>
 
   <h2>10. Privacidad y servicios externos</h2>
   <p>FuelOpt no tiene telemetr&iacute;a propia ni un servidor central de b&uacute;squedas. ORS recibe los puntos necesarios solo cuando se utiliza para geocodificar o calcular rutas. OpenStreetMap recibe solicitudes de teselas del &aacute;rea visible.</p>

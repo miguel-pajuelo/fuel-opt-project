@@ -199,9 +199,9 @@ def _check_public_explanations() -> None:
         "GitHub Issues",
         "Windows Credential Manager",
         "MINETUR",
-        "Ballenoil",
     ):
         _assert(term in privacy, f"Privacy page is missing current behavior: {term}")
+    _assert("Ballenoil" not in privacy, "Privacy page must describe the official catalog neutrally.")
     _assert("ya no utiliza SMTP" in privacy, "Privacy page must describe SMTP as removed")
 
     how_it_works = _read("static/como-funciona.html")
@@ -219,6 +219,9 @@ def _check_public_explanations() -> None:
         "L&iacute;mites y supuestos",
     ):
         _assert(section in how_it_works, f"How-it-works section is missing: {section}")
+    for term in ("Ministerio de Industria y Turismo", "MINETUR", "SQLite", "base de datos", "FastAPI", "127.0.0.1"):
+        _assert(term in how_it_works, f"How-it-works technical explanation is missing: {term}")
+    _assert("Ballenoil" not in how_it_works, "Public how-it-works page must not highlight an individual brand.")
 
     security = _read("SECURITY.md")
     _assert("GitHub Issues se reserva" in security, "SECURITY must define the public Issues boundary")

@@ -14,7 +14,7 @@ El bootstrap debe crear `%LOCALAPPDATA%\FuelOpt\data\db` y copiar la semilla inm
 
 ## Datos antiguos o refresco fallido
 
-Un fallo conserva la última base válida. Ejecuta `FuelOpt.exe --refresh-direct --silent` y consulta el código de salida y logs. La disponibilidad de MINETUR/Ballenoil no está garantizada.
+Un fallo conserva la última base válida. Ejecuta `FuelOpt.exe --refresh-direct --silent` y consulta el código de salida y logs. La disponibilidad del catálogo oficial de MINETUR no está garantizada.
 
 ## ORS o mapa
 

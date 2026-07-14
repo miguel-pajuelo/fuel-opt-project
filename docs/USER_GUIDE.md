@@ -38,7 +38,7 @@ La última base válida permite consultas limitadas sin conexión. El mapa puede
 
 ## Privacidad, logs y soporte
 
-La consulta se procesa en el servidor local. ORS recibe direcciones y coordenadas cuando se utiliza para geocodificar o calcular rutas; OpenStreetMap recibe las peticiones de teselas del mapa. MINETUR y Ballenoil se consultan durante las actualizaciones del catálogo, no para enviar búsquedas personales. FuelOpt no incorpora telemetría propia.
+La consulta se procesa en el servidor local. ORS recibe direcciones y coordenadas cuando se utiliza para geocodificar o calcular rutas; OpenStreetMap recibe las peticiones de teselas del mapa. El catálogo oficial de MINETUR se consulta durante las actualizaciones, no para enviar búsquedas personales. FuelOpt no incorpora telemetría propia.
 
 **Abrir en Maps** comparte origen, destino y estación con Google Maps solo después de que el usuario pulse el botón. **Mándanos tu idea** abre GitHub Issues sin adjuntar automáticamente datos de la búsqueda; el usuario decide qué publica. FuelOpt no solicita correo ni incluye un formulario de envío.
 
