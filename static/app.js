@@ -10,6 +10,65 @@
       const value = Number($(id).value.replace(',', '.'));
       return Number.isFinite(value) && value > 0 ? value : null;
     };
+    const ONBOARDING_STORAGE_KEY = 'fuelopt:onboarding:v1:dismissed';
+
+    (function initQuickHelp() {
+      const dialog = $('quick_help_dialog');
+      const trigger = $('quick_help_trigger');
+      const closeButton = $('quick_help_close');
+      const startButton = $('quick_help_start');
+      let openedAutomatically = false;
+      let returnFocusTarget = null;
+
+      function wasQuickHelpDismissed() {
+        try {
+          return window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true';
+        } catch (_error) {
+          return false;
+        }
+      }
+
+      function rememberQuickHelpDismissal() {
+        try {
+          window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+        } catch (_error) {
+          // Storage can be unavailable in private or restricted browser contexts.
+        }
+      }
+
+      function openQuickHelp({ automatic = false, opener = null } = {}) {
+        if (dialog.open) return;
+        openedAutomatically = automatic;
+        returnFocusTarget = opener || document.activeElement;
+        dialog.showModal();
+        window.requestAnimationFrame(() => closeButton.focus());
+      }
+
+      function closeQuickHelp() {
+        if (!dialog.open) return;
+        if (openedAutomatically) rememberQuickHelpDismissal();
+        openedAutomatically = false;
+        dialog.close();
+        const focusTarget = returnFocusTarget;
+        returnFocusTarget = null;
+        if (focusTarget && focusTarget !== document.body && typeof focusTarget.focus === 'function') {
+          window.requestAnimationFrame(() => focusTarget.focus());
+        }
+      }
+
+      trigger.addEventListener('click', () => openQuickHelp({ opener: trigger }));
+      closeButton.addEventListener('click', closeQuickHelp);
+      startButton.addEventListener('click', closeQuickHelp);
+      dialog.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        closeQuickHelp();
+      });
+
+      if (!wasQuickHelpDismissed()) {
+        openQuickHelp({ automatic: true });
+      }
+    })();
+
     let refreshMessageTimer = null;
     let lastCatalogRefreshValue = null;
     let lastCatalogStatus = null;

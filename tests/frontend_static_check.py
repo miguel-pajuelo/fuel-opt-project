@@ -293,6 +293,49 @@ def test_header_has_no_support_chip_and_keeps_primary_actions() -> None:
     _assert(".feedback-chip" in styles, "Feedback action styling should remain available.")
 
 
+def test_first_opening_quick_help_is_accessible_and_non_blocking() -> None:
+    html = _read("static/index.html")
+    js = _read("static/app.js")
+    styles = _read("static/styles.css")
+
+    _assert('<dialog class="onboarding-dialog" id="quick_help_dialog"' in html, "Quick help should use a native dialog.")
+    _assert('aria-labelledby="quick_help_title"' in html, "Quick help title must label the dialog.")
+    _assert('aria-describedby="quick_help_intro"' in html, "Quick help introduction must describe the dialog.")
+    _assert("Empieza a ahorrar con FuelOpt" in html, "Quick help title is missing.")
+    for step in ("Elige el lugar", "Configura tu búsqueda", "Compara los resultados"):
+        _assert(step in html, f"Quick help step is missing: {step}")
+    _assert('id="quick_help_start"' in html and ">Empezar</button>" in html, "Quick help primary action is missing.")
+    _assert('id="quick_help_trigger"' in html and "Ayuda rápida" in html, "Manual quick-help access is missing.")
+
+    _assert("fuelopt:onboarding:v1:dismissed" in js, "Quick help storage key must be versioned.")
+    _assert("window.localStorage.getItem(ONBOARDING_STORAGE_KEY)" in js, "Quick help should read its dismissed state.")
+    _assert("window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true')" in js, "Automatic dismissal should be persisted.")
+    _assert(js.count("catch (_error)") >= 2, "Quick help storage access must tolerate failures.")
+    _assert("if (!wasQuickHelpDismissed())" in js, "Quick help should only open automatically before dismissal.")
+    _assert("openQuickHelp({ automatic: true })" in js, "First-opening quick help should be marked as automatic.")
+    _assert("openQuickHelp({ opener: trigger })" in js, "Quick help should be manually reopenable.")
+    _assert("if (openedAutomatically) rememberQuickHelpDismissal()" in js, "Only an automatic opening should persist dismissal.")
+    _assert("dialog.addEventListener('cancel'" in js and "event.preventDefault()" in js, "Escape dismissal must be handled deliberately.")
+    _assert("returnFocusTarget" in js and "focusTarget.focus()" in js, "Focus should return to the opening control.")
+    _assert("closeButton.focus()" in js, "Focus should move into the dialog when it opens.")
+    _assert(".onboarding-dialog::backdrop" in styles, "Quick help needs a visually subdued backdrop.")
+    _assert("width: min(520px, calc(100% - 24px))" in styles, "Quick help should fit narrow viewports.")
+    _assert("overflow-x: hidden" in styles, "Quick help must prevent horizontal overflow.")
+
+    onboarding_start = js.find("(function initQuickHelp()")
+    onboarding_end = js.find("let refreshMessageTimer", onboarding_start)
+    map_start = js.find("const map = L.map")
+    onboarding_js = js[onboarding_start:onboarding_end]
+    _assert(0 <= onboarding_start < onboarding_end < map_start, "Quick help must initialize before map and data startup.")
+    _assert("await " not in onboarding_js, "Opening quick help must not wait for startup work.")
+    _assert("fetch(" not in onboarding_js and "loadOptions" not in onboarding_js, "Quick help must not issue or restart data requests.")
+    _assert("Cargando marcas" in html and "renderBrandsLoading" in js, "Existing brand loading feedback must remain available behind quick help.")
+
+    tutorial_html = html[html.find('<dialog class="onboarding-dialog"'):html.find("</dialog>")]
+    for forbidden in ("API", "ORS", "Haversine", "base de datos", "backend", "algoritmo"):
+        _assert(forbidden.lower() not in tutorial_html.lower(), f"Quick help contains a technical term: {forbidden}")
+
+
 def test_sidebar_and_floating_search_layout() -> None:
     html = _read("static/index.html")
     styles = _read("static/styles.css")
@@ -1006,6 +1049,7 @@ def run() -> None:
     test_result_metrics_are_rendered_once()
     test_catalog_and_route_status_copy_present()
     test_header_has_no_support_chip_and_keeps_primary_actions()
+    test_first_opening_quick_help_is_accessible_and_non_blocking()
     test_sidebar_and_floating_search_layout()
     test_app_js_renders_warnings()
     test_haversine_copy_appears_once()

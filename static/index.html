@@ -13,7 +13,7 @@
   <meta property="og:type" content="website">
   <meta name="theme-color" content="#171411">
   <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css?v=1.9.4">
-  <link rel="stylesheet" href="/static/styles.css?v=feedback-modal-20260519-10">
+  <link rel="stylesheet" href="/static/styles.css?v=onboarding-v1">
 </head>
 <body>
   <div class="shell app-shell">
@@ -23,6 +23,7 @@
         <span class="beta-badge">Beta</span>
         <a class="header-privacy-link" href="/privacidad">Privacidad</a>
         <a class="header-privacy-link" href="/como-funciona">¿Cómo funciona?</a>
+        <button class="header-privacy-link quick-help-trigger" id="quick_help_trigger" type="button">Ayuda rápida</button>
       </div>
       <div class="price-chip" aria-live="polite">
         <span id="catalog_freshness_dot" class="freshness-dot freshness-unknown" aria-hidden="true"></span>
@@ -211,6 +212,39 @@
     </main>
   </div>
 
+  <dialog class="onboarding-dialog" id="quick_help_dialog" aria-labelledby="quick_help_title" aria-describedby="quick_help_intro">
+    <div class="onboarding-dialog__content">
+      <button class="onboarding-dialog__close" id="quick_help_close" type="button" aria-label="Cerrar ayuda rápida">&#10005;</button>
+      <div class="onboarding-dialog__eyebrow">Guía rápida</div>
+      <h2 id="quick_help_title">Empieza a ahorrar con FuelOpt</h2>
+      <p class="onboarding-dialog__intro" id="quick_help_intro">Encuentra dónde repostar teniendo en cuenta el precio y el desplazamiento.</p>
+      <ol class="onboarding-steps">
+        <li>
+          <span class="onboarding-step-number" aria-hidden="true">1</span>
+          <div>
+            <h3>Elige el lugar</h3>
+            <p>Busca una localidad o haz doble clic sobre el mapa para marcar el punto de salida.</p>
+          </div>
+        </li>
+        <li>
+          <span class="onboarding-step-number" aria-hidden="true">2</span>
+          <div>
+            <h3>Configura tu búsqueda</h3>
+            <p>Selecciona el combustible, la cantidad, el criterio de optimización y las marcas que quieras comparar.</p>
+          </div>
+        </li>
+        <li>
+          <span class="onboarding-step-number" aria-hidden="true">3</span>
+          <div>
+            <h3>Compara los resultados</h3>
+            <p>Pulsa “Calcular mejor repostaje” para ver la mejor opción y consultar otras alternativas.</p>
+          </div>
+        </li>
+      </ol>
+      <button class="onboarding-dialog__primary" id="quick_help_start" type="button">Empezar</button>
+    </div>
+  </dialog>
+
   <div id="feedback_overlay" class="feedback-overlay" role="dialog" aria-modal="true" aria-label="Enviar idea" hidden>
     <div class="feedback-modal">
       <div class="feedback-modal__head">
@@ -239,6 +273,6 @@
   </div>
 
   <script src="/static/vendor/leaflet/leaflet.js?v=1.9.4"></script>
-  <script src="/static/app.js?v=feedback-modal-20260519-11"></script>
+  <script src="/static/app.js?v=onboarding-v1"></script>
 </body>
 </html>
