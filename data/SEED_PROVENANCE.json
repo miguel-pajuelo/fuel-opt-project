@@ -1,0 +1,19 @@
+{
+  "source_name": "Ministerio de Industria y Turismo (MINETUR) — catálogo oficial de estaciones de servicio",
+  "source_url": "https://geoportalgasolineras.es/",
+  "reuse_terms_url": "https://sede.serviciosmin.gob.es/es-ES/Paginas/aviso.aspx#Reutilizacion",
+  "retrieved_at": "2026-06-04T22:27:28+0200",
+  "seed_files": [
+    {
+      "path": "data/db/gas_stations.sqlite",
+      "sha256": "7A31BD9BF0F93C715AD858F750E6A8D7A571221FE59B61E5AE437E1B4904445A"
+    },
+    {
+      "path": "data/cache/minetur_snapshot.json",
+      "sha256": "C83640CA45F316DDEBFA1AE3E7036BA2E43748BADFE7AAA321E8EB3C64F53D06"
+    }
+  ],
+  "sqlite_schema_version": "1",
+  "transformation": "FuelOpt normaliza campos, tipos, coordenadas, combustibles y rótulos para almacenarlos en una estructura SQLite local sin pretender alterar el significado del catálogo oficial.",
+  "independent_ballenoil_source_included": false
+}

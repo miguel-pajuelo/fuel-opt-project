@@ -56,6 +56,6 @@ Este comando es público para instalador y mantenimiento. Solicita el cierre de 
 
 ## Privacidad y servicios externos
 
-FuelOpt puede contactar con ORS, el catálogo oficial de MINETUR y el servicio estándar de teselas `tile.openstreetmap.org`. Esos proveedores pueden recibir la IP y los parámetros necesarios para su operación. Leaflet está alojado localmente, pero las teselas no son offline. Google Maps recibe los puntos de ruta solo cuando el usuario pulsa **Abrir en Maps**. GitHub recibe información solo cuando el usuario abre **Mándanos tu idea** y decide publicar un Issue.
+FuelOpt puede contactar con ORS, el catálogo oficial de MINETUR y el servicio estándar de teselas `tile.openstreetmap.org`. MINETUR es la única fuente productiva del catálogo en 0.1.0; la semilla y los refrescos utilizan sus datos oficiales, con tratamiento neutral de todas las marcas. Esos servicios pueden recibir la IP y los parámetros necesarios para su operación. Leaflet está alojado localmente, pero las teselas no son offline. Google Maps recibe los puntos de ruta solo cuando el usuario pulsa **Abrir en Maps**. GitHub recibe información solo cuando el usuario abre **Mándanos tu idea** y decide publicar un Issue.
 
 No hay telemetría propia ni formulario de correo. El navegador utiliza `localStorage` únicamente para `fuelopt:onboarding:v1:dismissed`. Consulta la página de privacidad incluida con la aplicación para el detalle y las limitaciones.

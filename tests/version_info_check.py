@@ -11,7 +11,7 @@ import pefile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.generate_version_info import DEFAULT_VERSION, parse_version, render_version_info
+from scripts.generate_version_info import COPYRIGHT_NOTICE, DEFAULT_VERSION, parse_version, render_version_info
 
 
 EXPECTED_TEXT_FIELDS = {
@@ -61,6 +61,7 @@ def validate_source() -> None:
         _assert(f"StringStruct(u'{key}', u'{value}')" in content, f"missing generated field: {key}")
     _assert("StringStruct(u'FileVersion', u'0.1.0')" in content, "text FileVersion is inconsistent")
     _assert("StringStruct(u'ProductVersion', u'0.1.0')" in content, "text ProductVersion is inconsistent")
+    _assert(f"StringStruct(u'LegalCopyright', u'{COPYRIGHT_NOTICE}')" in content, "copyright holder is inconsistent")
     _assert("filevers=(0, 1, 0, 0)" in content, "numeric FileVersion is inconsistent")
     _assert("prodvers=(0, 1, 0, 0)" in content, "numeric ProductVersion is inconsistent")
     _assert("CompanyName" not in content, "CompanyName must be omitted until an identity is approved")
@@ -87,6 +88,7 @@ def validate_executable(executable: Path, expected_version: str) -> None:
             _assert(fields.get(key) == value, f"{key} mismatch: {fields.get(key)!r}")
         _assert(fields.get("FileVersion") == text_version, "FileVersion text mismatch")
         _assert(fields.get("ProductVersion") == text_version, "ProductVersion text mismatch")
+        _assert(fields.get("LegalCopyright") == COPYRIGHT_NOTICE, "LegalCopyright mismatch")
         _assert("CompanyName" not in fields, "unapproved CompanyName is present")
         joined = "\n".join(f"{key}={value}" for key, value in fields.items())
         _assert(not FORBIDDEN_VALUE_PATTERN.search(joined), "VERSIONINFO contains unsafe text")

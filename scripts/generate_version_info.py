@@ -8,7 +8,7 @@ from pathlib import Path
 
 DEFAULT_VERSION = "0.1.0"
 VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
-COPYRIGHT_NOTICE = "Copyright © 2026 FuelOpt contributors"
+COPYRIGHT_NOTICE = "Copyright © 2026 Miguel Pajuelo Gómez"
 
 
 def parse_version(value: str) -> tuple[str, tuple[int, int, int, int]]:

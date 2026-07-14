@@ -19,10 +19,8 @@ def parse_args() -> argparse.Namespace:
     settings = load_settings()
     parser = argparse.ArgumentParser(description="Refresh the active catalog through staging, validation and swap.")
     parser.add_argument("--db", type=Path, default=settings.db_path)
-    parser.add_argument("--source", choices=("auto", "minetur", "snapshot", "prices-cache", "ballenoil-cache"), default="auto")
+    parser.add_argument("--source", choices=("auto", "minetur", "snapshot"), default="auto")
     parser.add_argument("--snapshot", type=Path, default=settings.minetur_snapshot_path)
-    parser.add_argument("--prices-cache", type=Path, default=settings.ballenoil_prices_path)
-    parser.add_argument("--ballenoil-cache", type=Path, default=settings.ballenoil_result_path)
     parser.add_argument("--brands", nargs="+", metavar="MARCA", default=None)
     parser.add_argument("--write-report", type=Path, default=APP_PATHS.logs_dir / "catalog_refresh_report.json")
     parser.add_argument("--lock-file", type=Path, default=APP_PATHS.logs_dir / "catalog_refresh.lock")
@@ -41,8 +39,6 @@ def main() -> int:
             db=args.db,
             source=args.source,
             snapshot=args.snapshot,
-            prices_cache=args.prices_cache,
-            ballenoil_cache=args.ballenoil_cache,
             brands=tuple(args.brands or ()),
             report_path=args.write_report,
             lock_path=args.lock_file,

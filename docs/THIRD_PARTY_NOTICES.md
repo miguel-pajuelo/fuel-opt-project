@@ -1,6 +1,6 @@
 # Componentes y servicios de terceros
 
-Este inventario es factual y preliminar. No sustituye asesoramiento jurídico ni afirma cumplimiento completo. La licencia principal de FuelOpt no se ha elegido.
+Este inventario es factual y preliminar. No sustituye asesoramiento jurídico ni afirma cumplimiento completo. El código propio de FuelOpt se distribuye bajo Apache License 2.0, Copyright 2026 Miguel Pajuelo Gómez.
 
 ## A. Componentes distribuidos en el bundle
 
@@ -23,10 +23,9 @@ Las dependencias transitivas, módulos congelados y metadatos de licencia del bu
 
 | Servicio | Versión | Uso | Licencia/condiciones | Distribuido | Fuente oficial | Obligación o incertidumbre |
 |---|---|---|---|---|---|---|
-| OpenRouteService | Servicio | Geocodificación y rutas opcionales | Condiciones del servicio/API | No | [openrouteservice](https://openrouteservice.org/) | El usuario aporta su clave; revisar onboarding, cuotas y privacidad. |
-| OpenStreetMap Standard Tile Layer | Servicio/datos | Teselas desde `tile.openstreetmap.org` y atribución | ODbL para datos; política de teselas separada | No | [Copyright OSM](https://www.openstreetmap.org/copyright), [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) | Revisar carga, cache, atribución y política de uso antes de publicar (FR-038). |
-| MINETUR | Fuente de datos | Precios de carburantes | Condiciones y procedencia pendientes de revisión | No | [Geoportal de gasolineras](https://geoportalgasolineras.es/) | No se afirma una licencia de reutilización; resolver FR-045. |
-| Ballenoil | Fuente complementaria | Precios/catálogo cuando aplica | Condiciones pendientes de revisión | No | [Ballenoil](https://www.ballenoil.es/) | Revisar procedencia, frecuencia y permiso antes de release. |
+| OpenRouteService | Servicio | Geocodificación y rutas opcionales | Condiciones del servicio/API; resultados CC BY 4.0 | No | [openrouteservice](https://openrouteservice.org/terms-of-service/) | La aplicación muestra la atribución requerida; el usuario aporta su clave. |
+| OpenStreetMap Standard Tile Layer | Servicio/datos | Teselas desde `tile.openstreetmap.org` y atribución | ODbL para datos; política de teselas separada | No | [Copyright OSM](https://www.openstreetmap.org/copyright), [Tile usage policy](https://operations.osmfoundation.org/policies/tiles/) | La URL oficial y la atribución visible se configuran en Leaflet; revisar carga real antes de publicar (FR-038). |
+| MINETUR | Fuente y datos redistribuidos | Snapshot y semilla SQLite del catálogo oficial de estaciones | Condiciones generales de reutilización de datos abiertos | Sí, snapshot y SQLite transformada | [Geoportal de gasolineras](https://geoportalgasolineras.es/), [condiciones de reutilización](https://sede.serviciosmin.gob.es/es-ES/Paginas/aviso.aspx#Reutilizacion) | Citar fuente y fecha, conservar integridad y no desnaturalizar; consultar `DATA_SOURCES_AND_ATTRIBUTION.md`. |
 | Google Maps | Servicio abierto por el usuario | Mostrar origen, estación y destino al pulsar **Abrir en Maps** | Condiciones del servicio | No | [Google Maps](https://www.google.com/maps) | No recibe puntos automáticamente; revisar sus condiciones y privacidad antes de usar el enlace. |
 | GitHub Issues | Servicio abierto por el usuario | Ideas y errores no sensibles mediante **Mándanos tu idea** | Condiciones de GitHub | No | [GitHub Terms](https://docs.github.com/site-policy/github-terms/github-terms-of-service) | FuelOpt no adjunta datos de la búsqueda; el usuario decide qué publica. No usar para secretos o vulnerabilidades. |
 
@@ -42,10 +41,8 @@ Los proveedores externos pueden recibir la IP y los parámetros necesarios. Leaf
 
 ## Identidad visual de FuelOpt
 
-El icono de FuelOpt fue proporcionado y aprobado por el responsable del proyecto el 12 de julio de 2026. La fuente rasterizada aprobada, su SHA-256 y el proceso de derivación constan en `assets/README.md`. No se incorporaron iconos externos ni recursos gráficos de terceros para generar PNG e ICO.
-
-La procedencia jurídica de la imagen no ha sido verificada de manera independiente. Esta nota registra el origen declarado y no constituye una conclusión legal. Una futura fuente vectorial profesional permanece como decisión pendiente (FR-037).
+El icono propio de FuelOpt fue creado y aprobado por Miguel Pajuelo Gómez con asistencia de ChatGPT durante el proceso creativo. La fuente rasterizada aprobada, su SHA-256 y el proceso de derivación constan en `assets/README.md`.
 
 ## Licencia de FuelOpt
 
-No existe un archivo `LICENSE` aprobado. Por tanto, este repositorio no concede por ahora una licencia de código abierto sobre el código propio. Elegirla, documentar titulares y comprobar compatibilidad con terceros es un **BLOCKER DE RELEASE** (FR-002).
+El código propio de FuelOpt se distribuye bajo Apache License 2.0. El archivo `LICENSE` contiene los términos íntegros y `NOTICE` identifica al titular. La revisión completa de dependencias transitivas y la revisión jurídica profesional siguen pendientes (FR-003 y FR-043).

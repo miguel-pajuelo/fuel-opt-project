@@ -21,6 +21,10 @@ datas = [
     (str(ROOT / "static"), "static"),
     (str(ROOT / "data" / "db" / "gas_stations.sqlite"), "resources/seed"),
     (str(ROOT / "data" / "cache" / "minetur_snapshot.json"), "resources/snapshot"),
+    (str(ROOT / "data" / "SEED_PROVENANCE.json"), "resources/seed"),
+    (str(ROOT / "LICENSE"), "licenses"),
+    (str(ROOT / "NOTICE"), "licenses"),
+    (str(ROOT / "docs" / "DATA_SOURCES_AND_ATTRIBUTION.md"), "licenses"),
     (str(ROOT / "docs" / "THIRD_PARTY_NOTICES.md"), "licenses"),
 ]
 

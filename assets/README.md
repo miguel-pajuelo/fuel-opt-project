@@ -1,12 +1,12 @@
 # Recursos de identidad visual de FuelOpt
 
-La imagen `source/fuelopt-icon-approved.png` fue proporcionada y aprobada por el responsable del proyecto el 12 de julio de 2026. Es la fuente visual oficial de FuelOpt 0.1.0.
+La imagen `source/fuelopt-icon-approved.png` y la identidad visual de FuelOpt fueron creadas por Miguel Pajuelo Gómez durante julio de 2026 con asistencia de ChatGPT en el proceso creativo. La selección, dirección, edición y aprobación final corresponden a Miguel Pajuelo Gómez. Es la fuente visual oficial de FuelOpt 0.1.0.
 
 - SHA-256: `0EF1C3988F4711352F4ABDF4A2EC1B3081E80A02F75FAE28A3B545A88DC82A16`.
 - Dimensiones originales: 1254 × 1254 píxeles.
 - Formato original: PNG RGB de 24 bits, sin canal alfa.
-- Procedencia: material proporcionado y aprobado por el responsable del proyecto.
-- Verificación jurídica: la procedencia jurídica no se ha verificado de manera independiente.
+- Autoría y dirección: Miguel Pajuelo Gómez, con asistencia de ChatGPT.
+- Licencia: el recurso propio y sus derivados forman parte de FuelOpt bajo Apache License 2.0 cuando resulte jurídicamente aplicable.
 
 La fuente no debe sustituirse, editarse ni regenerarse sin nueva aprobación. No se ha creado un maestro SVG: el material aprobado es rasterizado. Una futura fuente vectorial profesional continúa como decisión pendiente.
 
@@ -33,4 +33,4 @@ La hoja de contacto se escribe en `build/`, no se rastrea y no se incluye en el 
 ## Requisitos
 
 - FR-001 exige conservar esta fuente, generar e integrar todos los derivados, verificar los builds reales y revisar visualmente los tamaños pequeños.
-- FR-037 registra aprobación, hash, fecha, ausencia de recursos gráficos externos y la limitación sobre procedencia jurídica y futura vectorización profesional.
+- FR-037 registra autoría, asistencia creativa, aprobación, hash, fecha y la futura decisión sobre una fuente vectorial profesional.

@@ -21,9 +21,9 @@ Usuario
 
 ## Recursos y datos
 
-`%LOCALAPPDATA%\Programs\FuelOpt` contiene ejecutable, `_internal`, frontend, semilla y snapshot. La lógica no debe escribir allí. `%LOCALAPPDATA%\FuelOpt` contiene `config.json`, `data/db`, `data/cache` y `logs`.
+`%LOCALAPPDATA%\Programs\FuelOpt` contiene ejecutable, `_internal`, frontend, semilla MINETUR, snapshot y metadata de procedencia. La lógica no debe escribir allí. `%LOCALAPPDATA%\FuelOpt` contiene `config.json`, `data/db`, `data/cache` y `logs`.
 
-En primer arranque, el bootstrap conserva una base activa válida; si falta, copia la semilla con backup SQLite y fuente inmutable o reconstruye desde snapshot. Un refresco fallido conserva la activa y, cuando corresponde, una copia `previous` recuperable.
+En primer arranque, el bootstrap conserva una base activa válida; si falta, copia la semilla MINETUR con backup SQLite y fuente inmutable o reconstruye desde su snapshot. El flujo productivo de 0.1.0 usa únicamente MINETUR y su snapshot como fuentes. Todas las estaciones se procesan con criterios neutrales respecto a su marca a partir del catálogo oficial. Un refresco fallido conserva la activa y, cuando corresponde, una copia `previous` recuperable.
 
 ## Optimización y presentación
 

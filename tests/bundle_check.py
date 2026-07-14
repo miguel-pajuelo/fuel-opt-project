@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
 import sqlite3
 import sys
@@ -64,6 +66,10 @@ def validate_bundle(bundle: Path) -> None:
         internal / "static" / "vendor" / "leaflet" / "leaflet.css",
         internal / "static" / "vendor" / "leaflet" / "LICENSE",
         internal / "resources" / "snapshot" / "minetur_snapshot.json",
+        internal / "resources" / "seed" / "SEED_PROVENANCE.json",
+        internal / "licenses" / "LICENSE",
+        internal / "licenses" / "NOTICE",
+        internal / "licenses" / "DATA_SOURCES_AND_ATTRIBUTION.md",
         internal / "licenses" / "THIRD_PARTY_NOTICES.md",
     )
     for path in required:
@@ -71,6 +77,27 @@ def validate_bundle(bundle: Path) -> None:
 
     seed = internal / "resources" / "seed" / "gas_stations.seed.sqlite"
     _validate_seed(seed)
+    provenance = json.loads(
+        (internal / "resources" / "seed" / "SEED_PROVENANCE.json").read_text(encoding="utf-8")
+    )
+    _assert("MINETUR" in provenance.get("source_name", ""), "Packaged provenance source is not MINETUR.")
+    _assert(provenance.get("independent_ballenoil_source_included") is False, "Packaged provenance enables Ballenoil.")
+    packaged_seed_files = {
+        "gas_stations.sqlite": seed,
+        "minetur_snapshot.json": internal / "resources" / "snapshot" / "minetur_snapshot.json",
+    }
+    for record in provenance.get("seed_files", []):
+        packaged = packaged_seed_files.get(Path(record.get("path", "")).name)
+        _assert(packaged is not None and packaged.is_file(), f"Unknown packaged provenance record: {record}")
+        digest = hashlib.sha256(packaged.read_bytes()).hexdigest().upper()
+        _assert(digest == record.get("sha256"), f"Packaged provenance hash mismatch: {record.get('path')}")
+
+    license_text = (internal / "licenses" / "LICENSE").read_text(encoding="utf-8")
+    _assert("Apache License" in license_text and "Version 2.0, January 2004" in license_text, "Apache LICENSE is invalid.")
+    notice = (internal / "licenses" / "NOTICE").read_text(encoding="utf-8")
+    _assert("Copyright 2026 Miguel Pajuelo" in notice, "Packaged NOTICE has the wrong holder.")
+    attribution = (internal / "licenses" / "DATA_SOURCES_AND_ATTRIBUTION.md").read_text(encoding="utf-8")
+    _assert("MINETUR" in attribution and "Reutilizaci" in attribution, "Packaged data attribution is incomplete.")
     _assert(any(internal.rglob("cacert.pem")), "Certifi CA bundle is missing.")
     _assert(any(internal.glob("slowapi-*.dist-info")), "SlowAPI metadata/license is missing.")
     notices = (internal / "licenses" / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")

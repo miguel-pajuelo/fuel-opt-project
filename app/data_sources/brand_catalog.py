@@ -395,15 +395,6 @@ def build_default_registry() -> BrandRegistry:
     return registry
 
 
-def build_full_registry() -> BrandRegistry:
-    """Registry with known MINETUR brands plus Ballenoil's legacy scraper adapter."""
-    from app.data_sources.adapters_scraping import BallenoilAdapter
-
-    registry = build_default_registry()
-    registry.register(BallenoilAdapter())
-    return registry
-
-
 DEFAULT_REGISTRY = build_default_registry()
 
 

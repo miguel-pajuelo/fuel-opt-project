@@ -65,8 +65,6 @@ def test_candidate_snapshot_does_not_replace_active_before_publish() -> None:
             args = SimpleNamespace(
                 source="minetur",
                 snapshot=active_snapshot,
-                prices_cache=root / "prices.json",
-                ballenoil_cache=root / "ballenoil.txt",
                 brands=None,
             )
             (stations, prices), source, warnings = rebuild_station_catalog.load_catalog(

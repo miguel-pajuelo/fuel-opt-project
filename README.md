@@ -12,7 +12,7 @@ FuelOpt es una aplicación local que compara estaciones de servicio y estima el 
 - Estimación del coste del desvío y presentación de alternativas.
 - Rutas de OpenRouteService (ORS) cuando el usuario configura una clave.
 - Aproximación geográfica Haversine cuando ORS no está disponible; no equivale a una ruta por carretera.
-- Base semilla incluida y uso offline con los últimos datos válidos disponibles.
+- Base semilla MINETUR incluida, con procedencia verificable, y uso offline con los últimos datos válidos disponibles.
 - Refresco manual, al abrir o programado cada 1, 2, 4, 8, 12 o 24 horas.
 - Datos mutables separados de los recursos instalados.
 - Ayuda rápida en la primera apertura, que solo guarda localmente si ya fue cerrada.
@@ -23,7 +23,7 @@ Los objetivos no se reducen al precio por litro: consideran el desplazamiento y 
 
 ## Datos, red y privacidad
 
-La aplicación se instala por usuario en `%LOCALAPPDATA%\Programs\FuelOpt` y conserva configuración, base activa, caché y logs en `%LOCALAPPDATA%\FuelOpt`. La base semilla instalada es de solo lectura y se copia o reconstruye en el primer arranque sin sustituir una base activa válida.
+La aplicación se instala por usuario en `%LOCALAPPDATA%\Programs\FuelOpt` y conserva configuración, base activa, caché y logs en `%LOCALAPPDATA%\FuelOpt`. La base semilla instalada procede del catálogo oficial de MINETUR, es de solo lectura y se copia o reconstruye en el primer arranque sin sustituir una base activa válida. Consulta [Fuentes de datos y atribución](docs/DATA_SOURCES_AND_ATTRIBUTION.md).
 
 Sin conexión se puede consultar el último catálogo disponible, pero no se pueden obtener precios nuevos, teselas de mapa ni rutas ORS. Sin clave ORS, FuelOpt conserva una funcionalidad limitada basada en aproximaciones geométricas. No incluye telemetría propia ni un servidor central de búsquedas. ORS, OpenStreetMap, Google Maps y GitHub solo intervienen en las acciones descritas en la [guía de usuario](docs/USER_GUIDE.md#privacidad-logs-y-soporte) y en [Privacidad y configuración](docs/CONFIGURATION.md#privacidad-y-servicios-externos).
 
@@ -82,4 +82,4 @@ Consulta [Desarrollo](docs/DEVELOPMENT.md), [Arquitectura](docs/ARCHITECTURE.md)
 
 ## Licencia
 
-La licencia principal aún no ha sido elegida. Hasta que exista un archivo `LICENSE` aprobado, el código no se ofrece bajo una licencia de código abierto y la publicación pública es un blocker. Los componentes de terceros conservan sus propias licencias; consulta [THIRD_PARTY_NOTICES](docs/THIRD_PARTY_NOTICES.md).
+FuelOpt es software bajo [Apache License 2.0](LICENSE), Copyright 2026 Miguel Pajuelo Gómez. Los componentes de terceros conservan sus propias licencias; consulta [THIRD_PARTY_NOTICES](docs/THIRD_PARTY_NOTICES.md). La versión 0.1.0 continúa sin publicar y requiere revisión jurídica profesional antes del merge, tag o release.

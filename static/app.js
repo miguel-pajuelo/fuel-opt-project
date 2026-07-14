@@ -444,9 +444,9 @@
 
     const map = L.map('map', { zoomControl: false, doubleClickZoom: false }).setView([40.4168, -3.7038], 6);
     L.control.zoom({ position: 'bottomleft' }).addTo(map);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap'
+      attribution: '&copy; <a href="https://openrouteservice.org/" target="_blank" rel="noopener noreferrer">openrouteservice.org</a> by HeiGIT | Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
     }).addTo(map);
     map.createPane('routePane');
     map.getPane('routePane').style.zIndex = '450';

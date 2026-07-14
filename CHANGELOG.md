@@ -10,6 +10,10 @@
 - Selector accesible y explicaciones específicas del criterio utilizado en cada resultado.
 - Identificación visible de rutas OpenRouteService y estimaciones Haversine.
 - Base semilla y snapshot para primer arranque y recuperación offline.
+- Semilla MINETUR con metadata de procedencia, hashes y atribución de reutilización.
+- Apache License 2.0 y titularidad de Miguel Pajuelo Gómez.
+- Fuente productiva de catálogo limitada a MINETUR; retirados los caches complementarios heredados.
+- Atribuciones visibles de OpenStreetMap y OpenRouteService actualizadas.
 - Refresco directo, atómico y configurable: 1h, 2h, 4h, 8h, 12h, 24h, al abrir o manual.
 - Integración por usuario con Windows Task Scheduler y Credential Manager para ORS.
 - Bundle PyInstaller `onedir` e instalador Inno Setup per-user.
@@ -27,7 +31,7 @@
 
 ### Known limitations
 
-- No existe todavía una release pública, una licencia principal aprobada ni firma digital.
+- No existe todavía una release pública ni firma digital; la revisión jurídica profesional continúa pendiente.
 - Instalación, actualización y desinstalación reales siguen pendientes en una VM Windows limpia.
 - Las rutas precisas requieren una clave ORS del usuario; sin ella se usa una aproximación geométrica.
 - La frescura de precios depende de las fuentes externas y no se garantiza en tiempo real.

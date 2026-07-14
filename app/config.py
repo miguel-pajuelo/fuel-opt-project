@@ -16,10 +16,6 @@ CACHE_DIR = APP_PATHS.cache_dir
 DB_DIR = APP_PATHS.db_dir
 DEFAULT_DB_PATH = APP_PATHS.user_db_path
 DEFAULT_MINETUR_SNAPSHOT_PATH = APP_PATHS.user_snapshot_path
-# These legacy-only fallback inputs remain immutable resources until their
-# retention/removal decision is made in a later patch.
-DEFAULT_BALLENOIL_RESULT_PATH = PROJECT_ROOT / "data" / "cache" / "ballenoil_espana_combustible.txt"
-DEFAULT_BALLENOIL_PRICES_PATH = PROJECT_ROOT / "data" / "cache" / "ballenoil_precios.json"
 DEFAULT_ENV_PATH = APP_PATHS.legacy_env_path
 USER_DATA_DIR = APP_PATHS.user_root
 USER_CONFIG_PATH = APP_PATHS.config_path
@@ -51,8 +47,6 @@ def env_flag(name: str, default: bool = False) -> bool:
 class Settings:
     db_path: Path = DEFAULT_DB_PATH
     minetur_snapshot_path: Path = DEFAULT_MINETUR_SNAPSHOT_PATH
-    ballenoil_result_path: Path = DEFAULT_BALLENOIL_RESULT_PATH
-    ballenoil_prices_path: Path = DEFAULT_BALLENOIL_PRICES_PATH
     ors_api_key: str | None = None
     default_consumption_l_100km: float = 5.5
     max_route_candidates: int = 75
@@ -88,8 +82,6 @@ def load_settings() -> Settings:
     return Settings(
         db_path=Path(os.getenv("GAS_DB_PATH", DEFAULT_DB_PATH)),
         minetur_snapshot_path=Path(os.getenv("MINETUR_SNAPSHOT_PATH", DEFAULT_MINETUR_SNAPSHOT_PATH)),
-        ballenoil_result_path=Path(os.getenv("BALLENOIL_RESULT_PATH", DEFAULT_BALLENOIL_RESULT_PATH)),
-        ballenoil_prices_path=Path(os.getenv("BALLENOIL_PRICES_PATH", DEFAULT_BALLENOIL_PRICES_PATH)),
         ors_api_key=resolve_ors_api_key(),
         default_consumption_l_100km=float(os.getenv("CONSUMPTION_L_100KM", "5.5")),
         max_route_candidates=int(os.getenv("MAX_ROUTE_CANDIDATES", "75")),

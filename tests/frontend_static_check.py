@@ -1105,11 +1105,25 @@ def test_public_privacy_and_how_it_works_match_current_frontend() -> None:
         _assert(retired not in privacy and retired not in how_it_works, f"Retired public reference remains: {retired}")
 
 
+def test_map_attribution_uses_official_osm_and_ors_credits() -> None:
+    js = _read("static/app.js")
+    _assert(
+        "https://tile.openstreetmap.org/{z}/{x}/{y}.png" in js,
+        "Leaflet must use the official OpenStreetMap tile URL without subdomains",
+    )
+    _assert("https://www.openstreetmap.org/copyright" in js, "OpenStreetMap copyright link is missing")
+    _assert("OpenStreetMap contributors" in js, "OpenStreetMap attribution is missing")
+    _assert("https://openrouteservice.org/" in js and "openrouteservice.org" in js, "ORS attribution is missing")
+    _assert("by HeiGIT" in js, "HeiGIT attribution is missing")
+    _assert("Fuente de ruta" not in js, "Technical route-source blocks must not return to result cards")
+
+
 def run() -> None:
     test_frontend_is_extracted()
     test_external_leaflet_has_sri()
     test_no_unauthorized_analytics_or_retired_domains()
     test_public_privacy_and_how_it_works_match_current_frontend()
+    test_map_attribution_uses_official_osm_and_ors_credits()
     test_dynamic_html_uses_escape_helper()
     test_optimization_mode_selector_is_native_and_accessible()
     test_optimization_mode_request_and_result_state_are_separate()

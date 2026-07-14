@@ -29,8 +29,6 @@ class RefreshRequest:
     db: Path
     source: str
     snapshot: Path
-    prices_cache: Path
-    ballenoil_cache: Path
     brands: tuple[str, ...] = ()
     report_path: Path | None = None
     lock_path: Path | None = None
@@ -53,8 +51,6 @@ class RefreshRequest:
             db=cfg.db_path,
             source=source,
             snapshot=cfg.minetur_snapshot_path,
-            prices_cache=cfg.ballenoil_prices_path,
-            ballenoil_cache=cfg.ballenoil_result_path,
             report_path=report_path or APP_PATHS.logs_dir / "catalog_refresh_report.json",
             lock_path=APP_PATHS.logs_dir / "catalog_refresh.lock",
         )
@@ -205,8 +201,6 @@ def run_catalog_refresh(request: RefreshRequest) -> RefreshResult:
         class _Args:
             source = request.source
             snapshot = request.snapshot
-            prices_cache = request.prices_cache
-            ballenoil_cache = request.ballenoil_cache
             brands = list(request.brands) or None
 
         try:
