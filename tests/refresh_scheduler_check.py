@@ -688,7 +688,10 @@ def test_frozen_child_command_environment_and_browser_dispatch() -> None:
         })()
         try:
             _assert(launcher.run_launcher(args) == 0, "launcher dispatch failed")
-            _assert(opened == ["http://127.0.0.1:8001"], opened)
+            _assert(
+                opened == [f"http://127.0.0.1:8001?fuelopt-ui={launcher.UI_CACHE_REVISION}"],
+                opened,
+            )
         finally:
             launcher.LOGGER.handlers.clear()
             launcher.APP_PATHS = original_paths
