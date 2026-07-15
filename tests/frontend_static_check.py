@@ -1098,9 +1098,12 @@ def test_public_privacy_and_how_it_works_match_current_frontend() -> None:
         "Haversine",
         "FastAPI",
         "SQLite",
-        "remaining_fuel_liters",
     ):
         _assert(term in how_it_works, f"How-it-works page is missing current behavior: {term}")
+    _assert(
+        "remaining_fuel_liters" not in how_it_works,
+        "How-it-works page must not present unimplemented autonomy fields",
+    )
     for retired in ("GMAIL_USER", "GMAIL_APP_PASSWORD", "FEEDBACK_RECIPIENT", "fuelopt" + ".es"):
         _assert(retired not in privacy and retired not in how_it_works, f"Retired public reference remains: {retired}")
 

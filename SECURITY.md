@@ -1,34 +1,29 @@
-# Política de seguridad
+# Security policy
 
 ## Versiones soportadas
 
-FuelOpt está en pre-release y todavía no existen versiones públicas soportadas. Esta política y la matriz de soporte se revisarán antes de aprobar la primera publicación.
+La versión más reciente publicada de la serie 0.1.x recibe correcciones de seguridad. Al publicarse una revisión, las anteriores dejan de mantenerse. La versión vigente está disponible en [Latest release](https://github.com/miguel-pajuelo/fuel-opt-project/releases/latest).
 
-## Informar de una vulnerabilidad
+## Reportar una vulnerabilidad
 
-No publiques claves, credenciales, tokens, datos personales ni detalles explotables en GitHub Issues. Si el repositorio ofrece el canal privado de seguridad de GitHub, utilízalo. Si no aparece un canal privado, abre únicamente un Issue sin información sensible para solicitar instrucciones antes de compartir la evidencia.
+No publiques claves, credenciales, datos personales, trazas sensibles ni instrucciones explotables en GitHub Issues. Usa el canal privado de seguridad de GitHub cuando esté disponible en el repositorio. Si no aparece un canal privado adecuado, limita el reporte público a indicar que existe un posible problema de seguridad, sin incluir detalles sensibles.
 
-GitHub Issues se reserva para ideas y errores no sensibles. FuelOpt ya no incluye un formulario de correo ni solicita una dirección de correo dentro de la aplicación. No se inventa ni se ofrece aquí una dirección privada que no exista.
+GitHub Issues se reserva para ideas, errores funcionales y problemas no sensibles. FuelOpt no utiliza formularios SMTP ni solicita correo electrónico dentro de la aplicación.
 
-Incluye, cuando pueda compartirse con seguridad:
+## Principios de seguridad
 
-- versión o commit afectado;
-- componente y escenario;
-- pasos mínimos de reproducción saneados;
-- impacto observado y esperado;
-- versión de Windows y tipo de instalación;
-- mitigaciones conocidas.
-
-No se promete un SLA. La respuesta depende de la disponibilidad del mantenedor y del alcance reproducible del informe.
-
-## Controles vigentes
-
-- El servidor local se enlaza de forma predeterminada a `127.0.0.1`; no se publica en la red.
-- CORS y la documentación OpenAPI están desactivados por defecto y solo se habilitan mediante configuración explícita de desarrollo.
-- Los secretos deben permanecer fuera del repositorio. La clave ORS se guarda preferentemente en Windows Credential Manager; una variable de entorno local queda disponible para desarrollo y migración.
-- Los errores procedentes de ORS y de la red se convierten en mensajes públicos estables. Los logs normales no incluyen claves, URLs preparadas, parámetros `api_key`, cabeceras `Authorization` ni texto crudo de esas excepciones.
-- `tests/security_check.py` es obligatorio dentro de `scripts/release_check.cmd`; un fallo detiene el gate de release.
+- El servidor escucha en `127.0.0.1` de forma predeterminada.
+- La escucha en `0.0.0.0` requiere habilitar explícitamente el acceso LAN; no es el modo predeterminado.
+- CORS permanece cerrado salvo que se configure una allowlist explícita. OpenAPI, Swagger y ReDoc están desactivados por defecto.
+- Las cabeceras vigentes incluyen `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` y una `Permissions-Policy` limitada.
+- Los headers reenviados solo se usan cuando se habilita conscientemente la confianza en proxy. No confíes en headers de proxies no autorizados.
+- Los logs normales anonimizan la IP del cliente. El modo diagnóstico puede registrar más información técnica y debe activarse solo en un entorno controlado.
+- Los secretos se mantienen fuera del repositorio.
+- La clave ORS se guarda preferentemente en Windows Credential Manager; las variables de entorno se reservan para desarrollo local.
+- Los errores procedentes de ORS se convierten en mensajes públicos estables y no exponen URLs preparadas, cabeceras o texto crudo de excepciones.
+- `tests/security_check.py` forma parte obligatoria del release gate.
+- Los bundles se revisan para excluir secretos, configuración privada, rutas personales y datos mutables.
 
 ## Limitaciones conocidas
 
-La interfaz no aplica todavía una Content Security Policy estricta. Los ejecutables e instaladores actuales tampoco están firmados digitalmente. Estas limitaciones, junto con la revisión final de dependencias y artefactos, permanecen abiertas en el [backlog de revisión](docs/FINAL_REVIEW_BACKLOG.md).
+La interfaz no aplica todavía una Content Security Policy estricta. Los ejecutables y el instalador no están firmados digitalmente, por lo que Windows puede mostrar advertencias de reputación. Estas limitaciones no sustituyen la verificación del origen y los checksums de cada descarga.

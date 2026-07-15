@@ -1,26 +1,21 @@
 # Recursos de identidad visual de FuelOpt
 
-La imagen `source/fuelopt-icon-approved.png` y la identidad visual de FuelOpt fueron creadas por Miguel Pajuelo Gómez durante julio de 2026 con asistencia de ChatGPT en el proceso creativo. La selección, dirección, edición y aprobación final corresponden a Miguel Pajuelo Gómez. Es la fuente visual oficial de FuelOpt 0.1.0.
+`source/fuelopt-icon-approved.png` es la fuente raster aprobada para la identidad visual de FuelOpt. Los derivados se generan de forma reproducible y no deben editarse manualmente.
 
 - SHA-256: `0EF1C3988F4711352F4ABDF4A2EC1B3081E80A02F75FAE28A3B545A88DC82A16`.
-- Dimensiones originales: 1254 × 1254 píxeles.
-- Formato original: PNG RGB de 24 bits, sin canal alfa.
-- Autoría y dirección: Miguel Pajuelo Gómez, con asistencia de ChatGPT.
-- Licencia: el recurso propio y sus derivados forman parte de FuelOpt bajo Apache License 2.0 cuando resulte jurídicamente aplicable.
-
-La fuente no debe sustituirse, editarse ni regenerarse sin nueva aprobación. No se ha creado un maestro SVG: el material aprobado es rasterizado. Una futura fuente vectorial profesional continúa como decisión pendiente.
+- Dimensiones: 1254 × 1254 píxeles.
+- Formato: PNG RGB de 24 bits.
+- Autoría y dirección: Miguel Pajuelo Gómez, con asistencia de ChatGPT durante el proceso creativo.
 
 ## Derivados
 
-- `fuelopt-icon-1024.png`: PNG RGBA cuadrado, con perfil sRGB y fondo negro exterior eliminado mediante selección conectada desde los bordes.
-- `fuelopt.ico`: ICO real de 32 bits con entradas 16, 20, 24, 32, 40, 48, 64, 128 y 256 píxeles.
-- `../static/favicon.ico` y `../static/icons/fuelopt-*.png`: recursos web derivados del PNG preparado.
+- `fuelopt-icon-1024.png`: PNG RGBA preparado para escalado.
+- `fuelopt.ico`: icono de Windows con tamaños entre 16 y 256 píxeles.
+- `../static/favicon.ico` y `../static/icons/fuelopt-*.png`: recursos web derivados.
 
-La transformación conserva la composición, colores y degradados aprobados. Solo elimina el negro exterior conectado al lienzo, añade transparencia y aplica reducción Lanczos para los tamaños derivados. El archivo fuente nunca es sobrescrito.
+La transformación elimina únicamente el fondo exterior conectado al lienzo, añade transparencia y genera los tamaños necesarios. El archivo fuente no se sobrescribe.
 
-## Regeneración reproducible
-
-Herramientas fijadas en `requirements-build.txt`: Python, Pillow 12.0.0 y PyInstaller 6.19.0.
+## Regeneración
 
 ```bat
 python -m pip install -r requirements-build.txt
@@ -28,9 +23,4 @@ python scripts\generate_brand_assets.py --contact-sheet build\brand-assets-conta
 python tests\brand_assets_check.py
 ```
 
-La hoja de contacto se escribe en `build/`, no se rastrea y no se incluye en el bundle. El generador valida formato, dimensiones y SHA-256 antes de producir ningún derivado.
-
-## Requisitos
-
-- FR-001 exige conservar esta fuente, generar e integrar todos los derivados, verificar los builds reales y revisar visualmente los tamaños pequeños.
-- FR-037 registra autoría, asistencia creativa, aprobación, hash, fecha y la futura decisión sobre una fuente vectorial profesional.
+La hoja de contacto se escribe en `build/`, no se rastrea ni se incluye en el bundle. El generador valida formato, dimensiones y SHA-256 antes de crear derivados.

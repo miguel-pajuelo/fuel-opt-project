@@ -42,9 +42,9 @@ Beautiful Soup se conserva como dependencia de tests del adaptador histórico in
 | Inno Setup | 6.7.3 en CI | Generación del instalador | No | [Licencia oficial](https://jrsoftware.org/files/is6-license.txt) |
 | Pillow | 12.0.0 | Generación y comprobación de assets en build | No | [Pillow](https://python-pillow.org/) |
 | pytest / httpx | 9.1.1 / 0.28.1 | Tests | No | Metadata oficial instalada en el entorno de test. |
-| GitHub Actions | `windows-latest`; acciones fijadas por SHA | CI y artifacts dry-run | No | [GitHub Actions](https://docs.github.com/actions) |
+| GitHub Actions | `windows-latest`; acciones fijadas por SHA | CI, builds y artifacts de release | No | [GitHub Actions](https://docs.github.com/actions) |
 
-Inno Setup se usa para producir el instalador y no se incorpora al runtime. Cualquier uso comercial futuro debe revisar las condiciones vigentes con asesoramiento adecuado.
+Inno Setup se usa para producir el instalador y no se incorpora al runtime. Sus condiciones vigentes deben evaluarse para el uso y distribución previstos.
 
 ## Licencia de FuelOpt
 

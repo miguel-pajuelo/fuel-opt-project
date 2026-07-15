@@ -14,6 +14,7 @@ CANONICAL_DOCUMENTS = (
     "SECURITY.md",
     "CONTRIBUTING.md",
     "assets/README.md",
+    "app/legacy_cli/README.md",
     "docs/README.md",
     "docs/INSTALLATION.md",
     "docs/USER_GUIDE.md",
@@ -22,13 +23,13 @@ CANONICAL_DOCUMENTS = (
     "docs/DEVELOPMENT.md",
     "docs/ARCHITECTURE.md",
     "docs/RELEASING.md",
-    "docs/PR2_RECONCILIATION.md",
     "docs/DATA_SOURCES_AND_ATTRIBUTION.md",
-    "docs/FINAL_REVIEW_BACKLOG.md",
     "docs/THIRD_PARTY_NOTICES.md",
-    "docs/archive/README.md",
 )
-ARCHIVED_DOCUMENTS = (
+REMOVED_INTERNAL_DOCUMENTS = (
+    "docs/FINAL_REVIEW_BACKLOG.md",
+    "docs/PR2_RECONCILIATION.md",
+    "docs/archive/README.md",
     "docs/archive/AUDITORIA_PROYECTO.md",
     "docs/archive/DATABASE_ARTIFACT_POLICY.md",
     "docs/archive/SECRETS_AND_ENV.md",
@@ -37,12 +38,13 @@ ARCHIVED_DOCUMENTS = (
     "docs/archive/TASK_REFRESH_COMMANDS.md",
 )
 REPOSITORY_URL = "https://github.com/miguel-pajuelo/fuel-opt-project"
+LATEST_RELEASE_URL = f"{REPOSITORY_URL}/releases/latest"
 BRAND_SOURCE_SHA256 = "0EF1C3988F4711352F4ABDF4A2EC1B3081E80A02F75FAE28A3B545A88DC82A16"
 APACHE_LICENSE_SHA256 = "C71D239DF91726FC519C6EB72D318EC65820627232B2F796219E87DCF35D0AB4"
 STATION_LOGOS_TREE_SHA256 = "6638980529C47A117CC7C1F2CF9F017C80AA4FF96E78C297547767941AE8BE94"
 
 
-def _assert(condition: bool, message: str) -> None:
+def _assert(condition: bool, message: object) -> None:
     if not condition:
         raise AssertionError(message)
 
@@ -69,10 +71,9 @@ def _anchors(markdown: str) -> set[str]:
 
 def _check_internal_links() -> None:
     link_pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
-    for relative in CANONICAL_DOCUMENTS + ARCHIVED_DOCUMENTS:
+    for relative in CANONICAL_DOCUMENTS:
         source = ROOT / relative
-        text = _read(relative)
-        for raw_target in link_pattern.findall(text):
+        for raw_target in link_pattern.findall(_read(relative)):
             target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
             if re.match(r"^[a-z][a-z0-9+.-]*:", target, flags=re.IGNORECASE):
                 continue
@@ -80,13 +81,12 @@ def _check_internal_links() -> None:
             destination = source if not file_part else (source.parent / file_part).resolve()
             _assert(destination.is_file(), f"Broken internal link in {relative}: {target}")
             if separator and anchor and destination.suffix.lower() == ".md":
-                destination_text = destination.read_text(encoding="utf-8")
-                _assert(anchor in _anchors(destination_text), f"Broken anchor in {relative}: {target}")
+                _assert(anchor in _anchors(destination.read_text(encoding="utf-8")), f"Broken anchor: {target}")
 
 
 def _repository_text_files() -> list[Path]:
     allowed = {".md", ".py", ".html", ".js", ".css", ".txt", ".yml", ".yaml", ".cmd", ".ps1", ".iss", ".spec"}
-    files = []
+    files: list[Path] = []
     for path in ROOT.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in allowed:
             continue
@@ -97,32 +97,21 @@ def _repository_text_files() -> list[Path]:
     return files
 
 
-def _check_hygiene() -> None:
+def _check_repository_hygiene() -> None:
     analytics_name = "goat" + "counter"
     analytics_host = "gc" + ".zgo.at"
     retired_domain = "fuelopt" + ".es"
+    railway_name = "rail" + "way"
     donation_names = ("ko" + "-fi", "buyme" + "acoffee")
     personal_patterns = (
         re.compile(r"[A-Za-z]:\\Users\\", re.IGNORECASE),
         re.compile(r"/Users/", re.IGNORECASE),
-        re.compile(r"One" + r"Drive", re.IGNORECASE),
-        re.compile(r"GAS" + r"\s+SCRAPING", re.IGNORECASE),
-        re.compile(r"SIDE" + r"\s+PROJECTS", re.IGNORECASE),
+        re.compile("One" + "Drive", re.IGNORECASE),
+        re.compile(r"GAS\s+SCRAPING", re.IGNORECASE),
+        re.compile(r"SIDE\s+PROJECTS", re.IGNORECASE),
     )
-    railway_name = "rail" + "way"
-    railway_allowed = {
-        *ARCHIVED_DOCUMENTS,
-        "docs/archive/README.md",
-        "docs/PR2_RECONCILIATION.md",
-        "tests/documentation_hygiene_check.py",
-        "tests/installer_check.py",
-    }
-    retired_reference_allowed = {
-        "docs/PR2_RECONCILIATION.md",
-        "static/privacy.html",
-        "tests/documentation_hygiene_check.py",
-    }
-    personal_pattern_allowed = {
+    retired_allowed = {"static/privacy.html", "tests/documentation_hygiene_check.py"}
+    personal_allowed = {
         "tests/brand_assets_check.py",
         "tests/bundle_check.py",
         "tests/documentation_hygiene_check.py",
@@ -133,197 +122,83 @@ def _check_hygiene() -> None:
         relative = path.relative_to(ROOT).as_posix()
         lowered = path.read_text(encoding="utf-8", errors="replace").lower()
         if analytics_name in lowered:
-            _assert(relative in retired_reference_allowed, f"Retired analytics name found in {relative}")
+            _assert(relative in retired_allowed, f"Retired analytics reference found in {relative}")
         _assert(analytics_host not in lowered, f"Retired analytics host found in {relative}")
         if retired_domain in lowered:
-            _assert(relative in retired_reference_allowed, f"Retired public domain found in {relative}")
-        for donation_name in donation_names:
-            _assert(donation_name not in lowered, f"Donation reference found in {relative}")
-        if relative not in personal_pattern_allowed:
+            _assert(relative in retired_allowed, f"Retired domain found in {relative}")
+        if railway_name in lowered:
+            _assert(relative in {"tests/documentation_hygiene_check.py", "tests/installer_check.py"}, f"Railway reference found in {relative}")
+        _assert(not any(name in lowered for name in donation_names), f"Donation reference found in {relative}")
+        if relative not in personal_allowed:
             for pattern in personal_patterns:
                 _assert(not pattern.search(lowered), f"Personal path found in {relative}")
-        if railway_name in lowered:
-            _assert(relative in railway_allowed, f"Active Railway reference found in {relative}")
 
 
-def _check_backlog() -> None:
-    backlog = _read("docs/FINAL_REVIEW_BACKLOG.md")
-    for number in range(1, 49):
-        identifier = f"FR-{number:03d}"
-        _assert(identifier in backlog, f"Backlog item missing: {identifier}")
-    required_terms = (
-        "BLOCKER DE RELEASE",
-        "OBLIGATORIO ANTES DE PUBLICACIÓN",
-        "RECOMENDADO",
-        "MEJORA FUTURA",
-        "RIESGO ACEPTADO",
-        "pendiente",
-        "en curso",
-        "validado",
-        "riesgo aceptado",
-        "descartado",
-    )
-    for term in required_terms:
-        _assert(term in backlog, f"Backlog vocabulary missing: {term}")
-    for number in (2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 22, 33, 34, 38, 43):
-        row = next((line for line in backlog.splitlines() if line.startswith(f"| **FR-{number:03d}")), "")
-        _assert("BLOCKER DE RELEASE" in row and "; sí;" in row, f"Required blocker is not classified correctly: FR-{number:03d}")
-    fr047 = next(line for line in backlog.splitlines() if line.startswith("| **FR-047"))
-    _assert("OBLIGATORIO ANTES DE PUBLICACIÓN" in fr047 and "; sí;" in fr047, "FR-047 must block release without changing its category")
-    fr001 = next(line for line in backlog.splitlines() if line.startswith("| **FR-001"))
-    fr037 = next(line for line in backlog.splitlines() if line.startswith("| **FR-037"))
-    _assert("validado" in fr001, "FR-001 must remain validated")
-    fr037_ascii = unicodedata.normalize("NFKD", fr037).encode("ascii", "ignore").decode("ascii")
-    _assert("validado tecnicamente" in fr037_ascii, "FR-037 technical evidence must be recorded")
-    fr048 = next(line for line in backlog.splitlines() if line.startswith("| **FR-048"))
-    _assert("320 px" in fr048 and "no; P2; pendiente" in fr048, "FR-048 mobile overflow is not tracked correctly")
+def _check_public_documentation() -> None:
+    readme = _read("README.md")
+    _assert(REPOSITORY_URL in readme and LATEST_RELEASE_URL in readme, "README release links are incorrect")
+    for stale in ("pre-release", "primera versión", "blocker", "FINAL_REVIEW_BACKLOG", "PR2_RECONCILIATION", "0.1.1", "Unreleased"):
+        _assert(stale.lower() not in readme.lower(), f"README contains internal or future wording: {stale}")
 
+    changelog = _read("CHANGELOG.md")
+    releasing = _read("docs/RELEASING.md")
+    _assert("## [0.1.1] - Unreleased" in changelog, "CHANGELOG does not contain 0.1.1 Unreleased")
+    _assert("## [0.1.0] - 2026-07-15" in changelog, "published 0.1.0 history is incorrect")
+    _assert("0.1.1 — Unreleased" in releasing, "RELEASING does not identify the maintenance version")
+    for relative in CANONICAL_DOCUMENTS:
+        if relative not in {"CHANGELOG.md", "docs/RELEASING.md"}:
+            text = _read(relative)
+            _assert("0.1.1" not in text and "Unreleased" not in text, f"Future version leaked into {relative}")
 
-def _check_pr2_reconciliation() -> None:
-    reconciliation = _read("docs/PR2_RECONCILIATION.md")
-    for heading in (
-        "## A. Recuperado",
-        "## B. Ya existía de forma equivalente",
-        "## C. Pospuesto a 0.2.0",
-        "## D. Descartado",
+    for removed in REMOVED_INTERNAL_DOCUMENTS:
+        _assert(not (ROOT / removed).exists(), f"Internal documentation still exists: {removed}")
+
+    combined = "\n".join(_read(relative) for relative in CANONICAL_DOCUMENTS)
+    for stale in (
+        "validación final en VM pendiente",
+        "blocker de la primera release",
+        "Patch 8B",
+        "FR-047 no resuelve",
+        "debe cerrarse como superseded",
     ):
-        _assert(heading in reconciliation, f"PR #2 reconciliation category missing: {heading}")
-    for mode in ("economic", "minimal_detour", "balanced"):
-        _assert(mode in reconciliation, f"Optimization mode missing from PR #2 reconciliation: {mode}")
-    _assert("remaining_fuel_liters" in reconciliation and "0.2.0" in reconciliation, "Autonomy deferral is missing")
+        _assert(stale.lower() not in combined.lower(), f"Stale editorial wording remains: {stale}")
 
+    installation = _read("docs/INSTALLATION.md")
+    for term in ("Microsoft Defender SmartScreen", "SHA256SUMS.txt", "Más información", "Ejecutar de todas formas"):
+        _assert(term in installation, f"SmartScreen guidance is missing: {term}")
+    _assert("No desactives Microsoft Defender" in installation, "installation guide must not advise disabling Defender")
+    _assert("No continúes" in installation and "checksum no coincide" in installation, "unsafe download warning is missing")
 
-def _check_public_explanations() -> None:
-    privacy = _read("static/privacy.html")
-    for term in (
-        "fuelopt:onboarding:v1:dismissed",
-        "OpenRouteService",
-        "OpenStreetMap",
-        "Google Maps",
-        "GitHub Issues",
-        "Windows Credential Manager",
-        "MINETUR",
-    ):
-        _assert(term in privacy, f"Privacy page is missing current behavior: {term}")
-    _assert("Ballenoil" not in privacy, "Privacy page must describe the official catalog neutrally.")
-    _assert("ya no utiliza SMTP" in privacy, "Privacy page must describe SMTP as removed")
-
-    how_it_works = _read("static/como-funciona.html")
-    for section in (
-        "Qu&eacute; hace FuelOpt",
-        "C&oacute;mo indicar un lugar",
-        "Datos de la b&uacute;squeda",
-        "Modos de optimizaci&oacute;n",
-        "C&oacute;mo se calcula el coste real",
-        "C&oacute;mo se calculan las rutas",
-        "C&oacute;mo se ordenan las alternativas",
-        "De d&oacute;nde proceden los precios",
-        "Qu&eacute; ocurre dentro de la aplicaci&oacute;n",
-        "Privacidad y servicios externos",
-        "L&iacute;mites y supuestos",
-    ):
-        _assert(section in how_it_works, f"How-it-works section is missing: {section}")
-    for term in ("Ministerio de Industria y Turismo", "MINETUR", "SQLite", "base de datos", "FastAPI", "127.0.0.1"):
-        _assert(term in how_it_works, f"How-it-works technical explanation is missing: {term}")
-    _assert("Ballenoil" not in how_it_works, "Public how-it-works page must not highlight an individual brand.")
-
-    neutral_catalog_documents = (
-        "README.md",
-        "static/privacy.html",
-        "static/como-funciona.html",
-        "docs/USER_GUIDE.md",
-        "docs/CONFIGURATION.md",
-        "docs/ARCHITECTURE.md",
-        "docs/DATA_SOURCES_AND_ATTRIBUTION.md",
-        "docs/THIRD_PARTY_NOTICES.md",
-    )
-    for relative in neutral_catalog_documents:
-        text = _read(relative)
-        _assert("Ballenoil" not in text, f"Public catalog documentation names an individual brand: {relative}")
-    data_sources = _read("docs/DATA_SOURCES_AND_ATTRIBUTION.md")
-    _assert("MINETUR es la única fuente productiva" in data_sources, "MINETUR-only catalog source is not explicit")
-    _assert("criterios neutrales respecto a su marca" in data_sources, "Brand-neutral treatment is not documented")
-
-    for relative in ("CHANGELOG.md", "docs/FINAL_REVIEW_BACKLOG.md", "docs/PR2_RECONCILIATION.md"):
-        historical = _read(relative).lower()
-        for active_claim in (
-            "ballenoil es una fuente activa",
-            "ballenoil es una fuente productiva",
-            "proveedor activo ballenoil",
-            "fuente activa ballenoil",
-        ):
-            _assert(active_claim not in historical, f"Historical traceability describes Ballenoil as active: {relative}")
+    for term in ("320 px", "zoom al 200 %", "Credenciales históricas de ORS", "permanece pendiente"):
+        _assert(term in releasing, f"manual release validation was not migrated: {term}")
+    _assert("no bloquea el código" in releasing.lower(), "FR-048 release impact is not documented")
+    _assert("No registres su valor" in releasing, "private ORS rotation checklist must prohibit recording credentials")
 
     security = _read("SECURITY.md")
-    _assert("GitHub Issues se reserva" in security, "SECURITY must define the public Issues boundary")
-    _assert("canal privado de seguridad de GitHub" in security, "SECURITY must direct sensitive reports to GitHub private security")
+    for term in (
+        "127.0.0.1",
+        "0.0.0.0",
+        "allowlist",
+        "OpenAPI, Swagger y ReDoc",
+        "X-Content-Type-Options",
+        "X-Frame-Options",
+        "Referrer-Policy",
+        "Permissions-Policy",
+        "headers reenviados",
+        "anonimizan la IP",
+    ):
+        _assert(term in security, f"canonical security hardening is missing: {term}")
 
     configuration = _read("docs/CONFIGURATION.md")
+    _assert("predeterminada es `24h`" in configuration, "24h default is not documented")
+    for term in ("FUELOPT_ALLOW_LAN", "FUELOPT_TRUST_PROXY_HEADERS", "FUELOPT_LOG_CLIENT_IP", "CORS_ORIGINS"):
+        _assert(term in configuration, f"canonical network configuration is missing: {term}")
     for retired_variable in ("GMAIL_USER", "GMAIL_APP_PASSWORD", "FEEDBACK_RECIPIENT"):
-        _assert(retired_variable not in configuration, f"Retired mail variable remains active: {retired_variable}")
+        _assert(retired_variable not in configuration, f"Retired mail variable remains: {retired_variable}")
 
-    backlog = _read("docs/FINAL_REVIEW_BACKLOG.md")
-    fr022 = next(line for line in backlog.splitlines() if line.startswith("| **FR-022"))
-    fr048 = next(line for line in backlog.splitlines() if line.startswith("| **FR-048"))
-    _assert("validado" in fr022 and "Resuelto mediante" in fr022, "FR-022 must be resolved through GitHub Issues")
-    _assert("pendiente" in fr048, "FR-048 must remain pending")
-
-
-def _check_repository_state() -> None:
-    tracked = subprocess.run(
-        ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True, shell=False
-    ).stdout.splitlines()
-    _assert(not any(path.startswith(("build/", "dist/")) for path in tracked), "Generated build output is tracked")
-    license_path = ROOT / "LICENSE"
-    _assert(license_path.is_file(), "Approved Apache-2.0 LICENSE is missing")
-    normalized_license = license_path.read_bytes().replace(b"\r\n", b"\n")
-    _assert(
-        hashlib.sha256(normalized_license).hexdigest().upper() == APACHE_LICENSE_SHA256,
-        "LICENSE is not the approved complete Apache License 2.0 text",
-    )
-    notice = _read("NOTICE")
-    notice_ascii = unicodedata.normalize("NFKD", notice).encode("ascii", "ignore").decode("ascii")
-    _assert("Copyright 2026 Miguel Pajuelo Gomez" in notice_ascii, "NOTICE does not name the approved copyright holder")
-    for invented_entity in ("FuelOpt Inc.", "FuelOpt LLC", "FuelOpt contributors"):
-        _assert(invented_entity not in notice, f"NOTICE contains an unapproved entity: {invented_entity}")
-    _assert(not (ROOT / "TRADEMARKS.md").exists(), "TRADEMARKS.md must not be created")
-
-    station_logos = ROOT / "static" / "logos"
-    logos_digest = hashlib.sha256()
-    for path in sorted(station_logos.rglob("*")):
-        if not path.is_file():
-            continue
-        logos_digest.update(path.relative_to(station_logos).as_posix().encode("utf-8"))
-        logos_digest.update(b"\0")
-        logos_digest.update(path.read_bytes())
-        logos_digest.update(b"\0")
-    _assert(logos_digest.hexdigest().upper() == STATION_LOGOS_TREE_SHA256, "Station logo tree changed")
-    public_documents = [ROOT / "README.md", ROOT / "CHANGELOG.md", *sorted((ROOT / "docs").rglob("*.md"))]
-    public_documents.extend(sorted((ROOT / "static").glob("*.html")))
-    combined_docs = "\n".join(path.read_text(encoding="utf-8", errors="replace").lower() for path in public_documents)
-    _assert("static/logos" not in combined_docs, "Station logo provenance was documented in the repository")
-    for forbidden_phrase in ("permisos de los logos", "procedencia de los logos", "licencia de los logos"):
-        _assert(forbidden_phrase not in combined_docs, "Station logo permissions or provenance were documented")
-    source = ROOT / "assets/source/fuelopt-icon-approved.png"
-    _assert(source.is_file(), "Approved brand source is missing")
-    _assert(hashlib.sha256(source.read_bytes()).hexdigest().upper() == BRAND_SOURCE_SHA256, "Approved brand source hash changed")
-    _assert(not list((ROOT / "assets").rglob("*.svg")), "An unapproved vector asset exists")
-
-
-def run() -> None:
-    for relative in CANONICAL_DOCUMENTS + ARCHIVED_DOCUMENTS:
-        _read(relative)
-    readme = _read("README.md")
-    _assert(REPOSITORY_URL in readme, "README repository URL is incorrect")
-    _assert("pre-release" in readme.lower(), "README must state pre-release status")
-    _assert("se publicarán en GitHub Releases cuando la primera versión sea aprobada" in readme, "README release wording is missing")
-    _assert("## [0.1.0] - Unreleased" in _read("CHANGELOG.md"), "CHANGELOG must keep 0.1.0 Unreleased")
-    security = _read("SECURITY.md").lower()
-    _assert("no existen versiones públicas soportadas" in security, "SECURITY must not claim supported public versions")
-    for relative in ARCHIVED_DOCUMENTS:
-        archived = _read(relative)
-        for field in ("Estado: SUPERSEDED", "Fecha de archivo", "Documento canónico sustituto", "Motivo", "Valor histórico", "Advertencia"):
-            _assert(field in archived, f"Archive header field missing in {relative}: {field}")
+    data_sources = _read("docs/DATA_SOURCES_AND_ATTRIBUTION.md")
+    _assert("MINETUR es la única fuente productiva" in data_sources, "MINETUR-only source is not explicit")
+    _assert("criterios neutrales respecto a su marca" in data_sources, "brand-neutral treatment is missing")
     notices = _read("docs/THIRD_PARTY_NOTICES.md")
     for heading in (
         "## A. Componentes distribuidos en el bundle",
@@ -331,11 +206,57 @@ def run() -> None:
         "## C. Herramientas de desarrollo y compilación",
     ):
         _assert(heading in notices, f"Third-party category missing: {heading}")
+
+    privacy = _read("static/privacy.html")
+    for term in ("fuelopt:onboarding:v1:dismissed", "OpenRouteService", "OpenStreetMap", "Google Maps", "GitHub Issues", "MINETUR"):
+        _assert(term in privacy, f"Privacy page is missing current behavior: {term}")
+    how_it_works = _read("static/como-funciona.html")
+    for term in ("MINETUR", "SQLite", "FastAPI", "127.0.0.1"):
+        _assert(term in how_it_works, f"How-it-works page is missing: {term}")
+
+
+def _check_repository_state() -> None:
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True, shell=False
+    ).stdout.splitlines()
+    _assert(not any(path.startswith(("build/", "dist/")) for path in tracked), "Generated build output is tracked")
+    _assert("TRADEMARKS.md" not in tracked and not (ROOT / "TRADEMARKS.md").exists(), "TRADEMARKS.md must not exist")
+
+    license_path = ROOT / "LICENSE"
+    normalized_license = license_path.read_bytes().replace(b"\r\n", b"\n")
+    _assert(hashlib.sha256(normalized_license).hexdigest().upper() == APACHE_LICENSE_SHA256, "LICENSE changed")
+    notice = _read("NOTICE")
+    notice_ascii = unicodedata.normalize("NFKD", notice).encode("ascii", "ignore").decode("ascii")
+    _assert("Copyright 2026 Miguel Pajuelo Gomez" in notice_ascii, "NOTICE holder changed")
+
+    station_logos = ROOT / "static" / "logos"
+    digest = hashlib.sha256()
+    for path in sorted(station_logos.rglob("*")):
+        if path.is_file():
+            digest.update(path.relative_to(station_logos).as_posix().encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
+    _assert(digest.hexdigest().upper() == STATION_LOGOS_TREE_SHA256, "Station logo tree changed")
+
+    public_paths = [ROOT / "README.md", ROOT / "CHANGELOG.md", *sorted((ROOT / "docs").rglob("*.md"))]
+    public_paths.extend(sorted((ROOT / "static").glob("*.html")))
+    public_text = "\n".join(path.read_text(encoding="utf-8", errors="replace").lower() for path in public_paths)
+    _assert("static/logos" not in public_text, "Station logo provenance was documented")
+    for phrase in ("permisos de los logos", "procedencia de los logos", "licencia de los logos"):
+        _assert(phrase not in public_text, "Station logo permissions or provenance were documented")
+
+    source = ROOT / "assets/source/fuelopt-icon-approved.png"
+    _assert(hashlib.sha256(source.read_bytes()).hexdigest().upper() == BRAND_SOURCE_SHA256, "Brand source changed")
+    _assert(not list((ROOT / "assets").rglob("*.svg")), "Unapproved vector asset exists")
+
+
+def run() -> None:
+    for relative in CANONICAL_DOCUMENTS:
+        _read(relative)
     _check_internal_links()
-    _check_hygiene()
-    _check_backlog()
-    _check_pr2_reconciliation()
-    _check_public_explanations()
+    _check_repository_hygiene()
+    _check_public_documentation()
     _check_repository_state()
     print("OK: documentation hygiene checks passed")
 

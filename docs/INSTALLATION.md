@@ -1,51 +1,56 @@
-# Instalación y desinstalación
+# Instalación y actualización
 
-## Estado de validación
+FuelOpt está dirigido a Windows 10/11 x64 y se instala por usuario, sin necesitar Python, Git ni privilegios de administrador.
 
-Windows 10/11 x64 es la plataforma objetivo, no una matriz certificada. El análisis estático, los tests automatizados y el build se han ejecutado; bundle e instalador se validaron en un runner GitHub `windows-latest`. Sigue pendiente una instalación real completa en una VM limpia sin Python, Git, `.env` ni variables `FUELOPT_*`.
+## Descargar
 
-El ejecutable y el instalador todavía no están firmados. Windows SmartScreen puede mostrar una advertencia; la firma y la experiencia SmartScreen deben resolverse o aceptarse expresamente antes de publicar.
+1. Abre [Latest release](https://github.com/miguel-pajuelo/fuel-opt-project/releases/latest).
+2. Descarga el instalador `FuelOpt-Setup-<versión>.exe` o el ZIP portable.
+3. Descarga también `SHA256SUMS.txt` y verifica el archivo antes de ejecutarlo.
 
-## Instalación prevista
+En PowerShell:
 
-El instalador trabaja por usuario, con privilegios mínimos:
-
-- programa: `%LOCALAPPDATA%\Programs\FuelOpt`;
-- datos: `%LOCALAPPDATA%\FuelOpt`;
-- sin necesidad de Python, Git ni permisos administrativos;
-- acceso directo en Inicio y acceso de escritorio opcional;
-- frecuencia predeterminada: 4 horas.
-
-Durante la instalación se puede elegir 1h, 2h, 4h, 8h, 12h, 24h, al abrir o solo manual. La primera apertura crea el directorio del usuario y copia o reconstruye la base activa desde los recursos instalados. Una base activa válida no se sobrescribe con la semilla.
-
-Instalación silenciosa prevista:
-
-```bat
-FuelOpt-Setup-0.1.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /REFRESH=4h
+```powershell
+Get-FileHash -Algorithm SHA256 .\FuelOpt-Setup-<versión>.exe
+Get-Content .\SHA256SUMS.txt
 ```
 
-Solo se admiten los ocho valores documentados. La matriz silenciosa completa sigue pendiente de VM.
+El hash calculado debe coincidir exactamente con la línea correspondiente.
 
-## Apertura y uso offline
+## Instalar
 
-FuelOpt inicia un servidor local y abre el navegador. Sin red puede usar la última base válida; no podrá descargar precios, rutas ORS ni teselas de mapa. Consulta [TROUBLESHOOTING.md](TROUBLESHOOTING.md) si el bootstrap falla.
+El instalador utiliza `%LOCALAPPDATA%\Programs\FuelOpt` y crea accesos directos según las opciones elegidas. La configuración, base activa, cache y logs se guardan fuera del directorio del programa, en `%LOCALAPPDATA%\FuelOpt`.
 
-## Actualización
+Durante la instalación se puede elegir actualización cada 1, 2, 4, 8, 12 o 24 horas, al abrir FuelOpt o solo manual. Para instalaciones nuevas, el valor recomendado y preseleccionado es cada 24 horas.
 
-Una actualización reutiliza el AppId estable y el mismo directorio. Debe cerrar cooperativamente launcher y servidor antes de sustituir `_internal`. Configuración, clave ORS, frecuencia, base activa, cache y logs viven fuera de la instalación y deben conservarse. Este flujo tiene checks automatizados, pero la actualización real entre dos instaladores permanece pendiente.
+El primer arranque copia o reconstruye la base activa desde la semilla MINETUR incluida. Una base válida existente no se sustituye con la semilla.
 
-## Desinstalación
+## Advertencia de Microsoft Defender SmartScreen
 
-La desinstalación detiene FuelOpt, elimina la tarea programada y los accesos directos, y retira los archivos del programa. Los datos se conservan por defecto. La opción “Eliminar también mis datos, configuración y precios almacenados” permite borrar `%LOCALAPPDATA%\FuelOpt` explícitamente.
+Windows puede mostrar una advertencia de Microsoft Defender SmartScreen al abrir FuelOpt. SmartScreen evalúa la reputación de los archivos descargados y sus firmas digitales, por lo que una aplicación nueva, con pocas descargas o sin firma puede generar una advertencia. Esa advertencia, por sí sola, no equivale a una detección de malware.
 
-En modo silencioso, borrar datos requiere:
+Descarga FuelOpt únicamente desde la GitHub Release oficial y verifica el instalador o el ZIP con `SHA256SUMS.txt`. Si el origen es correcto y el SHA-256 coincide, en el aviso estándar puede seleccionarse **Más información** y después **Ejecutar de todas formas**, cuando esa opción esté disponible.
+
+No continúes si el archivo procede de otra fuente, el checksum no coincide o Windows muestra una detección concreta de malware. No desactives Microsoft Defender para ejecutar FuelOpt.
+
+Más información: [Microsoft Defender SmartScreen](https://learn.microsoft.com/en-us/windows/security/operating-system-security/virus-and-threat-protection/microsoft-defender-smartscreen/).
+
+## Instalación silenciosa
 
 ```bat
-unins000.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /REMOVEDATA=1
+FuelOpt-Setup-<versión>.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /REFRESH=24h
 ```
 
-Sin `/REMOVEDATA=1` deben conservarse. Ambos comportamientos necesitan validación final en VM.
+`/REFRESH` admite `1h`, `2h`, `4h`, `8h`, `12h`, `24h`, `on_open` y `manual`. Un valor no admitido cancela la instalación.
 
-## Identidad visual
+## Actualizar
 
-El icono aprobado está integrado en ejecutable, instalador y accesos directos. Su validación técnica se conserva en los checks de marca. La procedencia jurídica permanece en revisión; consulta FR-001 y FR-037 en el [backlog](FINAL_REVIEW_BACKLOG.md).
+Ejecuta el instalador nuevo sobre la instalación existente. El AppId y el directorio se mantienen. La frecuencia seleccionada anteriormente se recupera del instalador y solo cambia si el usuario elige otro valor o pasa `/REFRESH` explícitamente.
+
+FuelOpt cierra cooperativamente sus procesos antes de sustituir el runtime. La configuración, clave ORS, base activa, cache y logs permanecen en el perfil del usuario.
+
+## Desinstalar
+
+La desinstalación elimina el programa y su tarea programada. Los datos personales se conservan por defecto. La opción visible **Eliminar también mis datos, configuración y precios almacenados** o `/REMOVEDATA=1` permite borrar `%LOCALAPPDATA%\FuelOpt` con consentimiento explícito.
+
+El instalador y el desinstalador nunca deben modificar tareas de nombre similar que no pertenezcan inequívocamente a FuelOpt.

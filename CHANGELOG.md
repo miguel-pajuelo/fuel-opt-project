@@ -1,37 +1,32 @@
 # Changelog
 
-## [0.1.0] - Unreleased
+## [0.1.1] - Unreleased
+
+### Changed
+
+- La frecuencia predeterminada de actualización pasa de 4 a 24 horas para instalaciones nuevas; las preferencias existentes se conservan.
+- La documentación pública se simplifica y se alinea con el funcionamiento publicado.
+- La guía de instalación explica las advertencias de Microsoft Defender SmartScreen y la verificación mediante SHA-256.
+
+### Fixed
+
+- La publicación automática identifica explícitamente el repositorio, crea primero una release draft y verifica sus assets antes de publicarla.
+- Los reintentos no reemplazan assets de una release publicada: una coincidencia exacta es un no-op y cualquier diferencia requiere revisión manual.
+
+## [0.1.0] - 2026-07-15
 
 ### Added
 
-- Aplicación local para Windows orientada a optimizar el coste de combustible.
-- Frontend local con comparación de alternativas, marcas y mapa.
-- Tres modos de optimización (`economic`, `minimal_detour` y `balanced`) con ranking determinista y límite de resultados aplicado después de ordenar.
-- Selector accesible y explicaciones específicas del criterio utilizado en cada resultado.
-- Identificación visible de rutas OpenRouteService y estimaciones Haversine.
-- Base semilla y snapshot para primer arranque y recuperación offline.
-- Semilla MINETUR con metadata de procedencia, hashes y atribución de reutilización.
-- Apache License 2.0 y titularidad de Miguel Pajuelo Gómez.
-- Fuente productiva de catálogo limitada a MINETUR; retirados los caches complementarios heredados.
-- Atribuciones visibles de OpenStreetMap y OpenRouteService actualizadas.
-- Refresco directo, atómico y configurable: 1h, 2h, 4h, 8h, 12h, 24h, al abrir o manual.
-- Integración por usuario con Windows Task Scheduler y Credential Manager para ORS.
-- Bundle PyInstaller `onedir` e instalador Inno Setup per-user.
-- Pipeline de GitHub Actions para checks, bundle, instalador, ZIP y SHA-256.
-- Controles para secretos, rutas personales, datos SQLite mutables y recuperación de locks.
-- Ayuda rápida accesible en la primera apertura, con persistencia local versionada.
-
-### Security and privacy
-
-- Recursos instalados separados de los datos modificables del usuario.
-- Base candidata validada antes de sustituir atómicamente la base activa.
-- Sin telemetría propia; los servicios externos utilizados se documentan explícitamente.
-- Feedback trasladado a GitHub Issues, sin formulario de correo ni credenciales SMTP.
-- Errores ORS y de red sanitizados en respuestas y logs; `security_check.py` es obligatorio en el gate de release.
+- Aplicación local para Windows 10/11 x64 con launcher, servidor FastAPI local y frontend web.
+- Optimización por ahorro, menor desvío o equilibrio, con entrada por litros o presupuesto.
+- Catálogo MINETUR local en SQLite, actualización atómica y tarea programada configurable.
+- Rutas ORS opcionales y estimación Haversine identificada cuando ORS no está disponible.
+- Instalador por usuario, ZIP portable, VERSIONINFO, iconos y checksums SHA-256.
+- Inventario reproducible de componentes runtime, LICENSE, NOTICE y textos legales de terceros.
+- Checks de seguridad, secretos, documentación, bundle, instalador y smoke test en GitHub Actions.
 
 ### Known limitations
 
-- No existe todavía una release pública ni firma digital; la revisión jurídica profesional continúa pendiente.
-- Instalación, actualización y desinstalación reales siguen pendientes en una VM Windows limpia.
-- Las rutas precisas requieren una clave ORS del usuario; sin ella se usa una aproximación geométrica.
-- La frescura de precios depende de las fuentes externas y no se garantiza en tiempo real.
+- Los ejecutables y el instalador no están firmados digitalmente.
+- Los precios, rutas y disponibilidad de estaciones pueden cambiar; los resultados son orientativos.
+- Algunas funciones requieren conexión y ORS necesita una clave aportada por el usuario.
