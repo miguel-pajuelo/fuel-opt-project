@@ -2,32 +2,35 @@
 
 ## FuelOpt no abre
 
-Revisa `%LOCALAPPDATA%\FuelOpt\logs`. Confirma que no haya una actualización en curso y prueba una sola apertura. FuelOpt escanea 8001–8010; un servicio ajeno en 8001 no debe ser reutilizado.
+Comprueba que no haya otra instancia iniciándose y espera unos segundos. El launcher prueba los puertos 8001–8010 y solo reutiliza un servidor cuya respuesta `/health` identifica a FuelOpt.
 
-## Instancia, puerto o lock
+Los logs se encuentran en `%LOCALAPPDATA%\FuelOpt\logs`. No los publiques sin revisar antes que no contengan información personal.
 
-El launcher valida identidad y runtime record antes de reutilizar una instancia. Tras un cierre abrupto puede quedar un lock stale; el código intenta normalizar BOM/espacios y recuperarlo si el proceso ya no existe. No borres un lock mientras exista un proceso FuelOpt. Para cierre cooperativo usa `FuelOpt.exe --shutdown-existing`.
+## No aparecen el mapa o las rutas
 
-## La base no se crea
+Leaflet está incluido, pero las teselas de OpenStreetMap requieren conexión. La búsqueda por dirección y las rutas por carretera necesitan una clave ORS válida.
 
-El bootstrap debe crear `%LOCALAPPDATA%\FuelOpt\data\db` y copiar la semilla inmutable mediante SQLite. Si la semilla no es válida, intenta reconstruir desde el snapshot. Comprueba espacio, permisos por usuario y logs. No edites `_internal` ni copies una base mientras esté abierta.
+Sin ORS, el optimizador puede utilizar Haversine. Ese resultado es una estimación y no dibuja una ruta real.
 
-## Datos antiguos o refresco fallido
+## La tarea de actualización falla
 
-Un fallo conserva la última base válida. Ejecuta `FuelOpt.exe --refresh-direct --silent` y consulta el código de salida y logs. La disponibilidad del catálogo oficial de MINETUR no está garantizada.
+Consulta la configuración:
 
-## ORS o mapa
+```bat
+FuelOpt.exe --show-settings
+FuelOpt.exe --configure-refresh --interval 24h
+```
 
-Verifica la clave con `--show-settings` sin exponerla. Si ORS falla, se usa una aproximación. Leaflet es local, pero las teselas requieren red y están sujetas al proveedor; un mapa vacío no implica que la base local haya fallado.
+No elimines tareas de nombre parecido manualmente. `manual` y `on_open` no mantienen una tarea periódica.
 
-## Scheduler
+## Los precios parecen antiguos
 
-Reconfigura un valor admitido con `--configure-refresh --interval 4h`. No ejecutes ni elimines tareas de nombre similar manualmente. `manual` y `on_open` no mantienen tarea periódica.
+FuelOpt conserva la última base válida cuando una descarga o validación falla. Revisa la fecha de frescura mostrada y ejecuta un refresco manual. Los precios externos pueden cambiar incluso después de una actualización correcta.
 
-## Base corrupta
+## La base no puede abrirse
 
-FuelOpt valida candidatas y conserva una base anterior cuando corresponde. Antes de intervenir, cierra la aplicación y copia fuera de `%LOCALAPPDATA%\FuelOpt` la base activa, `previous` y logs. La recuperación completa ante corrupción aún requiere validación final; no se garantiza que toda corrupción sea recuperable.
+Reinicia FuelOpt para permitir que el bootstrap valide la base activa y use la copia recuperable cuando corresponda. No copies una SQLite abierta ni elimines archivos de `%LOCALAPPDATA%\FuelOpt` sin conservar antes una copia.
 
-## Reinstalación o desinstalación
+## SmartScreen muestra una advertencia
 
-Reinstalar no debería sobrescribir una base activa válida. Desinstalar conserva los datos por defecto; si quieres eliminarlos, usa la opción explícita o `/REMOVEDATA=1`. Consulta [INSTALLATION.md](INSTALLATION.md).
+Verifica que el archivo procede de [Latest release](https://github.com/miguel-pajuelo/fuel-opt-project/releases/latest) y que su SHA-256 coincide con `SHA256SUMS.txt`. Sigue las indicaciones de [Instalación](INSTALLATION.md#advertencia-de-microsoft-defender-smartscreen). No desactives Microsoft Defender.

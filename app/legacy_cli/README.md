@@ -1,22 +1,14 @@
-# Legacy CLI Package
+# Legacy CLI package
 
-This package contains the former `main.py` implementation split by responsibility.
-`main.py` is now only a compatibility entrypoint that re-exports these modules and
-calls `run_cli()` when executed directly.
+Este paquete conserva la interfaz de línea de comandos anterior para compatibilidad. `main.py --legacy-cli` delega en estos módulos; la aplicación Windows y la API local utilizan la arquitectura principal de `app/`.
 
-## Modules
+## Módulos
 
-- `runtime.py`: constants, data classes, terminal spinner, text/date/JSON/cache helpers and numeric parsing.
-- `ballenoil.py`: Ballenoil HTML fetching and station/detail parsing.
-- `minetur.py`: MINETUR and Geoportal WFS fetching, parsing and Ballenoil-to-MINETUR matching.
-- `scraper.py`: legacy end-to-end scraping pipeline and final TXT cache read/write.
-- `routing.py`: OpenRouteService matrix call used by the legacy optimizer.
-- `optimizer.py`: route-cost ranking, Pareto frontier, epsilon winner and comparison table rendering.
-- `cli.py`: interactive CLI prompts and result printing.
+- `runtime.py`: utilidades de terminal, fechas, JSON y parsing.
+- `minetur.py`: lectura y normalización de datos oficiales.
+- `ballenoil.py` y `scraper.py`: compatibilidad con el pipeline histórico inactivo.
+- `routing.py`: integración ORS usada por la CLI.
+- `optimizer.py`: cálculo y presentación de resultados legacy.
+- `cli.py`: prompts y salida interactiva.
 
-## Migration Status
-
-The split is intentionally compatibility-first. Some modules still import upstream
-legacy namespace with star imports to avoid a risky behavioral rewrite in the same
-step. The next cleanup should replace those transitional imports with explicit
-imports and move reusable pieces into the web-oriented `app` package where possible.
+Este paquete no define el flujo productivo de refresco, el launcher Windows ni el ranking de la interfaz actual.

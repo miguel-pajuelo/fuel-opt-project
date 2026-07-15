@@ -1,36 +1,39 @@
 # Contributing
 
-FuelOpt todavía está en pre-release. Mantén cada cambio limitado, revisable y vinculado a un problema verificable.
+Mantén cada cambio limitado, revisable y vinculado a un problema verificable.
 
-## Entorno y rama
+## Entorno
 
-Usa Python 3.12 (CI: 3.12.10), un entorno virtual y una rama propia. Instala `requirements-web.txt`; añade `requirements-build.txt` solo para empaquetado. Los mensajes de commit deben ser breves, imperativos y describir una sola unidad lógica.
+Usa Python 3.12, un entorno virtual y una rama propia:
 
-## Reglas de seguridad y datos
+```bat
+python -m pip install -r requirements-runtime.lock -r requirements-test.txt
+```
 
-- No confirmes `.env`, claves reales, tokens ni credenciales SMTP.
-- No introduzcas rutas absolutas o nombres de usuario personales.
-- No confirmes bases activas, WAL, SHM, locks, logs, caches, `build/` ni `dist/`.
-- No modifiques accidentalmente la semilla `data/db/gas_stations.sqlite` ni el snapshot `data/cache/minetur_snapshot.json`.
-- Si un cambio intencional modifica semilla o snapshot, explica procedencia, validación, hashes y reproducibilidad.
-- Conserva la copia mediante SQLite y la publicación atómica; no sustituyas estos mecanismos por copias binarias de bases abiertas.
-- No amplíes el alcance retirando fallbacks, migraciones o compatibilidad sin una auditoría específica.
+Añade `requirements-build.txt` únicamente para empaquetado. Los commits deben describir una sola unidad lógica.
+
+## Seguridad y datos
+
+- No confirmes `.env`, claves, tokens, credenciales ni rutas personales.
+- No rastrees bases activas, WAL, SHM, locks, logs, caches, `build/` o `dist/`.
+- No modifiques accidentalmente la semilla o snapshot MINETUR.
+- Si una actualización de datos es intencional, documenta fuente, fecha, hashes y reproducibilidad.
+- Conserva la publicación atómica de SQLite y la separación entre recursos instalados y datos del usuario.
+- No retires fallbacks o compatibilidad sin una revisión específica.
 
 ## Pull requests
 
-Describe objetivo, riesgos, archivos, pruebas y cualquier validación manual pendiente. No declares como probado en Windows real algo que solo se inspeccionó estáticamente o en CI.
-
-Comprobaciones mínimas:
+Describe objetivo, riesgos, archivos y pruebas. Distingue las validaciones automatizadas de las comprobaciones manuales.
 
 ```bat
 python -m pytest
 git diff --check
 ```
 
-Para cambios de runtime, packaging, instalador o publicación ejecuta también:
+Para cambios de runtime, instalador, packaging o publicación ejecuta también:
 
 ```bat
 scripts\release_check.cmd
 ```
 
-Revisa `git status --short`, confirma que los hashes de datos rastreados no cambiaron y que no quedan procesos, locks o artefactos de prueba. Consulta [DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Revisa `git status --short` y confirma que los datos rastreados no cambiaron. Consulta [DEVELOPMENT.md](docs/DEVELOPMENT.md).

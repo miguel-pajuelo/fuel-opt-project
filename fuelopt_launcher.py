@@ -18,13 +18,15 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import uuid
 import webbrowser
 from contextlib import contextmanager
 from dataclasses import replace
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 if __name__ == "__main__":
     # PyInstaller multiprocessing children must be intercepted before project
@@ -51,6 +53,10 @@ DEFAULT_PORT = 8001
 DEFAULT_BROWSER_HOST = "127.0.0.1"
 HEALTH_TIMEOUT_SEC = 35
 CORRUPT_LOCK_GRACE_SEC = 2.0
+MAINTENANCE_FAILURE_EXIT_CODE = 10
+INSTALL_INSTANCE_MARKER = "install-instance-id.txt"
+INSTALL_INSTANCE_FRAGMENT = "fuelopt-install"
+UI_CACHE_REVISION = "install-onboarding-v2"
 
 
 def _looks_like_project_root(path: Path) -> bool:
@@ -260,6 +266,77 @@ def managed_env() -> dict[str, str]:
         # legacy one-file fallback and the onedir launcher.
         env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     return env
+
+
+def _validated_install_instance_id(value: str) -> str | None:
+    text = value.strip()
+    try:
+        parsed = uuid.UUID(text)
+    except (ValueError, AttributeError):
+        return None
+    canonical = str(parsed)
+    return canonical if parsed.version == 4 and text.casefold() == canonical else None
+
+
+def install_instance_id() -> str | None:
+    if not getattr(sys, "frozen", False):
+        return None
+
+    try:
+        marker = Path(sys.executable).resolve().parent / INSTALL_INSTANCE_MARKER
+        try:
+            stored = marker.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            stored = ""
+        except (OSError, UnicodeError):
+            return None
+
+        validated = _validated_install_instance_id(stored)
+        if validated is not None:
+            return validated
+
+        generated = str(uuid.uuid4())
+        temp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=marker.parent,
+                prefix=f".{INSTALL_INSTANCE_MARKER}.",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                temp_path = Path(handle.name)
+                handle.write(f"{generated}\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_path, marker)
+        except OSError:
+            return None
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        return generated
+    except OSError:
+        return None
+
+
+def browser_url_with_install_instance(base_url: str, instance_id: str | None) -> str:
+    parsed = urllib.parse.urlsplit(base_url)
+    query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    query = [(key, value) for key, value in query if key != "fuelopt-ui"]
+    query.append(("fuelopt-ui", UI_CACHE_REVISION))
+    cache_busted_url = urllib.parse.urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, urllib.parse.urlencode(query), "")
+    )
+    validated = _validated_install_instance_id(instance_id or "")
+    if validated is None:
+        return cache_busted_url
+    encoded = urllib.parse.quote(validated, safe="")
+    return f"{cache_busted_url}#{INSTALL_INSTANCE_FRAGMENT}={encoded}"
 
 
 def request_json(method: str, url: str, timeout: int = 10) -> dict[str, Any]:
@@ -562,8 +639,10 @@ def configure_refresh(interval: str, scheduler: TaskScheduler | None = None) -> 
 
 
 def remove_refresh_task(scheduler: TaskScheduler | None = None) -> int:
+    command, arguments = scheduler_command()
+    scheduler_instance = scheduler or TaskScheduler(paths=APP_PATHS)
     try:
-        result = (scheduler or TaskScheduler(paths=APP_PATHS)).remove()
+        result = scheduler_instance.remove(command=command, arguments=arguments)
     except SchedulerError as exc:
         log(f"refresh task removal failed: {exc}")
         return 7
@@ -639,6 +718,14 @@ def shutdown_existing() -> int:
         return 9
     log(f"shutdown existing action={action}")
     return 0
+
+
+def run_maintenance_command(operation: str, command: Callable[..., int], *args: object) -> int:
+    try:
+        return command(*args)
+    except Exception as exc:
+        log(f"maintenance command failed operation={operation} exception={exc.__class__.__name__}")
+        return MAINTENANCE_FAILURE_EXIT_CODE
 
 
 def run_server(host: str, port: int) -> int:
@@ -728,8 +815,10 @@ def run_server(host: str, port: int) -> int:
 
 def run_launcher(args: argparse.Namespace) -> int:
     os.environ["FUELOPT_PROJECT_ROOT"] = str(ROOT)
+    instance_id: str | None = None
     try:
         with launcher_start_lock():
+            instance_id = install_instance_id()
             next_port = args.port
             while True:
                 port, existing_server = select_launcher_port(next_port)
@@ -754,9 +843,10 @@ def run_launcher(args: argparse.Namespace) -> int:
         return 8
 
     if not args.no_browser:
-        url = browser_base_url(args.browser_host, args.port)
+        base_url = browser_base_url(args.browser_host, args.port)
+        url = browser_url_with_install_instance(base_url, instance_id)
         webbrowser.open(url)
-        log(f"browser opened url={url}")
+        log(f"browser opened host={args.browser_host} port={args.port}")
 
     try:
         refresh_interval = load_user_config(APP_PATHS.config_path).refresh_interval
@@ -816,9 +906,9 @@ def main() -> int:
     if args.configure_refresh:
         if not args.interval:
             return 2
-        return configure_refresh(args.interval)
+        return run_maintenance_command("configure-refresh", configure_refresh, args.interval)
     if args.remove_refresh_task:
-        return remove_refresh_task()
+        return run_maintenance_command("remove-refresh-task", remove_refresh_task)
     if args.show_settings:
         return show_settings()
     if args.set_ors_key:
@@ -826,7 +916,7 @@ def main() -> int:
     if args.clear_ors_key:
         return clear_ors_key()
     if args.shutdown_existing:
-        return shutdown_existing()
+        return run_maintenance_command("shutdown-existing", shutdown_existing)
     if args.server_only:
         diagnostic_log("server-only dispatch entered")
         return run_server(args.host, args.port)

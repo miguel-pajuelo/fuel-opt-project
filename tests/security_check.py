@@ -447,6 +447,26 @@ def test_security_headers_present_on_response(monkeypatch) -> None:
         assert resp.headers.get(header) == value, f"missing/incorrect {header}"
 
 
+@pytest.mark.parametrize("path", ["/", "/static/app.js", "/static/styles.css"])
+def test_critical_ui_responses_prevent_stale_browser_cache(path: str) -> None:
+    with TestClient(api_main.app) as client:
+        resp = client.get(path)
+
+    assert resp.status_code == 200
+    for header, value in api_main._UI_NO_STORE_HEADERS.items():
+        assert resp.headers.get(header) == value, f"missing/incorrect {header} for {path}"
+    for header, value in api_main._SECURITY_HEADERS.items():
+        assert resp.headers.get(header) == value, f"missing/incorrect {header} for {path}"
+
+
+def test_api_responses_are_not_forced_to_no_store() -> None:
+    with TestClient(api_main.app) as client:
+        resp = client.get("/health")
+
+    assert resp.status_code == 200
+    assert resp.headers.get("Cache-Control") is None
+
+
 # ---------------------------------------------------------------------------
 # H8 - client IP logging / PII
 # ---------------------------------------------------------------------------

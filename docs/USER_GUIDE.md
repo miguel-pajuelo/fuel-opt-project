@@ -1,45 +1,49 @@
 # Guía de usuario
 
-## Preparar una consulta
+## Empezar
 
-En la primera apertura, una ayuda rápida resume los tres pasos básicos. Al cerrarla, el navegador guarda únicamente `fuelopt:onboarding:v1:dismissed` para no mostrarla automáticamente otra vez; puede reabrirse desde **Ayuda rápida**.
+1. Abre FuelOpt desde el menú Inicio o el acceso directo.
+2. Busca una localidad o haz doble clic en el mapa para indicar la salida.
+3. Si el viaje no termina en el mismo lugar, desactiva **Regreso al origen** e indica el destino.
+4. Selecciona combustible, litros o presupuesto, consumo y marcas.
+5. Elige un objetivo y pulsa **Calcular mejor repostaje**.
 
-1. Selecciona origen y destino.
-2. Indica si el viaje es solo de ida o de ida y vuelta.
-3. Elige el combustible.
-4. Introduce litros o presupuesto, según el modo seleccionado.
-5. Indica el consumo medio del vehículo.
-6. Limita, si quieres, las marcas consideradas.
-7. Selecciona el objetivo de optimización disponible en la interfaz.
-
-FuelOpt compara estaciones candidatas y muestra una recomendación y alternativas. El **ahorro estimado** compara el coste calculado con una referencia; no es dinero garantizado. El **coste del desvío** estima el combustible consumido en la distancia adicional. Peajes, tráfico, tiempo, errores de ubicación y cambios posteriores de precio pueden alterar el resultado.
+La primera apertura muestra una ayuda breve. Puede abrirse de nuevo desde **Ayuda rápida**.
 
 ## Objetivos de optimización
 
-- **Más ahorro** (`economic`) prioriza el resultado económico neto estimado después de considerar el coste del desplazamiento. No equivale simplemente a elegir el menor precio por litro.
-- **Menor desvío** (`minimal_detour`) prioriza la menor distancia adicional durante un trayecto. En una búsqueda local prioriza la menor distancia a la estación; el resultado económico se usa para desempatar.
-- **Equilibrado** (`balanced`) combina por igual la posición económica y la posición por desvío. No suma directamente euros y kilómetros, y su puntuación interna no se muestra al usuario.
+### Más ahorro (`economic`)
 
-FuelOpt ordena primero el universo válido de candidatos y aplica `result_limit` al final. La versión 0.1.0 no calcula autonomía, no filtra estaciones por combustible restante y no contiene el campo `remaining_fuel_liters`; estas posibilidades quedan pospuestas.
+Prioriza el resultado económico neto estimado. Considera el precio y el coste del desplazamiento; no equivale simplemente a elegir el menor precio por litro.
 
-## Rutas y distancias
+### Menor desvío (`minimal_detour`)
 
-Con una clave ORS configurada, FuelOpt intenta geocodificar y obtener rutas por carretera e identifica la fuente como OpenRouteService. Si ORS falta o falla, puede usar Haversine y lo muestra como una estimación: es una distancia geométrica que no conoce carreteras, sentidos, barreras ni tráfico. Una ruta mostrada nunca implica precisión absoluta.
+En un trayecto prioriza la menor distancia adicional. En una búsqueda local prioriza la estación más cercana. La economía se utiliza para desempatar.
 
-## Precios y frescura
+### Equilibrado (`balanced`)
 
-Los precios proceden de fuentes externas y pueden ser antiguos, incompletos o degradados. La interfaz indica la frescura disponible. FuelOpt no garantiza precio, disponibilidad ni actualización en tiempo real; confirma la información antes de desplazarte.
+Combina por igual la posición económica y la posición por desvío. No suma directamente euros y kilómetros y su puntuación interna no se muestra.
 
-El catálogo puede actualizarse al abrir, manualmente o mediante una tarea periódica. Consulta [CONFIGURATION.md](CONFIGURATION.md).
+FuelOpt ordena todo el universo válido y aplica el límite de resultados al final. La mejor opción aparece primero y las alternativas conservan el orden calculado.
 
-## Funcionamiento offline
+## Rutas y estimaciones
 
-La última base válida permite consultas limitadas sin conexión. El mapa puede quedar incompleto porque Leaflet está incluido localmente, pero las teselas se solicitan a un proveedor externo. ORS y los refrescos también requieren red.
+Con una clave OpenRouteService, FuelOpt puede geocodificar direcciones y calcular distancias por carretera. La interfaz identifica ORS como OpenRouteService.
 
-## Privacidad, logs y soporte
+Si ORS no está disponible, el cálculo puede continuar con Haversine, una aproximación geográfica local. La interfaz la presenta como estimación, no como ruta real.
 
-La consulta se procesa en el servidor local. ORS recibe direcciones y coordenadas cuando se utiliza para geocodificar o calcular rutas; OpenStreetMap recibe las peticiones de teselas del mapa. El catálogo oficial de MINETUR es la única fuente productiva de estaciones y precios en 0.1.0 y se consulta durante las actualizaciones, no para enviar búsquedas personales. La semilla incluida conserva fuente, fecha y hashes según [Fuentes de datos y atribución](DATA_SOURCES_AND_ATTRIBUTION.md). FuelOpt no incorpora telemetría propia.
+## Catálogo y precios
 
-**Abrir en Maps** comparte origen, destino y estación con Google Maps solo después de que el usuario pulse el botón. **Mándanos tu idea** abre GitHub Issues sin adjuntar automáticamente datos de la búsqueda; el usuario decide qué publica. FuelOpt no solicita correo ni incluye un formulario de envío.
+Las estaciones y precios proceden del catálogo oficial de MINETUR. FuelOpt trabaja sobre una copia SQLite local y muestra la información de frescura disponible.
 
-Los logs técnicos se guardan bajo `%LOCALAPPDATA%\FuelOpt\logs`. Los logs normales no registran la clave ORS, URLs sensibles, cabeceras de autorización ni texto crudo de excepciones ORS. El modo diagnóstico puede contener más contexto técnico y debe revisarse antes de compartirlo. Para problemas consulta [TROUBLESHOOTING.md](TROUBLESHOOTING.md), [CONFIGURATION.md](CONFIGURATION.md) y [SECURITY.md](../SECURITY.md).
+Los precios pueden cambiar y la disponibilidad no está garantizada. Confirma la información antes de desplazarte.
+
+## Uso sin conexión
+
+La última base válida permite realizar consultas limitadas sin red. No se podrán descargar precios nuevos, teselas del mapa ni rutas ORS. Leaflet se incluye localmente, pero las teselas de OpenStreetMap requieren conexión.
+
+## Privacidad y soporte
+
+Las búsquedas se procesan en el servidor local. ORS recibe los puntos necesarios cuando se usa; OpenStreetMap recibe las peticiones de teselas. Google Maps solo recibe origen, destino y estación cuando el usuario pulsa **Abrir en Maps**.
+
+**Mándanos tu idea** abre GitHub Issues. El usuario decide qué información publica y no debe incluir secretos ni datos sensibles. Consulta [Privacidad](../static/privacy.html) y [Seguridad](../SECURITY.md).

@@ -23,10 +23,13 @@ class RefreshInterval(str, Enum):
     MANUAL = "manual"
 
 
+DEFAULT_REFRESH_INTERVAL = RefreshInterval.TWENTY_FOUR_HOURS.value
+
+
 @dataclass(frozen=True)
 class UserConfig:
     schema_version: int = 1
-    refresh_interval: str = RefreshInterval.FOUR_HOURS.value
+    refresh_interval: str = DEFAULT_REFRESH_INTERVAL
     ors_credential_migrated: bool = False
 
     def validate(self) -> "UserConfig":

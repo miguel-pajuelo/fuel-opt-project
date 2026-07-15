@@ -15,7 +15,14 @@ if str(ROOT) not in sys.path:
 
 from app.legacy_migration import find_legacy_root, migrate_legacy_ors_credential
 from app.paths import resolve_app_paths
-from app.user_config import RefreshInterval, UserConfig, UserConfigError, load_user_config, save_user_config
+from app.user_config import (
+    DEFAULT_REFRESH_INTERVAL,
+    RefreshInterval,
+    UserConfig,
+    UserConfigError,
+    load_user_config,
+    save_user_config,
+)
 from app.windows_credentials import (
     ORS_CREDENTIAL_TARGET,
     CredentialStoreError,
@@ -93,6 +100,16 @@ def test_user_config_roundtrip_is_atomic_and_contains_no_secret() -> None:
         text = path.read_text(encoding="utf-8")
         _assert(SECRET not in text and "ORS_API_KEY" not in text, text)
         _assert(not list(path.parent.glob("*.tmp")), "atomic config temp file was left behind")
+
+
+def test_new_config_defaults_to_24h_and_existing_choice_is_preserved() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "config.json"
+        _assert(DEFAULT_REFRESH_INTERVAL == RefreshInterval.TWENTY_FOUR_HOURS.value, DEFAULT_REFRESH_INTERVAL)
+        _assert(load_user_config(path).refresh_interval == "24h", "new config did not use the 24h default")
+        existing = UserConfig(refresh_interval=RefreshInterval.FOUR_HOURS.value)
+        save_user_config(path, existing)
+        _assert(load_user_config(path).refresh_interval == "4h", "existing refresh choice was overwritten")
 
 
 def test_invalid_config_is_rejected_without_rewrite() -> None:
@@ -245,6 +262,7 @@ def run() -> None:
     test_app_paths_are_separate_and_side_effect_free()
     test_explicit_roots_and_frozen_install_path()
     test_user_config_roundtrip_is_atomic_and_contains_no_secret()
+    test_new_config_defaults_to_24h_and_existing_choice_is_preserved()
     test_invalid_config_is_rejected_without_rewrite()
     test_credential_precedence_and_environment_fallback()
     test_legacy_env_migration_is_verified_and_does_not_rewrite_env()

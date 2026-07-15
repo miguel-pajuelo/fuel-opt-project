@@ -9,14 +9,14 @@ on:
       version:
         description: "Dry-run version (MAJOR.MINOR.PATCH)"
         required: true
-        default: "0.1.0"
+        default: "0.1.1"
         type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: fuelopt-release-${{ github.ref }}
+  group: fuelopt-release-${{ github.repository }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -53,7 +53,7 @@ jobs:
             }
             $version = $Matches.version
           } else {
-            $version = if ($env:REQUESTED_VERSION) { $env:REQUESTED_VERSION.Trim() } else { '0.1.0' }
+            $version = if ($env:REQUESTED_VERSION) { $env:REQUESTED_VERSION.Trim() } else { '0.1.1' }
             if ($version -notmatch '^\d+\.\d+\.\d+$') {
               throw "Dry-run versions must use MAJOR.MINOR.PATCH; received: $version"
             }
@@ -184,26 +184,167 @@ jobs:
       RELEASE_TAG: ${{ github.ref_name }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Check out release source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
       - name: Download audited build artifacts
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
           name: ${{ needs.build.outputs.artifact-name }}
           path: dist/release
 
-      - name: Create or update GitHub Release
+      - name: Create, verify and publish GitHub Release
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = $env:GITHUB_REPOSITORY
+          $tag = $env:RELEASE_TAG
+          if ([string]::IsNullOrWhiteSpace($repo) -or [string]::IsNullOrWhiteSpace($tag)) {
+            throw 'GITHUB_REPOSITORY and RELEASE_TAG are required.'
+          }
           $files = @(
             "dist\release\FuelOpt-Setup-$env:FUELOPT_VERSION.exe",
             "dist\release\FuelOpt-$env:FUELOPT_VERSION-windows-x64.zip",
             'dist\release\SHA256SUMS.txt'
           )
-          gh release view $env:RELEASE_TAG *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $env:RELEASE_TAG @files --clobber
-          } else {
-            gh release create $env:RELEASE_TAG @files `
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Audited release asset is missing: $file"
+            }
+          }
+
+          $expectedTitle = "FuelOpt $env:FUELOPT_VERSION"
+          $expectedBody = "FuelOpt $env:FUELOPT_VERSION`n`nArtefactos generados para la etiqueta $tag. Verifica el instalador y el ZIP portable con SHA256SUMS.txt antes de utilizarlos.`n"
+          $releaseNotes = Join-Path $env:RUNNER_TEMP 'fuelopt-release-notes.txt'
+          [System.IO.File]::WriteAllText(
+            $releaseNotes,
+            $expectedBody,
+            [System.Text.UTF8Encoding]::new($false)
+          )
+
+          function Assert-TagCommit {
+            $resolved = gh api "repos/$repo/commits/$tag" --jq '.sha'
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not resolve release tag $tag in $repo."
+            }
+            $resolved = $resolved.Trim()
+            if ($resolved -ne $env:GITHUB_SHA) {
+              throw "Release tag $tag resolves to $resolved, expected $env:GITHUB_SHA."
+            }
+            return $resolved
+          }
+
+          function Find-Release {
+            $pagesJson = Join-Path $env:RUNNER_TEMP 'fuelopt-release-pages.json'
+            $lookupJson = Join-Path $env:RUNNER_TEMP 'fuelopt-release-lookup.json'
+            gh api --paginate --slurp "repos/$repo/releases?per_page=100" |
+              Set-Content -LiteralPath $pagesJson -Encoding utf8
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not enumerate GitHub Releases for $repo."
+            }
+            python scripts\verify_release_assets.py find `
+              --releases-json $pagesJson `
+              --expected-tag $tag `
+              --output $lookupJson | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "GitHub Release lookup for $tag was ambiguous or malformed."
+            }
+            return (Get-Content -LiteralPath $lookupJson -Raw -Encoding utf8 | ConvertFrom-Json)
+          }
+
+          function Get-ReleaseSnapshot {
+            param(
+              [long]$ReleaseId,
+              [bool]$ExpectedDraft,
+              [string]$OutputPath
+            )
+            $releaseJson = Join-Path $env:RUNNER_TEMP "fuelopt-release-$ReleaseId.json"
+            $assetsJson = Join-Path $env:RUNNER_TEMP "fuelopt-release-$ReleaseId-assets.json"
+            gh api "repos/$repo/releases/$ReleaseId" |
+              Set-Content -LiteralPath $releaseJson -Encoding utf8
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not inspect GitHub Release ID $ReleaseId."
+            }
+            gh api --paginate --slurp "repos/$repo/releases/$ReleaseId/assets?per_page=100" |
+              Set-Content -LiteralPath $assetsJson -Encoding utf8
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not inspect assets for GitHub Release ID $ReleaseId."
+            }
+            $resolvedTagCommit = Assert-TagCommit
+            $expectedDraftText = $ExpectedDraft.ToString().ToLowerInvariant()
+            python scripts\verify_release_assets.py snapshot `
+              --release-json $releaseJson `
+              --assets-json $assetsJson `
+              --release-dir dist\release `
+              --version $env:FUELOPT_VERSION `
+              --expected-tag $tag `
+              --expected-commit $env:GITHUB_SHA `
+              --resolved-tag-commit $resolvedTagCommit `
+              --expected-title $expectedTitle `
+              --expected-body-file $releaseNotes `
+              --expected-draft $expectedDraftText `
+              --expected-release-id $ReleaseId `
+              --output $OutputPath | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "GitHub Release ID $ReleaseId differs from the audited metadata or payload."
+            }
+          }
+
+          function Publish-VerifiedDraft {
+            param(
+              [long]$ReleaseId,
+              [string]$ValidatedSnapshot
+            )
+            $prePublishSnapshot = Join-Path $env:RUNNER_TEMP "fuelopt-release-$ReleaseId-prepublish.json"
+            $publishedSnapshot = Join-Path $env:RUNNER_TEMP "fuelopt-release-$ReleaseId-published.json"
+            Get-ReleaseSnapshot -ReleaseId $ReleaseId -ExpectedDraft $true -OutputPath $prePublishSnapshot
+            python scripts\verify_release_assets.py compare `
+              --first $ValidatedSnapshot `
+              --second $prePublishSnapshot | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "GitHub Release ID $ReleaseId changed before publication."
+            }
+            # GitHub has no atomic compare-and-publish operation. This second snapshot
+            # minimizes, but cannot eliminate, races with external manual edits.
+            gh release edit $tag --draft=false --repo "$env:GITHUB_REPOSITORY"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not publish the verified draft release $tag."
+            }
+            Get-ReleaseSnapshot -ReleaseId $ReleaseId -ExpectedDraft $false -OutputPath $publishedSnapshot
+            python scripts\verify_release_assets.py transition `
+              --draft $prePublishSnapshot `
+              --published $publishedSnapshot | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              throw "Published GitHub Release $tag changed unexpectedly."
+            }
+          }
+
+          Assert-TagCommit | Out-Null
+          $lookup = Find-Release
+          if ($lookup.status -eq 'absent') {
+            gh release create $tag @files `
+              --draft `
               --verify-tag `
-              --title "FuelOpt $env:FUELOPT_VERSION" `
-              --generate-notes
+              --target "$env:GITHUB_SHA" `
+              --title $expectedTitle `
+              --notes-file $releaseNotes `
+              --repo "$env:GITHUB_REPOSITORY"
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not create draft GitHub Release $tag."
+            }
+            $lookup = Find-Release
+            if ($lookup.status -ne 'found' -or -not [bool]$lookup.draft) {
+              throw "GitHub Release $tag was not created as one unambiguous draft."
+            }
+          }
+
+          $initialSnapshot = Join-Path $env:RUNNER_TEMP "fuelopt-release-$($lookup.id)-initial.json"
+          Get-ReleaseSnapshot `
+            -ReleaseId ([long]$lookup.id) `
+            -ExpectedDraft ([bool]$lookup.draft) `
+            -OutputPath $initialSnapshot
+          if ([bool]$lookup.draft) {
+            Publish-VerifiedDraft -ReleaseId ([long]$lookup.id) -ValidatedSnapshot $initialSnapshot
+          } else {
+            "GitHub Release $tag already exists with identical metadata and assets; no changes were made."
           }

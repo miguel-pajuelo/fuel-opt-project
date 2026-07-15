@@ -1,56 +1,31 @@
 # Arquitectura
 
-FuelOpt es una aplicación local Windows: un ejecutable inicia Uvicorn/FastAPI en loopback y abre un frontend HTML/CSS/JavaScript. Leaflet se distribuye localmente; teselas y servicios de rutas siguen siendo externos.
+## Aplicación local
 
-```text
-Usuario
-  -> FuelOpt.exe
-     -> launcher y lock de instancia
-        -> recursos instalados (solo lectura)
-        -> bootstrap de datos del usuario
-        -> Uvicorn / FastAPI en 127.0.0.1:8001-8010
-           -> frontend local
-           -> base SQLite activa del usuario
-           -> routing ORS o aproximación Haversine
-           -> refresh_service
-              -> fuentes externas
-              -> base candidata
-              -> validación
-              -> sustitución atómica
-```
+FuelOpt combina un launcher Windows, una API FastAPI local y un frontend estático. El launcher selecciona un puerto entre 8001 y 8010, inicia Uvicorn en `127.0.0.1`, comprueba `/health` y abre el navegador. La exposición a la LAN requiere una opción explícita.
 
-## Recursos y datos
+## Datos y bootstrap
 
-`%LOCALAPPDATA%\Programs\FuelOpt` contiene ejecutable, `_internal`, frontend, semilla MINETUR, snapshot y metadata de procedencia. La lógica no debe escribir allí. `%LOCALAPPDATA%\FuelOpt` contiene `config.json`, `data/db`, `data/cache` y `logs`.
+Los recursos instalados son inmutables. La configuración, base activa, cache y logs viven en `%LOCALAPPDATA%\FuelOpt`.
 
-En primer arranque, el bootstrap conserva una base activa válida; si falta, copia la semilla MINETUR con backup SQLite y fuente inmutable o reconstruye desde su snapshot. El flujo productivo de 0.1.0 usa únicamente MINETUR y su snapshot como fuentes. Todas las estaciones se procesan con criterios neutrales respecto a su marca a partir del catálogo oficial. Un refresco fallido conserva la activa y, cuando corresponde, una copia `previous` recuperable.
+El primer arranque conserva una base activa válida; si falta, copia la semilla MINETUR o la reconstruye desde su snapshot. Los refrescos escriben y validan una SQLite candidata antes de sustituir atómicamente la base activa. Un fallo conserva la última base válida.
 
-## Optimización y presentación
+MINETUR es la fuente productiva del catálogo. Las estaciones se procesan de forma neutral respecto a su marca.
 
-El contrato público admite `economic`, `minimal_detour` y `balanced`. La pipeline construye el universo válido, calcula sus métricas, aplica una ordenación determinista y limita la respuesta únicamente después del ranking.
+## Optimización
 
-`economic` conserva la clave económica neta; `minimal_detour` usa el desvío adicional en trayectos o la distancia a la estación en búsquedas locales, con la economía como desempate. `balanced` combina al 50 % los rangos normalizados económico y de desvío, tratando empates semánticos con competition ranking. La puntuación y los rangos son internos: la API solo conserva `why_selected` como explicación pública.
+El API valida la entrada y obtiene candidatos desde SQLite. El ranking admite `economic`, `minimal_detour` y `balanced`, ordena todo el universo válido de forma determinista y aplica `result_limit` al final.
 
-OpenRouteService y la aproximación Haversine no cambian el contrato de modos. El frontend identifica cuál se utilizó y presenta Haversine como estimación. La versión 0.1.0 no implementa autonomía ni `remaining_fuel_liters`.
+OpenRouteService aporta geocodificación y distancias por carretera cuando existe una clave. Haversine ofrece una aproximación local cuando ORS no está disponible. La interfaz identifica qué fuente de ruta se utilizó.
 
-## Refresco y Scheduler
+## Procesos y actualización
 
-`refresh_service` ejecuta el pipeline sin HTTP. Windows Task Scheduler invoca `FuelOpt.exe --refresh-direct --silent` para el usuario actual. `config.json` es la fuente de verdad de la política y los locks evitan refrescos simultáneos.
+En modo frozen, los procesos auxiliares utilizan el mismo ejecutable. El launcher mantiene un runtime record, comprueba la identidad del servidor y usa cierre cooperativo para permitir actualizaciones sin terminar procesos ajenos.
 
-## Launcher e instancia
+La tarea `FuelOpt Catalog Refresh` ejecuta el refresco directo. La frecuencia se guarda en `config.json` y en los datos previos del instalador para conservarla durante actualizaciones.
 
-El entry point ejecuta `multiprocessing.freeze_support()` temprano. En frozen, procesos independientes usan `sys.executable`. Uvicorn emplea una instancia ASGI, un worker, `asyncio`, `h11`, lifespan activo y sin reload. El launcher verifica `/health` e identidad `FuelOpt`, usa 8001–8010 y mantiene un runtime record. El cierre cooperativo Win32 permite actualizar `_internal` sin terminar procesos ajenos.
+## Build y publicación
 
-## Identidad visual
+PyInstaller genera un bundle onedir y Inno Setup crea el instalador por usuario. La versión común alimenta VERSIONINFO, instalador y nombres de artifacts.
 
-`assets/source/fuelopt-icon-approved.png` es una entrada inmutable validada por SHA-256. A partir de ella se generan PNG sRGB/RGBA, ICO 16–256 y derivados web. No existe SVG maestro ni se afirma vectorización. `FuelOpt.spec` consume el ICO para el ejecutable e Inno Setup lo reutiliza para instalador y accesos. La trazabilidad técnica está validada; la procedencia jurídica permanece en curso.
-
-## Packaging, seguridad y servicios
-
-PyInstaller produce `onedir`; Inno Setup instala por usuario con AppId estable y datos externos. La versión derivada por el workflow o los scripts alimenta tanto el `VERSIONINFO` de `FuelOpt.exe` como los metadatos del instalador y los nombres de artefactos. El bundle incorpora los avisos rastreados en `_internal/licenses/`, sin documentación interna de auditoría.
-
-GitHub Actions fija Python, ejecuta release checks y genera instalador, ZIP y checksums. El build permite dry-runs sin licencia para obtener evidencia técnica, pero la ruta de tag falla antes de compilar y el job con `contents: write` exige una aprobación positiva del guard de `LICENSE`.
-
-La clave ORS vive preferentemente en Credential Manager y los logs aplican redacción. Las fronteras ORS convierten errores externos en mensajes públicos estables y registran solo operación, clase general y estado remoto seguro; no propagan URL, query, cabeceras ni texto arbitrario del proveedor. `tests/security_check.py` se ejecuta obligatoriamente dentro del release gate.
-
-El endpoint administrativo legacy sigue protegido por `FUELOPT_ADMIN_TOKEN`. Servicios externos: ORS, fuentes de precios y teselas OpenStreetMap; Google Maps y GitHub se abren solo por una acción explícita del usuario. No existe hosting público, formulario de correo ni analítica propia vigente.
+GitHub Actions fija dependencias, ejecuta release checks y genera instalador, ZIP y checksums. Un dry-run conserva los artifacts de Actions y no publica. Un tag válido crea primero una GitHub Release draft, verifica tag, commit, nombres, tamaños y SHA-256, y solo entonces la publica.

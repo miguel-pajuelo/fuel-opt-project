@@ -18,4 +18,4 @@ Los hashes, la fecha de obtención, la versión del esquema y los archivos concr
 
 El primer arranque copia la semilla instalada al perfil del usuario sin esperar una descarga. Después, el refresco puede consultar MINETUR según la configuración vigente, preparar y validar una base candidata y sustituir la base activa de forma atómica. Si la consulta o validación falla, FuelOpt conserva la última base válida.
 
-MINETUR es la única fuente productiva del catálogo en FuelOpt 0.1.0. La semilla y los refrescos utilizan ese catálogo oficial, y FuelOpt procesa las estaciones con criterios neutrales respecto a su marca.
+MINETUR es la única fuente productiva del catálogo de FuelOpt. La semilla y los refrescos utilizan ese catálogo oficial, y FuelOpt procesa las estaciones con criterios neutrales respecto a su marca.
