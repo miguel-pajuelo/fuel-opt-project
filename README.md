@@ -2,8 +2,6 @@
 
 FuelOpt es una aplicación local que compara estaciones de servicio y estima el coste económico de repostar teniendo en cuenta el precio, la cantidad de combustible y el desvío. Está orientada a España y presenta los resultados en una interfaz web servida únicamente desde el equipo del usuario.
 
-> **Estado: pre-release.** La plataforma objetivo es Windows 10/11 x64. El bundle y el instalador se compilan y auditan en GitHub Actions `windows-latest`, pero la instalación limpia en una máquina virtual sin Python sigue pendiente. Las versiones instalables se publicarán en GitHub Releases cuando la primera versión sea aprobada.
-
 ## Funciones principales
 
 - Optimización por coste efectivo, ahorro estimado o aprovechamiento del presupuesto.
