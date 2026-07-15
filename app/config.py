@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.paths import APP_PATHS
-from app.user_config import UserConfig, UserConfigError, load_user_config
+from app.user_config import DEFAULT_REFRESH_INTERVAL, UserConfig, UserConfigError, load_user_config
 from app.windows_credentials import resolve_ors_api_key
 
 # PROJECT_ROOT remains the immutable code/resource root during Patch 2. Active
@@ -68,7 +68,7 @@ class Settings:
     # Log the raw client IP in access logs. Off by default to avoid storing PII;
     # when off, a coarsely anonymized IP is logged instead.
     log_client_ip: bool = False
-    refresh_interval: str = "4h"
+    refresh_interval: str = DEFAULT_REFRESH_INTERVAL
 
 
 def load_settings() -> Settings:

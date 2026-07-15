@@ -3,10 +3,16 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from app.user_config import DEFAULT_REFRESH_INTERVAL
+
+
 SCRIPT = ROOT / "installer" / "FuelOpt.iss"
 BUILD_SCRIPT = ROOT / "scripts" / "build_installer.cmd"
 APP_ID = "{0EA78328-E3EB-48EF-A92C-B87491202B14}"
@@ -56,12 +62,17 @@ def run(*, require_bundle: bool = False) -> None:
 
     _assert("{param:refresh|__absent__}" in lowered, "missing /REFRESH must be distinguishable")
     _assert("rejected invalid /refresh parameter" in lowered and "result := false" in lowered, "invalid /REFRESH must abort visibly")
-    _assert("getpreviousdata('refreshinterval', '4h')" in lowered, "updates must retain the chosen interval")
+    _assert(
+        f"getpreviousdata('refreshinterval', '{DEFAULT_REFRESH_INTERVAL}')" in lowered,
+        "new installs must use the shared refresh default",
+    )
     _assert("registerpreviousdata" in lowered, "refresh selection is not persisted")
+    _assert("setpreviousdata(previousdatakey, 'refreshinterval'" in lowered, "updates must persist the chosen interval")
     _assert("selectedvalueindex := refreshindexfrominterval" in lowered, "refresh selection must drive the page")
     for interval in ("1h", "2h", "4h", "8h", "12h", "24h", "on_open", "manual"):
         _assert(re.search(rf"result\s*:=\s*'{re.escape(interval)}'", lowered), f"missing interval: {interval}")
-    _assert("refresh4h=every 4 hours (recommended)" in lowered, "English recommended default missing")
+    _assert("refresh24h=every 24 hours (recommended)" in lowered, "English recommended default missing")
+    _assert("refresh4h=every 4 hours (recommended)" not in lowered, "4h is still marked as the default")
     _assert("spanish.refresh4h=" in lowered and "english.refresh4h=" in lowered, "bilingual refresh UI missing")
     _assert("spanish.removeuserdata=" in lowered and "english.removeuserdata=" in lowered, "bilingual uninstall UI missing")
 

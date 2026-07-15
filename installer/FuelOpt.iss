@@ -1,6 +1,6 @@
 #define AppName "FuelOpt"
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.1.1"
 #endif
 #define AppPublisher "FuelOpt"
 #define AppExeName "FuelOpt.exe"
@@ -53,14 +53,14 @@ spanish.Refresh1h=Cada 1 hora
 english.Refresh1h=Every 1 hour
 spanish.Refresh2h=Cada 2 horas
 english.Refresh2h=Every 2 hours
-spanish.Refresh4h=Cada 4 horas (recomendado)
-english.Refresh4h=Every 4 hours (recommended)
+spanish.Refresh4h=Cada 4 horas
+english.Refresh4h=Every 4 hours
 spanish.Refresh8h=Cada 8 horas
 english.Refresh8h=Every 8 hours
 spanish.Refresh12h=Cada 12 horas
 english.Refresh12h=Every 12 hours
-spanish.Refresh24h=Cada 24 horas
-english.Refresh24h=Every 24 hours
+spanish.Refresh24h=Cada 24 horas (recomendado)
+english.Refresh24h=Every 24 hours (recommended)
 spanish.RefreshOnOpen=Al abrir FuelOpt
 english.RefreshOnOpen=When FuelOpt opens
 spanish.RefreshManual=Solo manual
@@ -122,7 +122,7 @@ begin
     6: Result := 'on_open';
     7: Result := 'manual';
   else
-    Result := '4h';
+    Result := '24h';
   end;
 end;
 
@@ -137,7 +137,7 @@ begin
   else if Value = '24h' then Result := 5
   else if Value = 'on_open' then Result := 6
   else if Value = 'manual' then Result := 7
-  else Result := 2;
+  else Result := 5;
 end;
 
 function InitializeSetup: Boolean;
@@ -177,9 +177,9 @@ begin
   RefreshPage.Add(ExpandConstant('{cm:RefreshManual}'));
 
   if RequestedRefresh = '__absent__' then
-    RequestedRefresh := GetPreviousData('RefreshInterval', '4h');
+    RequestedRefresh := GetPreviousData('RefreshInterval', '24h');
   if not IsAllowedRefresh(RequestedRefresh) then
-    RequestedRefresh := '4h';
+    RequestedRefresh := '24h';
   RefreshPage.SelectedValueIndex := RefreshIndexFromInterval(RequestedRefresh);
 end;
 
