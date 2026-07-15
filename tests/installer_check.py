@@ -5,12 +5,15 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.user_config import DEFAULT_REFRESH_INTERVAL
+from app.windows_shutdown import ShutdownError
+import fuelopt_launcher as launcher
 
 
 SCRIPT = ROOT / "installer" / "FuelOpt.iss"
@@ -28,6 +31,20 @@ def app_id(text: str) -> str:
     if not match:
         raise AssertionError("fixed AppId is missing")
     return match.group(1).upper()
+
+
+def _assert_uninstall_shutdown_exit_contract() -> None:
+    expected = Path(r"C:\Users\test\AppData\Local\Programs\FuelOpt\FuelOpt.exe")
+    with (
+        patch.object(launcher, "current_process_path", return_value=expected),
+        patch.object(launcher, "log", lambda _message: None),
+    ):
+        for action in ("absent", "stale", "stopped", "foreign"):
+            with patch.object(launcher, "request_existing_shutdown", return_value=action):
+                _assert(launcher.shutdown_existing() == 0, f"uninstall must accept shutdown action: {action}")
+
+        with patch.object(launcher, "request_existing_shutdown", side_effect=ShutdownError("safe failure")):
+            _assert(launcher.shutdown_existing() != 0, "uninstall must block a real shutdown error")
 
 
 def run(*, require_bundle: bool = False) -> None:
@@ -90,6 +107,7 @@ def run(*, require_bundle: bool = False) -> None:
     _assert("installer\\fuelopt.iss" in build.lower(), "installer build does not compile the expected script")
     if require_bundle:
         _assert((ROOT / "dist" / "FuelOpt" / "FuelOpt.exe").is_file(), "audited onedir bundle is missing")
+    _assert_uninstall_shutdown_exit_contract()
     print("OK: Inno Setup installer safety checks passed")
 
 

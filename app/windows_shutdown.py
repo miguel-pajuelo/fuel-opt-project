@@ -248,10 +248,13 @@ def request_existing_shutdown(paths: AppPaths, expected_executable: Path, timeou
     try:
         if event_name != shutdown_event_name(paths):
             raise ShutdownError("runtime shutdown event does not belong to this FuelOpt data root")
-        if not recorded_executable or not same_executable(recorded_executable, expected_executable):
-            raise ShutdownError("runtime record does not belong to the installed FuelOpt executable")
-        if not same_executable(_process_path(process), expected_executable):
-            raise ShutdownError("runtime PID does not belong to the installed FuelOpt executable")
+        if not recorded_executable:
+            raise ShutdownError("runtime record has no executable identity")
+        running_executable = _process_path(process)
+        if not same_executable(recorded_executable, running_executable):
+            raise ShutdownError("runtime executable identity does not match its PID")
+        if not same_executable(running_executable, expected_executable):
+            return "foreign"
         api.OpenEventW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
         api.OpenEventW.restype = wintypes.HANDLE
         event_handle = api.OpenEventW(EVENT_MODIFY_STATE, False, event_name)

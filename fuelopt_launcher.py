@@ -24,7 +24,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 if __name__ == "__main__":
     # PyInstaller multiprocessing children must be intercepted before project
@@ -51,6 +51,7 @@ DEFAULT_PORT = 8001
 DEFAULT_BROWSER_HOST = "127.0.0.1"
 HEALTH_TIMEOUT_SEC = 35
 CORRUPT_LOCK_GRACE_SEC = 2.0
+MAINTENANCE_FAILURE_EXIT_CODE = 10
 
 
 def _looks_like_project_root(path: Path) -> bool:
@@ -562,8 +563,10 @@ def configure_refresh(interval: str, scheduler: TaskScheduler | None = None) -> 
 
 
 def remove_refresh_task(scheduler: TaskScheduler | None = None) -> int:
+    command, arguments = scheduler_command()
+    scheduler_instance = scheduler or TaskScheduler(paths=APP_PATHS)
     try:
-        result = (scheduler or TaskScheduler(paths=APP_PATHS)).remove()
+        result = scheduler_instance.remove(command=command, arguments=arguments)
     except SchedulerError as exc:
         log(f"refresh task removal failed: {exc}")
         return 7
@@ -639,6 +642,14 @@ def shutdown_existing() -> int:
         return 9
     log(f"shutdown existing action={action}")
     return 0
+
+
+def run_maintenance_command(operation: str, command: Callable[..., int], *args: object) -> int:
+    try:
+        return command(*args)
+    except Exception as exc:
+        log(f"maintenance command failed operation={operation} exception={exc.__class__.__name__}")
+        return MAINTENANCE_FAILURE_EXIT_CODE
 
 
 def run_server(host: str, port: int) -> int:
@@ -816,9 +827,9 @@ def main() -> int:
     if args.configure_refresh:
         if not args.interval:
             return 2
-        return configure_refresh(args.interval)
+        return run_maintenance_command("configure-refresh", configure_refresh, args.interval)
     if args.remove_refresh_task:
-        return remove_refresh_task()
+        return run_maintenance_command("remove-refresh-task", remove_refresh_task)
     if args.show_settings:
         return show_settings()
     if args.set_ors_key:
@@ -826,7 +837,7 @@ def main() -> int:
     if args.clear_ors_key:
         return clear_ors_key()
     if args.shutdown_existing:
-        return shutdown_existing()
+        return run_maintenance_command("shutdown-existing", shutdown_existing)
     if args.server_only:
         diagnostic_log("server-only dispatch entered")
         return run_server(args.host, args.port)

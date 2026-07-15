@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ET
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -27,12 +27,12 @@ from app.catalog.refresh_service import (
     run_catalog_refresh,
 )
 from app.paths import resolve_app_paths
-from app.user_config import RefreshInterval
-from app.user_config import load_user_config
+from app.user_config import RefreshInterval, UserConfig, load_user_config, save_user_config
 from app.windows_scheduler import (
     INTERVAL_DURATIONS,
     TASK_NAME,
     SchedulerError,
+    SchedulerResult,
     TaskScheduler,
     _current_user_sid,
     render_task_xml,
@@ -158,10 +158,12 @@ class FakeTaskRunner:
         existing_xml: str | None = None,
         fail_first_create: bool = False,
         corrupt_first_create: bool = False,
+        fail_delete: bool = False,
     ) -> None:
         self.existing_xml = existing_xml
         self.fail_first_create = fail_first_create
         self.corrupt_first_create = corrupt_first_create
+        self.fail_delete = fail_delete
         self.calls: list[list[str]] = []
         self.created_xml: list[str] = []
 
@@ -170,6 +172,8 @@ class FakeTaskRunner:
         if "/Query" in args:
             return subprocess.CompletedProcess(args, 0, self.existing_xml or "", "") if self.existing_xml else subprocess.CompletedProcess(args, 1, "", "not found")
         if "/Delete" in args:
+            if self.fail_delete:
+                return subprocess.CompletedProcess(args, 1, "", "delete failed")
             self.existing_xml = None
             return subprocess.CompletedProcess(args, 0, "deleted", "")
         if "/Create" in args:
@@ -346,6 +350,148 @@ def test_configure_refresh_persists_every_allowed_value() -> None:
             launcher.APP_PATHS = original_paths
             launcher.REPORT_DIR = original_report_dir
             launcher.LOG_PATH = original_log_path
+
+
+def test_remove_refresh_task_identity_and_safety_regression() -> None:
+    class RecordingScheduler:
+        def __init__(self, action: str = "removed") -> None:
+            self.action = action
+            self.calls: list[tuple[Path, str]] = []
+
+        def remove(self, *, command: Path, arguments: str) -> SchedulerResult:
+            self.calls.append((command, arguments))
+            return SchedulerResult(self.action)
+
+    class FailingScheduler:
+        def remove(self, *, command: Path, arguments: str) -> SchedulerResult:
+            raise SchedulerError("simulated scheduler failure")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        paths = _test_paths(Path(tmp))
+        expected_command = paths.install_root / "FuelOpt.exe"
+        expected_arguments = "--refresh-direct --silent"
+        original_paths = launcher.APP_PATHS
+        original_scheduler_command = launcher.scheduler_command
+        original_report_dir = launcher.REPORT_DIR
+        original_log_path = launcher.LOG_PATH
+        launcher.APP_PATHS = paths
+        launcher.REPORT_DIR = paths.logs_dir
+        launcher.LOG_PATH = paths.logs_dir / "launcher.log"
+        launcher.scheduler_command = lambda: (expected_command, expected_arguments)
+        launcher.LOGGER.handlers.clear()
+        try:
+            for action in ("removed", "absent"):
+                save_user_config(paths.config_path, UserConfig(refresh_interval="4h"))
+                scheduler = RecordingScheduler(action)
+                _assert(launcher.remove_refresh_task(scheduler=scheduler) == 0, action)
+                _assert(scheduler.calls == [(expected_command, expected_arguments)], scheduler.calls)
+                _assert(load_user_config(paths.config_path).refresh_interval == "manual", action)
+
+            save_user_config(paths.config_path, UserConfig(refresh_interval="4h"))
+            _assert(launcher.remove_refresh_task(scheduler=FailingScheduler()) == 7, "SchedulerError was not controlled")
+            _assert(load_user_config(paths.config_path).refresh_interval == "4h", "failed removal changed configuration")
+        finally:
+            launcher.LOGGER.handlers.clear()
+            launcher.APP_PATHS = original_paths
+            launcher.REPORT_DIR = original_report_dir
+            launcher.LOG_PATH = original_log_path
+            launcher.scheduler_command = original_scheduler_command
+
+    source = (ROOT / "fuelopt_launcher.py").read_text(encoding="utf-8")
+    observed = " ".join(("TaskScheduler.remove()", "missing", "2", "required", "keyword-only", "arguments"))
+    zero_argument_call = "".join(("TaskScheduler(paths=APP_PATHS)).", "remove", "()"))
+    _assert("scheduler_instance.remove(command=command, arguments=arguments)" in source, "task identity is not explicit")
+    _assert(zero_argument_call not in source, "zero-argument removal regression returned")
+    _assert(observed not in source, "observed PyInstaller traceback leaked into source")
+
+
+def test_scheduler_removes_only_managed_or_legacy_tasks() -> None:
+    legacy_xml = """<?xml version="1.0"?>
+<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task"><Actions><Exec>
+<Command>cmd.exe</Command><Arguments>/d /c &quot;C:\\FuelOpt old\\scripts\\run_refresh_catalog.cmd&quot;</Arguments>
+</Exec></Actions></Task>"""
+    unrelated_xml = legacy_xml.replace("run_refresh_catalog.cmd", "run_unrelated_catalog.cmd")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        paths = _test_paths(Path(tmp))
+        command = paths.install_root / "FuelOpt.exe"
+        arguments = "--refresh-direct --silent"
+        managed_xml = render_task_xml(
+            interval="4h",
+            user_sid="S-1-5-21-1000",
+            command=command,
+            arguments=arguments,
+            working_directory=paths.install_root,
+        )
+        for xml in (managed_xml, legacy_xml):
+            runner = FakeTaskRunner(existing_xml=xml)
+            result = TaskScheduler(paths=paths, runner=runner).remove(command=command, arguments=arguments)
+            _assert(result.action == "removed", result)
+            _assert(sum("/Delete" in call for call in runner.calls) == 1, runner.calls)
+
+        absent = FakeTaskRunner()
+        result = TaskScheduler(paths=paths, runner=absent).remove(command=command, arguments=arguments)
+        _assert(result.action == "absent", result)
+        _assert(not any("/Delete" in call for call in absent.calls), absent.calls)
+
+        unrelated = FakeTaskRunner(existing_xml=unrelated_xml)
+        try:
+            TaskScheduler(paths=paths, runner=unrelated).remove(command=command, arguments=arguments)
+        except SchedulerError as exc:
+            _assert("unrecognized" in str(exc), exc)
+        else:
+            raise AssertionError("unrecognized task was removed")
+        _assert(not any("/Delete" in call for call in unrelated.calls), unrelated.calls)
+
+        failing = FakeTaskRunner(existing_xml=managed_xml, fail_delete=True)
+        try:
+            TaskScheduler(paths=paths, runner=failing).remove(command=command, arguments=arguments)
+        except SchedulerError as exc:
+            _assert("delete failed" in str(exc), exc)
+        else:
+            raise AssertionError("scheduler deletion failure was accepted")
+
+
+def test_maintenance_cli_contains_unexpected_exceptions_without_traceback() -> None:
+    sentinel = "sensitive-path-or-secret"
+    cases = (
+        ("shutdown_existing", ["fuelopt_launcher.py", "--shutdown-existing"], "shutdown-existing"),
+        ("remove_refresh_task", ["fuelopt_launcher.py", "--remove-refresh-task"], "remove-refresh-task"),
+        (
+            "configure_refresh",
+            ["fuelopt_launcher.py", "--configure-refresh", "--interval", "4h"],
+            "configure-refresh",
+        ),
+    )
+    original_argv = sys.argv
+    original_log = launcher.log
+    original_diagnostic_log = launcher.diagnostic_log
+    originals = {name: getattr(launcher, name) for name, _argv, _operation in cases}
+
+    def explode(*_args: object) -> int:
+        raise RuntimeError(sentinel)
+
+    try:
+        launcher.diagnostic_log = lambda _message: None
+        for name, argv, operation in cases:
+            messages: list[str] = []
+            launcher.log = messages.append
+            setattr(launcher, name, explode)
+            sys.argv = argv
+            stderr = io.StringIO()
+            with redirect_stderr(stderr):
+                code = launcher.main()
+            _assert(code == launcher.MAINTENANCE_FAILURE_EXIT_CODE and code != 0, (operation, code))
+            _assert(stderr.getvalue() == "", f"traceback escaped for {operation}: {stderr.getvalue()}")
+            _assert(messages == [f"maintenance command failed operation={operation} exception=RuntimeError"], messages)
+            _assert(sentinel not in "".join(messages), "exception details leaked into maintenance log")
+            setattr(launcher, name, originals[name])
+    finally:
+        sys.argv = original_argv
+        launcher.log = original_log
+        launcher.diagnostic_log = original_diagnostic_log
+        for name, original in originals.items():
+            setattr(launcher, name, original)
 
 
 def test_launcher_port_selection_and_start_lock() -> None:
@@ -596,6 +742,9 @@ def run() -> None:
     test_scheduler_create_update_remove_and_rollback()
     test_scheduler_legacy_migration_is_restricted_and_verified()
     test_configure_refresh_persists_every_allowed_value()
+    test_remove_refresh_task_identity_and_safety_regression()
+    test_scheduler_removes_only_managed_or_legacy_tasks()
+    test_maintenance_cli_contains_unexpected_exceptions_without_traceback()
     test_launcher_port_selection_and_start_lock()
     test_launcher_identity_port_race_and_child_cleanup()
     test_rotating_stdio_fallback_preserves_valid_streams()
