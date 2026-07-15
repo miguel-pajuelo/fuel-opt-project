@@ -1,9 +1,5 @@
 # Instalación y desinstalación
 
-## Estado de validación
-
-Windows 10/11 x64 es la plataforma objetivo, no una matriz certificada. El análisis estático, los tests automatizados y el build se han ejecutado; bundle e instalador se validaron en un runner GitHub `windows-latest`. Sigue pendiente una instalación real completa en una VM limpia sin Python, Git, `.env` ni variables `FUELOPT_*`.
-
 El ejecutable y el instalador todavía no están firmados. Windows SmartScreen puede mostrar una advertencia; la firma y la experiencia SmartScreen deben resolverse o aceptarse expresamente antes de publicar.
 
 ## Instalación prevista
