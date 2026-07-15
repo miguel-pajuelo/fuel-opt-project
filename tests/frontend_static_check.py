@@ -337,7 +337,10 @@ def test_first_opening_quick_help_is_accessible_and_non_blocking() -> None:
 
     _assert("fuelopt:onboarding:v1:dismissed" in js, "Quick help storage key must be versioned.")
     _assert("window.localStorage.getItem(ONBOARDING_STORAGE_KEY)" in js, "Quick help should read its dismissed state.")
-    _assert("window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true')" in js, "Automatic dismissal should be persisted.")
+    _assert(
+        "window.localStorage.setItem(ONBOARDING_STORAGE_KEY, installInstanceId || 'true')" in js,
+        "Automatic dismissal should persist the install ID with the legacy true fallback.",
+    )
     _assert(js.count("catch (_error)") >= 2, "Quick help storage access must tolerate failures.")
     _assert("if (!wasQuickHelpDismissed())" in js, "Quick help should only open automatically before dismissal.")
     _assert("openQuickHelp({ automatic: true })" in js, "First-opening quick help should be marked as automatic.")
@@ -366,6 +369,29 @@ def test_first_opening_quick_help_is_accessible_and_non_blocking() -> None:
     tutorial_html = html[html.find('<dialog class="onboarding-dialog"'):html.find("</dialog>")]
     for forbidden in ("API", "ORS", "Haversine", "base de datos", "backend", "algoritmo"):
         _assert(forbidden.lower() not in tutorial_html.lower(), f"Quick help contains a technical term: {forbidden}")
+
+
+def test_quick_help_is_scoped_to_the_install_instance() -> None:
+    html = _read("static/index.html")
+    js = _read("static/app.js")
+    launcher = _read("fuelopt_launcher.py")
+
+    _assert(js.count("fuelopt:onboarding:v1:dismissed") == 1, "Onboarding must keep the existing storage key only.")
+    _assert("window.location.hash" in js and "new URLSearchParams(fragment)" in js, "Install ID must come from the URL fragment.")
+    _assert("window.history.replaceState" in js, "Install ID fragment must be removed from the address bar.")
+    _assert("fragmentValues.delete(INSTALL_INSTANCE_FRAGMENT)" in js, "Consumed install ID must not remain in the fragment.")
+    _assert("dismissedFor === installInstanceId" in js, "Dismissal must be scoped to the current install ID.")
+    _assert("dismissedFor === 'true'" in js, "Source and no-ID contexts must retain the legacy fallback.")
+    _assert("installInstanceId || 'true'" in js, "Dismissal write must retain the legacy fallback.")
+
+    _assert("#fuelopt-install=" not in launcher, "Launcher fragment must use the shared constant, not a duplicated literal.")
+    _assert("#{INSTALL_INSTANCE_FRAGMENT}={encoded}" in launcher, "Launcher must put the install ID in a fragment.")
+    _assert("?fuelopt-install=" not in launcher, "Install ID must never be added to the query string.")
+    _assert("browser opened url=" not in launcher, "Browser URL containing the install ID must not be logged.")
+    _assert('UI_CACHE_REVISION = "install-onboarding-v2"' in launcher, "Launcher needs a non-personal UI cache revision.")
+    _assert("fuelopt-ui" in launcher, "Launcher must request the revised local UI URL.")
+    _assert("/static/styles.css?v=install-onboarding-v2" in html, "Critical CSS needs the revised cache key.")
+    _assert("/static/app.js?v=install-onboarding-v2" in html, "Critical JS needs the revised cache key.")
 
 
 def test_sidebar_and_floating_search_layout() -> None:
@@ -1138,6 +1164,7 @@ def run() -> None:
     test_catalog_and_route_status_copy_present()
     test_header_has_no_support_chip_and_keeps_primary_actions()
     test_first_opening_quick_help_is_accessible_and_non_blocking()
+    test_quick_help_is_scoped_to_the_install_instance()
     test_sidebar_and_floating_search_layout()
     test_app_js_renders_warnings()
     test_haversine_copy_appears_once()

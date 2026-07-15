@@ -34,7 +34,7 @@ def app_id(text: str) -> str:
 
 
 def _assert_uninstall_shutdown_exit_contract() -> None:
-    expected = Path(r"C:\Users\test\AppData\Local\Programs\FuelOpt\FuelOpt.exe")
+    expected = Path(r"C:\FuelOpt-test\FuelOpt.exe")
     with (
         patch.object(launcher, "current_process_path", return_value=expected),
         patch.object(launcher, "log", lambda _message: None),
@@ -62,6 +62,15 @@ def run(*, require_bundle: bool = False) -> None:
     _assert("[installdelete]" in lowered, "upgrades must remove stale onedir internals")
     _assert(r'name: "{app}\_internal"' in lowered, "upgrade cleanup must be limited to _internal")
     _assert(r'name: "{app}\*"' not in lowered, "upgrade cleanup must not wipe the installation directory")
+    marker = r'name: "{app}\install-instance-id.txt"'
+    _assert(lowered.count(marker) == 2, "install marker must be removed during install and uninstall")
+    install_delete = lowered.index("[installdelete]")
+    uninstall_delete = lowered.index("[uninstalldelete]")
+    files_section = lowered.index("[files]")
+    _assert(files_section < install_delete < uninstall_delete, "install marker cleanup sections are misplaced")
+    _assert(marker in lowered[install_delete:uninstall_delete], "install/update must remove the previous marker")
+    _assert(marker in lowered[uninstall_delete:lowered.index("[icons]")], "uninstall must remove the generated marker")
+    _assert("uuid" not in lowered, "installer must delete the marker, never generate an install identifier")
     _assert("setupiconfile={#appiconsource}" in lowered, "approved ICO wiring is missing")
     _assert(r"uninstalldisplayicon={app}\{#appexename}" in lowered, "uninstall icon is missing")
     _assert(lowered.count('iconfilename: "{app}\\{#appexename}"') == 2, "shortcut icons are incomplete")

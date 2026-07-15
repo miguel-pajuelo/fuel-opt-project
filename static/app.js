@@ -11,6 +11,26 @@
       return Number.isFinite(value) && value > 0 ? value : null;
     };
     const ONBOARDING_STORAGE_KEY = 'fuelopt:onboarding:v1:dismissed';
+    const INSTALL_INSTANCE_FRAGMENT = 'fuelopt-install';
+    const INSTALL_INSTANCE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    function consumeInstallInstanceId() {
+      const fragment = window.location.hash.startsWith('#')
+        ? window.location.hash.slice(1)
+        : window.location.hash;
+      const fragmentValues = new URLSearchParams(fragment);
+      const rawValue = fragmentValues.get(INSTALL_INSTANCE_FRAGMENT);
+      if (fragmentValues.has(INSTALL_INSTANCE_FRAGMENT)) {
+        fragmentValues.delete(INSTALL_INSTANCE_FRAGMENT);
+        const remainingFragment = fragmentValues.toString();
+        const cleanUrl = `${window.location.pathname}${window.location.search}${remainingFragment ? `#${remainingFragment}` : ''}`;
+        window.history.replaceState(window.history.state, '', cleanUrl);
+      }
+      const candidate = String(rawValue || '').trim().toLowerCase();
+      return INSTALL_INSTANCE_ID_PATTERN.test(candidate) ? candidate : null;
+    }
+
+    const installInstanceId = consumeInstallInstanceId();
 
     (function initQuickHelp() {
       const dialog = $('quick_help_dialog');
@@ -22,7 +42,10 @@
 
       function wasQuickHelpDismissed() {
         try {
-          return window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true';
+          const dismissedFor = window.localStorage.getItem(ONBOARDING_STORAGE_KEY);
+          return installInstanceId
+            ? dismissedFor === installInstanceId
+            : dismissedFor === 'true';
         } catch (_error) {
           return false;
         }
@@ -30,7 +53,7 @@
 
       function rememberQuickHelpDismissal() {
         try {
-          window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+          window.localStorage.setItem(ONBOARDING_STORAGE_KEY, installInstanceId || 'true');
         } catch (_error) {
           // Storage can be unavailable in private or restricted browser contexts.
         }

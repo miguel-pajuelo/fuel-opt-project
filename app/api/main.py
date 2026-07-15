@@ -214,12 +214,34 @@ _SECURITY_HEADERS = {
     "Permissions-Policy": "geolocation=(self), camera=(), microphone=()",
 }
 
+_UI_NO_STORE_HEADERS = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
+def _is_critical_ui_path(path: str) -> bool:
+    if path == "/":
+        return True
+    normalized = path.lower()
+    return normalized.startswith("/static/") and normalized.endswith((".js", ".css"))
+
 
 @app.middleware("http")
 async def _security_headers(request: Request, call_next):
     response = await call_next(request)
     for header, value in _SECURITY_HEADERS.items():
         response.headers.setdefault(header, value)
+    return response
+
+
+@app.middleware("http")
+async def _prevent_stale_ui_assets(request: Request, call_next):
+    response = await call_next(request)
+    if _is_critical_ui_path(request.url.path):
+        for header, value in _UI_NO_STORE_HEADERS.items():
+            response.headers[header] = value
     return response
 
 

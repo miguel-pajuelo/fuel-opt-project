@@ -87,6 +87,10 @@ Source: "..\dist\FuelOpt\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\_internal"
 Type: files; Name: "{app}\{#AppExeName}"
+Type: files; Name: "{app}\install-instance-id.txt"
+
+[UninstallDelete]
+Type: files; Name: "{app}\install-instance-id.txt"
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\{#AppExeName}"
