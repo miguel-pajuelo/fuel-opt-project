@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "windows-release.yml"
+RELEASE_CHECK = ROOT / "scripts" / "release_check.cmd"
 sys.path.insert(0, str(ROOT))
 
 from scripts.check_release_license import evaluate_gate, validate_license
@@ -23,6 +24,7 @@ def _assert(condition: bool, message: object) -> None:
 def run() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     lowered = text.lower()
+    release_check = RELEASE_CHECK.read_text(encoding="utf-8")
 
     _assert(re.search(r"(?m)^\s*tags:\s*$", text), "workflow must filter pushed tags")
     _assert('      - "v*"' in text, "workflow must trigger on v* tags")
@@ -40,10 +42,25 @@ def run() -> None:
     _assert(r"^v(?<version>\d+\.\d+\.\d+)$" in text, "release tags must be validated strictly")
     _assert("id: version" in text and "GITHUB_OUTPUT" in text, "derived version must be available to action inputs")
     _assert("python-version: ${{ env.PYTHON_VERSION }}" in text, "Python version must be explicit")
-    _assert("requirements-runtime.lock" in text and "requirements-build.txt" in text, "pinned dependencies are incomplete")
+    _assert(
+        all(requirement in text for requirement in ("requirements-runtime.lock", "requirements-build.txt", "requirements-test.txt")),
+        "pinned runtime, build and test dependencies are incomplete",
+    )
     _assert("--requirement requirements-runtime.lock" in text, "workflow does not install the runtime lock")
     _assert("--requirement requirements-web.txt" not in text, "workflow bypasses the reproducible runtime lock")
     _assert(r"scripts\release_check.cmd" in text, "release checks must run before packaging")
+    _assert(release_check.count("python -m pytest -q") == 1, "release gate must run the complete pytest suite exactly once")
+    pytest_position = release_check.index("python -m pytest -q")
+    _assert(
+        "if errorlevel 1 exit /b 1" in release_check[pytest_position:].split("\n\n", 1)[0],
+        "pytest failures must stop the release gate",
+    )
+    _assert(
+        "python tests\\test_release_legal.py" not in release_check
+        and "python tests\\test_adapters.py" not in release_check,
+        "pytest-collected test modules must not be executed twice",
+    )
+    _assert("python tests\\security_check.py" in release_check, "security check must remain mandatory")
     _assert(r"scripts\clean_release_artifacts.ps1" in text, "release outputs must start clean")
     _assert(r"scripts\build_onedir.cmd" in text, "PyInstaller build is missing")
     _assert(r"scripts\build_installer.cmd" in text, "Inno Setup build is missing")
