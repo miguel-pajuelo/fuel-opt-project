@@ -11,13 +11,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.config import load_settings
+from app.bootstrap import bootstrap_if_managed
 from app.data_sources.brand_catalog import DEFAULT_REGISTRY, NORMALIZATION_VERSION
 from app.data_sources.minetur import (
     build_catalog_from_minetur,
     fetch_minetur_items,
-    load_ballenoil_result_cache,
     load_minetur_snapshot,
-    load_prices_cache_as_catalog,
     quality_report,
     save_minetur_snapshot,
 )
@@ -30,13 +29,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db", type=Path, default=settings.db_path)
     parser.add_argument(
         "--source",
-        choices=("auto", "minetur", "snapshot", "prices-cache", "ballenoil-cache"),
+        choices=("auto", "minetur", "snapshot"),
         default="auto",
-        help="auto fetches MINETUR and falls back to local caches.",
+        help="auto fetches MINETUR and falls back to the last MINETUR snapshot.",
     )
     parser.add_argument("--snapshot", type=Path, default=settings.minetur_snapshot_path)
-    parser.add_argument("--prices-cache", type=Path, default=settings.ballenoil_prices_path)
-    parser.add_argument("--ballenoil-cache", type=Path, default=settings.ballenoil_result_path)
     parser.add_argument("--write-report", type=Path, default=None)
     parser.add_argument(
         "--brands",
@@ -89,19 +86,7 @@ def load_catalog(args: argparse.Namespace, snapshot_write_path: Path | None = No
         catalog, source_label = _build_minetur_catalog(items, args, "MINETUR_SNAPSHOT")
         return catalog, source_label, warnings
 
-    if args.source in {"prices-cache", "auto"} and args.prices_cache.exists():
-        if args.source == "auto":
-            warnings.append("Using PRICE_CACHE fallback; brand/address metadata is degraded.")
-            print(warnings[-1], file=sys.stderr)
-        return load_prices_cache_as_catalog(args.prices_cache), "PRICE_CACHE", warnings
-
-    if args.source in {"ballenoil-cache", "auto"}:
-        if args.source == "auto":
-            warnings.append("Using BALLENOIL_CACHE fallback; catalog coverage is partial.")
-            print(warnings[-1], file=sys.stderr)
-        return load_ballenoil_result_cache(args.ballenoil_cache), "BALLENOIL_CACHE", warnings
-
-    raise FileNotFoundError("No usable source found for station catalog rebuild.")
+    raise FileNotFoundError("No usable MINETUR source found for station catalog rebuild.")
 
 
 def _snapshot_date(snapshot_path: Path) -> str:
@@ -149,6 +134,7 @@ def _build_metadata(
 
 def main() -> int:
     args = parse_args()
+    bootstrap_if_managed(args.db, args.snapshot)
     (stations, prices), source, warnings = load_catalog(args)
     metadata = _build_metadata(source, stations, prices, warnings, args.snapshot)
     replace_catalog(args.db, stations, prices, metadata=metadata)

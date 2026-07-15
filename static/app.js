@@ -1,9 +1,4 @@
     const $ = (id) => document.getElementById(id);
-    function track(eventName, _props) {
-      if (window.goatcounter && typeof window.goatcounter.count === 'function') {
-        window.goatcounter.count({ path: eventName, event: true });
-      }
-    }
     const fmtEuro = (n) => `${Number(n).toFixed(2)} €`;
     const fmtKm = (n) => `${Number(n).toFixed(2)} km`;
     const fmtPrice = (n) => `${Number(n).toFixed(3)} €/L`;
@@ -15,17 +10,88 @@
       const value = Number($(id).value.replace(',', '.'));
       return Number.isFinite(value) && value > 0 ? value : null;
     };
+    const ONBOARDING_STORAGE_KEY = 'fuelopt:onboarding:v1:dismissed';
+
+    (function initQuickHelp() {
+      const dialog = $('quick_help_dialog');
+      const trigger = $('quick_help_trigger');
+      const closeButton = $('quick_help_close');
+      const startButton = $('quick_help_start');
+      let openedAutomatically = false;
+      let returnFocusTarget = null;
+
+      function wasQuickHelpDismissed() {
+        try {
+          return window.localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true';
+        } catch (_error) {
+          return false;
+        }
+      }
+
+      function rememberQuickHelpDismissal() {
+        try {
+          window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true');
+        } catch (_error) {
+          // Storage can be unavailable in private or restricted browser contexts.
+        }
+      }
+
+      function openQuickHelp({ automatic = false, opener = null } = {}) {
+        if (dialog.open) return;
+        openedAutomatically = automatic;
+        returnFocusTarget = opener || document.activeElement;
+        dialog.showModal();
+        window.requestAnimationFrame(() => closeButton.focus());
+      }
+
+      function closeQuickHelp() {
+        if (!dialog.open) return;
+        if (openedAutomatically) rememberQuickHelpDismissal();
+        openedAutomatically = false;
+        dialog.close();
+        const focusTarget = returnFocusTarget;
+        returnFocusTarget = null;
+        if (focusTarget && focusTarget !== document.body && typeof focusTarget.focus === 'function') {
+          window.requestAnimationFrame(() => focusTarget.focus());
+        }
+      }
+
+      trigger.addEventListener('click', () => openQuickHelp({ opener: trigger }));
+      closeButton.addEventListener('click', closeQuickHelp);
+      startButton.addEventListener('click', closeQuickHelp);
+      dialog.addEventListener('cancel', (event) => {
+        event.preventDefault();
+        closeQuickHelp();
+      });
+
+      if (!wasQuickHelpDismissed()) {
+        openQuickHelp({ automatic: true });
+      }
+    })();
+
     let refreshMessageTimer = null;
     let lastCatalogRefreshValue = null;
     let lastCatalogStatus = null;
     let catalogStatusPoller = null;
     const OPTIMIZE_LOADING_MESSAGES = [
-      'Buscando gasolineras cercanas...',
-      'Comparando precios disponibles...',
-      'Estimando desvíos de ruta...',
-      'Ordenando mejores alternativas...',
-      'Preparando resultado...',
+      'Buscando estaciones…',
+      'Calculando recorridos…',
+      'Ordenando alternativas…',
     ];
+    const OPTIMIZATION_MODE_PRESENTATION = Object.freeze({
+      economic: Object.freeze({
+        label: 'Más ahorro',
+        description: 'Prioriza el mayor ahorro neto estimado, descontando el coste del desplazamiento.',
+      }),
+      minimal_detour: Object.freeze({
+        label: 'Menor desvío',
+        description: 'Prioriza la estación que exige menos distancia adicional.',
+      }),
+      balanced: Object.freeze({
+        label: 'Equilibrado',
+        description: 'Equilibra por igual el ahorro estimado y el desvío entre las opciones encontradas.',
+      }),
+    });
     let optimizeLoadingTimer = null;
     let optimizeLoadingMessageIndex = 0;
     function formatRefreshDate(value) {
@@ -217,14 +283,12 @@
 
     function updateBrandFilterState() {
       const allSelected = allBrandsSelected();
-      const excludedCount = excludedBrands().length;
       if (allSelected) {
         state.brandFilterMode = 'all';
       }
-      const allExcept = state.brandFilterMode === 'all_except' && excludedCount > 0;
-      $('select_all_brands').classList.toggle('active', allSelected || allExcept);
-      $('select_all_brands').setAttribute('aria-pressed', allExcept ? 'mixed' : String(allSelected));
-      $('select_all_brands').textContent = allExcept ? `Todas excepto ${excludedCount}` : 'Todas';
+      $('select_all_brands').classList.toggle('active', allSelected);
+      $('select_all_brands').setAttribute('aria-pressed', String(allSelected));
+      $('select_all_brands').textContent = 'Todas';
     }
 
     const BRAND_LOGOS = {
@@ -313,7 +377,9 @@
       const realBrands = brands.filter(brand => !brand.is_virtual);
       const virtualBrands = brands.filter(brand => brand.is_virtual);
       const visible = [...realBrands.slice(0, 24), ...virtualBrands];
-      $('brand_checks').innerHTML = visible.map((brand) => {
+      const container = $('brand_checks');
+      container.setAttribute('aria-busy', 'false');
+      container.innerHTML = visible.map((brand) => {
         const logoSrc = brandLogoFor(brand);
         const hasSpecificLogo = Boolean(BRAND_LOGOS[brand.canonical]);
         const logoClass = hasSpecificLogo ? 'brand-logo' : 'brand-logo brand-logo--generic';
@@ -337,6 +403,21 @@
       updateBrandFilterState();
     }
 
+    function renderBrandsLoading() {
+      const container = $('brand_checks');
+      container.setAttribute('aria-busy', 'true');
+      container.innerHTML = `
+        <div class="brand-loading" role="status" aria-live="polite">
+          <p>Cargando marcas…</p>
+          <div class="brand-loading-skeleton" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+        </div>
+      `;
+    }
+
     const state = {
       active: 'origin',
       inputMode: 'liters',
@@ -347,12 +428,14 @@
       routeKey: '',
       routeRequestId: 0,
       lastOptimization: null,
+      renderedOptimizationMode: null,
       selectedResultIndex: 0,
       selectedStation: null,
       focusRequestId: 0,
       reverseGeocodeRequestId: 0,
       alternativesOpen: false,
       resultHasFit: false,
+      optimizeInFlight: false,
       sidebarCollapsed: false,
       brandFilterMode: 'all',
       userLocationMarker: null,
@@ -361,9 +444,9 @@
 
     const map = L.map('map', { zoomControl: false, doubleClickZoom: false }).setView([40.4168, -3.7038], 6);
     L.control.zoom({ position: 'bottomleft' }).addTo(map);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '&copy; OpenStreetMap'
+      attribution: '&copy; <a href="https://openrouteservice.org/" target="_blank" rel="noopener noreferrer">openrouteservice.org</a> by HeiGIT | Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
     }).addTo(map);
     map.createPane('routePane');
     map.getPane('routePane').style.zIndex = '450';
@@ -543,7 +626,6 @@
         state.userLocationAccuracyCircle = null;
       }
       focusUserLocation(latLng, accuracy);
-      track('Geolocalización usada', { precision_m: String(Number.isFinite(accuracy) ? Math.round(accuracy) : -1) });
       if (Number.isFinite(accuracy) && accuracy > LOW_LOCATION_ACCURACY_M) {
         setRouteStatus('Ubicación aproximada: precisión baja.');
       } else {
@@ -1436,7 +1518,6 @@
     $('refill_mode_liters').addEventListener('click', () => setInputMode('liters'));
     $('refill_mode_budget').addEventListener('click', () => {
       setInputMode('budget');
-      track('Modo presupuesto activado');
     });
 
     syncRefuelInputUI();
@@ -1445,6 +1526,17 @@
     syncReturnMode();
 
     // ─── Custom dropdown (pdd) ───────────────────────────────────────
+
+    function getSelectedOptimizationMode() {
+      const selected = document.querySelector('input[name="optimization_mode"]:checked');
+      if (!selected) {
+        throw new Error('Selecciona un objetivo de optimización.');
+      }
+      if (!Object.prototype.hasOwnProperty.call(OPTIMIZATION_MODE_PRESENTATION, selected.value)) {
+        throw new Error('El objetivo de optimización seleccionado no es válido.');
+      }
+      return selected.value;
+    }
 
     function getPddValue(id) {
       const el = $(id);
@@ -1612,6 +1704,7 @@
     // ─────────────────────────────────────────────────────────────────
 
     async function loadOptions() {
+      renderBrandsLoading();
       const [fuels, brands] = await Promise.all([
         fetch('/fuels').then(r => r.json()),
         fetch('/brands').then(r => r.json()),
@@ -1672,13 +1765,18 @@
       return Number.isFinite(amount) ? amount : null;
     }
 
-    function routeSourceNote(data, selected) {
-      const routeSource = String(data.route_source || selected.route_source || '').toLowerCase();
-      if (!routeSource) return '';
-      if (routeSource.includes('openrouteservice')) {
-        return '';
+    function alternativesSubtitleForMode(mode, data, isBudgetMode) {
+      if (mode === 'minimal_detour') {
+        return data.search?.search_shape === 'local_radius'
+          ? 'Ordenadas por cercanía estimada'
+          : 'Ordenadas por menor desvío adicional estimado';
       }
-      return `<div class="result-note"><strong>Fuente de ruta:</strong> ${escapeHtml(routeSource)}</div>`;
+      if (mode === 'balanced') {
+        return 'Ordenadas por equilibrio entre ahorro y desvío';
+      }
+      return isBudgetMode
+        ? 'Ordenadas por litros útiles estimados'
+        : 'Ordenadas por coste efectivo neto';
     }
 
     function warningByCode(warnings, code) {
@@ -1703,16 +1801,21 @@
         }
         if (!warning || typeof warning !== 'object') return '';
         if (hiddenCodes.has(warning.code)) return '';
+        if (warning.code === 'using_haversine_estimate') {
+          return `
+            <div class="result-warning result-warning--info">
+              <strong>Ruta estimada por distancia</strong>
+              <p>El coste de ruta se ha calculado con una aproximación de distancia.</p>
+            </div>
+          `;
+        }
         const severity = ['info', 'warning', 'critical'].includes(warning.severity) ? warning.severity : 'info';
         const classBySeverity = {
           info: 'result-warning--info',
           warning: 'result-warning--warning',
           critical: 'result-warning--critical',
         };
-        const titleFallbacks = {
-          using_haversine_estimate: 'Ruta estimada por distancia',
-        };
-        const title = String(warning.title || titleFallbacks[warning.code] || '').trim();
+        const title = String(warning.title || '').trim();
         const message = String(warning.message || '').trim();
         if (!title || !message) return '';
         return `
@@ -1970,12 +2073,11 @@
       };
     }
 
-    function renderAlternativesList(alternatives, selectedIndex, isBudgetMode) {
+    function renderAlternativesList(alternatives, isBudgetMode) {
       if (!alternatives.length) return '';
       return alternatives.map(({ item, index }) => {
         const altStation = item.station || {};
         const altLocation = stationDetailLine(altStation);
-        const selected = index === selectedIndex;
         const rankMetric = isBudgetMode ? fmtLiters(item.net_liters) : fmtEuro(item.effective_total_cost_eur);
         const subParts = [
           fmtPrice(item.price_eur_l),
@@ -1983,7 +2085,7 @@
           altLocation ? escapeHtml(altLocation) : '',
         ].filter(Boolean);
         return `
-          <button class="rank${selected ? ' selected' : ''}" type="button" data-result-index="${index}" aria-current="${selected ? 'true' : 'false'}">
+          <button class="rank" type="button" data-result-index="${index}">
             <div class="rank-num">${index + 1}</div>
             <div class="rank-body">
               <div class="rank-main-row">
@@ -2022,13 +2124,13 @@
       `;
     }
 
-    function setResultAlternativesState(resultElement, toggle, panel, isOpen, alternativesLabel) {
+    function setResultAlternativesState(resultElement, toggle, panel, isOpen) {
       resultElement.classList.toggle('result-panel--expanded', isOpen);
       resultElement.classList.toggle('result-panel--collapsed', !isOpen);
       toggle.setAttribute('aria-expanded', String(isOpen));
       panel.classList.toggle('collapsed', !isOpen);
       panel.setAttribute('aria-hidden', String(!isOpen));
-      toggle.querySelector('.toggle-label').textContent = 'Otras alternativas';
+      toggle.querySelector('.toggle-label').textContent = isOpen ? 'Ver menos alternativas' : 'Ver más alternativas';
       state.alternativesOpen = isOpen;
       refitVisibleRoute();
       refitVisibleRoute(320);
@@ -2036,6 +2138,7 @@
 
     function renderResult(data, selectedIndex = 0, keepAlternativesOpen = false) {
       const resultElement = $('result');
+      resultElement.setAttribute('aria-busy', 'false');
       resultElement.removeAttribute('data-empty');
       resultElement.classList.remove('result-panel--expanded', 'result-panel--collapsed');
       if (!data.best) {
@@ -2056,19 +2159,22 @@
       renderSelectedStationMarker(station);
       const canDrawRoute = Boolean(state.origin && state.destination && state.selectedStation);
       const alternatives = data.items
-        .map((item, index) => ({ item, index }));
-      const rows = renderAlternativesList(alternatives, selectedIndex, isBudgetMode);
-      const alternativesLabel = alternatives.length === 1 ? 'Ver 1 alternativa' : `Ver ${alternatives.length} alternativas`;
-      const alternativesSubtitle = isBudgetMode
-        ? 'Ordenadas por litros útiles estimados'
-        : 'Ordenadas por coste efectivo neto';
-      const alternativesOpen = alternatives.length > 0 && keepAlternativesOpen;
-      const panelClass = alternativesOpen ? 'ranking' : 'ranking collapsed';
+        .map((item, index) => ({ item, index }))
+        .filter(({ index }) => index !== selectedIndex);
+      const visibleAlternatives = alternatives.slice(0, 2);
+      const additionalAlternatives = alternatives.slice(2);
+      const visibleRows = renderAlternativesList(visibleAlternatives, isBudgetMode);
+      const additionalRows = renderAlternativesList(additionalAlternatives, isBudgetMode);
+      const alternativesSubtitle = alternativesSubtitleForMode(
+        state.renderedOptimizationMode,
+        data,
+        isBudgetMode,
+      );
+      const alternativesOpen = additionalAlternatives.length > 0 && keepAlternativesOpen;
+      const panelClass = alternativesOpen ? 'ranking ranking--additional' : 'ranking ranking--additional collapsed';
       resultElement.classList.toggle('result-panel--expanded', alternativesOpen);
       resultElement.classList.toggle('result-panel--collapsed', !alternativesOpen);
       state.alternativesOpen = alternativesOpen;
-      const whySelected = escapeHtml(selected.why_selected || 'Ordenado por menor coste efectivo total.');
-      const routeNote = routeSourceNote(data, selected);
       const resultWarnings = data.warnings || [];
       const warningsHtml = renderWarnings(resultWarnings);
       const metrics = renderResultMetricRows(selected, resultWarnings, saving, isBudgetMode);
@@ -2083,17 +2189,22 @@
           </div>
           <div class="metrics result-metric-list">${metrics}</div>
         </section>
-        ${routeNote}
         ${warningsHtml}
         <section class="result-alternatives">
-          <button id="toggle_alternatives" class="alternatives-toggle" type="button" aria-expanded="${String(alternativesOpen)}">
+          <h3 class="alternatives-heading">Otras alternativas</h3>
+          ${visibleRows
+            ? `<div class="ranking ranking--preview">${visibleRows}</div>`
+            : '<p class="alternatives-empty">No hay más alternativas para esta búsqueda.</p>'}
+          ${additionalAlternatives.length ? `
+          <button id="toggle_alternatives" class="alternatives-toggle alternatives-more-toggle" type="button" aria-expanded="${String(alternativesOpen)}">
             <span class="alternatives-toggle-text">
-              <span class="toggle-label">Otras alternativas</span>
+              <span class="toggle-label">${alternativesOpen ? 'Ver menos alternativas' : 'Ver más alternativas'}</span>
               <span class="toggle-sublabel">${alternativesSubtitle}</span>
             </span>
             <span class="chevron" aria-hidden="true"></span>
           </button>
-          <div id="alternatives_panel" class="${panelClass}" aria-hidden="${String(!alternativesOpen)}">${rows}</div>
+          <div id="alternatives_panel" class="${panelClass}" aria-hidden="${String(!alternativesOpen)}">${additionalRows}</div>
+          ` : ''}
         </section>
       `;
       resultElement.querySelectorAll('[data-open-maps]').forEach(button => {
@@ -2113,27 +2224,24 @@
       state.resultHasFit = true;
       const toggle = $('toggle_alternatives');
       const panel = $('alternatives_panel');
-      if (!alternatives.length) {
-        toggle.disabled = true;
-        toggle.querySelector('.toggle-label').textContent = 'Sin alternativas adicionales';
-      } else {
+      if (toggle && panel) {
         toggle.addEventListener('click', () => {
           const open = toggle.getAttribute('aria-expanded') === 'true';
-          setResultAlternativesState(resultElement, toggle, panel, !open, alternativesLabel);
-        });
-        panel.querySelectorAll('[data-result-index]').forEach(button => {
-          button.addEventListener('click', () => {
-            const alternativesScrollTop = panel.scrollTop || 0;
-            renderResult(data, Number(button.dataset.resultIndex), true);
-            requestAnimationFrame(() => {
-              const restoredPanel = $('alternatives_panel');
-              if (restoredPanel) {
-                restoredPanel.scrollTop = alternativesScrollTop;
-              }
-            });
-          });
+          setResultAlternativesState(resultElement, toggle, panel, !open);
         });
       }
+      resultElement.querySelectorAll('[data-result-index]').forEach(button => {
+        button.addEventListener('click', () => {
+          const alternativesScrollTop = panel?.scrollTop || 0;
+          renderResult(data, Number(button.dataset.resultIndex), Boolean(panel && toggle?.getAttribute('aria-expanded') === 'true'));
+          requestAnimationFrame(() => {
+            const restoredPanel = $('alternatives_panel');
+            if (restoredPanel) {
+              restoredPanel.scrollTop = alternativesScrollTop;
+            }
+          });
+        });
+      });
     }
 
     async function readJsonOrError(response) {
@@ -2174,28 +2282,61 @@
     function startOptimizeLoadingMessages() {
       stopOptimizeLoadingMessages();
       optimizeLoadingMessageIndex = 0;
-      $('status').textContent = OPTIMIZE_LOADING_MESSAGES[0];
       optimizeLoadingTimer = window.setInterval(() => {
         optimizeLoadingMessageIndex = Math.min(
           optimizeLoadingMessageIndex + 1,
           OPTIMIZE_LOADING_MESSAGES.length - 1,
         );
-        $('status').textContent = OPTIMIZE_LOADING_MESSAGES[optimizeLoadingMessageIndex];
-      }, 1100);
+        const message = document.querySelector('[data-optimize-loading-message]');
+        if (message) {
+          message.textContent = OPTIMIZE_LOADING_MESSAGES[optimizeLoadingMessageIndex];
+        }
+      }, 1700);
     }
 
-    function stopOptimizeLoadingMessages(finalMessage) {
+    function stopOptimizeLoadingMessages() {
       if (optimizeLoadingTimer) {
         window.clearInterval(optimizeLoadingTimer);
         optimizeLoadingTimer = null;
       }
       optimizeLoadingMessageIndex = 0;
-      if (finalMessage !== undefined) {
-        $('status').textContent = finalMessage;
-      }
+    }
+
+    function setOptimizeLoadingState(isLoading) {
+      const button = $('submit');
+      const spinner = button.querySelector('.primary-spinner');
+      const label = button.querySelector('[data-submit-label]');
+      button.disabled = isLoading;
+      button.classList.toggle('is-loading', isLoading);
+      button.setAttribute('aria-busy', String(isLoading));
+      spinner.hidden = !isLoading;
+      label.textContent = isLoading
+        ? 'Calculando mejor repostaje…'
+        : 'Calcular mejor repostaje';
+    }
+
+    function renderOptimizeLoadingResult() {
+      const resultElement = $('result');
+      state.resultHasFit = false;
+      setSidebarCollapsed(true);
+      resultElement.removeAttribute('data-empty');
+      resultElement.classList.remove('result-panel--expanded', 'result-panel--collapsed');
+      resultElement.setAttribute('aria-busy', 'true');
+      resultElement.innerHTML = `
+        <section class="result-loading" aria-label="Calculando mejor repostaje">
+          <div class="result-loading-skeleton" aria-hidden="true">
+            <span class="result-loading-saving"></span>
+            <span class="result-loading-line result-loading-line--wide"></span>
+            <span class="result-loading-line"></span>
+            <span class="result-loading-line result-loading-line--short"></span>
+          </div>
+          <p class="result-loading-status" role="status" aria-live="polite" data-optimize-loading-message>${OPTIMIZE_LOADING_MESSAGES[0]}</p>
+        </section>
+      `;
     }
 
     async function optimize() {
+      if (state.optimizeInFlight) return;
       if (!state.origin) {
         $('status').textContent = 'Selecciona una salida.';
         return;
@@ -2205,9 +2346,6 @@
         return;
       }
       const destination = $('return_to_origin').checked ? state.origin : state.destination;
-      const button = $('submit');
-      button.disabled = true;
-      $('status').textContent = 'Calculando...';
       try {
         const amount = parsePositiveDecimal('liters');
         const consumption = parsePositiveDecimal('consumption_l_100km');
@@ -2230,13 +2368,14 @@
           $('status').textContent = 'Puedes elegir hasta 10 marcas concretas. Usa "Todas" para buscar en todo el catalogo.';
           return;
         }
+        const requestedOptimizationMode = getSelectedOptimizationMode();
         const payload = {
           origin_lat: state.origin.lat,
           origin_lon: state.origin.lon,
           destination_lat: destination.lat,
           destination_lon: destination.lon,
           fuel_type: getPddValue('fuel_type'),
-          optimization_mode: getPddValue('optimization_mode'),
+          optimization_mode: requestedOptimizationMode,
           input_mode: state.inputMode,
           liters: state.inputMode === 'liters' ? amount : 1,
           consumption_l_100km: consumption,
@@ -2257,120 +2396,36 @@
         if (shouldExcludeBrands) {
           payload.excluded_brands = excluded;
         }
+        state.optimizeInFlight = true;
+        setOptimizeLoadingState(true);
+        $('status').textContent = '';
+        renderOptimizeLoadingResult();
         startOptimizeLoadingMessages();
-        const { data, fallbackUsed } = await requestOptimization(payload);
+        const { data } = await requestOptimization(payload);
+        if (data.optimization_mode !== requestedOptimizationMode) {
+          throw new Error('La respuesta no coincide con el objetivo de optimización solicitado.');
+        }
         state.resultHasFit = false;
+        state.renderedOptimizationMode = requestedOptimizationMode;
         stopOptimizeLoadingMessages();
         renderResult(data, 0, false);
-        track('Optimización calculada', { resultados: String(data.returned), fallback: String(fallbackUsed) });
-        $('status').textContent = fallbackUsed
-          ? `${data.returned} alternativas evaluadas con estimación por distancia`
-          : `${data.returned} alternativas evaluadas`;
+        $('status').textContent = `${data.returned} alternativas evaluadas`;
       } catch (error) {
         const resultElement = $('result');
+        resultElement.setAttribute('aria-busy', 'false');
         resultElement.removeAttribute('data-empty');
         resultElement.classList.remove('result-panel--expanded', 'result-panel--collapsed');
-        resultElement.innerHTML = `<h2>Error</h2><p class="error">${escapeHtml(error.message)}</p>`;
+        resultElement.innerHTML = `<div role="alert"><h2>Error</h2><p class="error">${escapeHtml(error.message)}</p></div>`;
         resultElement.insertAdjacentHTML('afterbegin', resultCloseButton());
         bindResultCloseButton();
-        stopOptimizeLoadingMessages('');
       } finally {
-        button.disabled = false;
+        stopOptimizeLoadingMessages();
+        state.optimizeInFlight = false;
+        setOptimizeLoadingState(false);
       }
     }
 
-    // ── FeedbackModal ────────────────────────────────────────────────
-    (function initFeedbackModal() {
-      const overlay  = $('feedback_overlay');
-      const trigger  = $('feedback_trigger');
-      const closeBtn = $('feedback_close');
-      const submitBtn = $('feedback_submit');
-      const successMsg = $('feedback_success');
-
-      function openModal() {
-        overlay.hidden = false;
-        closeBtn.focus();
-      }
-
-      function closeModal() {
-        overlay.hidden = true;
-        successMsg.hidden = true;
-        $('feedback_email').value = '';
-        $('feedback_message').value = '';
-        submitBtn.disabled = false;
-        submitBtn.style.opacity = '';
-        submitBtn.textContent = 'Enviar idea →';
-      }
-
-      trigger.addEventListener('click', openModal);
-      closeBtn.addEventListener('click', closeModal);
-
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) closeModal();
-      });
-
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && !overlay.hidden) closeModal();
-      });
-
-      submitBtn.addEventListener('click', async () => {
-        const emailValue   = $('feedback_email').value.trim();
-        const messageValue = $('feedback_message').value.trim();
-
-        successMsg.hidden = true;
-        successMsg.style.color = '#2D7A4F';
-
-        submitBtn.disabled = true;
-        submitBtn.style.opacity = '0.7';
-        submitBtn.textContent = 'Enviando...';
-
-        try {
-          const res = await fetch('/feedback', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: emailValue, message: messageValue }),
-          });
-
-          if (res.ok) {
-            successMsg.textContent = '¡Gracias! Hemos recibido tu mensaje.';
-            successMsg.style.color = '#2D7A4F';
-            successMsg.hidden = false;
-            setTimeout(() => { closeModal(); }, 2000);
-          } else {
-            let errorMsg = 'Algo salió mal. Inténtalo de nuevo.';
-            if (res.status === 422) {
-              try {
-                const data = await res.json();
-                if (typeof data.detail === 'string') {
-                  errorMsg = data.detail;
-                } else if (Array.isArray(data.detail)) {
-                  const fieldMap = { email: 'El correo electrónico no es válido.', message: 'El mensaje debe tener al menos 10 caracteres.' };
-                  const first = data.detail[0];
-                  const field = first?.loc?.[first.loc.length - 1];
-                  errorMsg = fieldMap[field] || errorMsg;
-                }
-              } catch (_) {}
-            }
-            successMsg.textContent = errorMsg;
-            successMsg.style.color = '#C0392B';
-            successMsg.hidden = false;
-            submitBtn.disabled = false;
-            submitBtn.style.opacity = '';
-            submitBtn.textContent = 'Enviar idea →';
-          }
-        } catch (_err) {
-          successMsg.textContent = 'Algo salió mal. Inténtalo de nuevo.';
-          successMsg.style.color = '#C0392B';
-          successMsg.hidden = false;
-          submitBtn.disabled = false;
-          submitBtn.style.opacity = '';
-          submitBtn.textContent = 'Enviar idea →';
-        }
-      });
-    })();
-
     initPDD('fuel_type');
-    initPDD('optimization_mode');
 
     $('submit').addEventListener('click', optimize);
     loadCatalogStatus().then(startCatalogStatusPolling).catch(error => {

@@ -4,16 +4,22 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.paths import APP_PATHS
+from app.user_config import UserConfig, UserConfigError, load_user_config
+from app.windows_credentials import resolve_ors_api_key
 
-PROJECT_ROOT = Path(os.getenv("FUELOPT_PROJECT_ROOT") or Path(__file__).resolve().parents[1]).resolve()
-DATA_DIR = PROJECT_ROOT / "data"
-CACHE_DIR = DATA_DIR / "cache"
-DB_DIR = DATA_DIR / "db"
-DEFAULT_DB_PATH = DB_DIR / "gas_stations.sqlite"
-DEFAULT_MINETUR_SNAPSHOT_PATH = CACHE_DIR / "minetur_snapshot.json"
-DEFAULT_BALLENOIL_RESULT_PATH = CACHE_DIR / "ballenoil_espana_combustible.txt"
-DEFAULT_BALLENOIL_PRICES_PATH = CACHE_DIR / "ballenoil_precios.json"
-DEFAULT_ENV_PATH = PROJECT_ROOT / ".env"
+# PROJECT_ROOT remains the immutable code/resource root during Patch 2. Active
+# database migration to APP_PATHS.user_db_path belongs to Patch 3.
+PROJECT_ROOT = APP_PATHS.resource_root
+DATA_DIR = APP_PATHS.data_dir
+CACHE_DIR = APP_PATHS.cache_dir
+DB_DIR = APP_PATHS.db_dir
+DEFAULT_DB_PATH = APP_PATHS.user_db_path
+DEFAULT_MINETUR_SNAPSHOT_PATH = APP_PATHS.user_snapshot_path
+DEFAULT_ENV_PATH = APP_PATHS.legacy_env_path
+USER_DATA_DIR = APP_PATHS.user_root
+USER_CONFIG_PATH = APP_PATHS.config_path
+USER_LOG_DIR = APP_PATHS.logs_dir
 
 
 def load_dotenv(path: Path = DEFAULT_ENV_PATH) -> None:
@@ -41,8 +47,6 @@ def env_flag(name: str, default: bool = False) -> bool:
 class Settings:
     db_path: Path = DEFAULT_DB_PATH
     minetur_snapshot_path: Path = DEFAULT_MINETUR_SNAPSHOT_PATH
-    ballenoil_result_path: Path = DEFAULT_BALLENOIL_RESULT_PATH
-    ballenoil_prices_path: Path = DEFAULT_BALLENOIL_PRICES_PATH
     ors_api_key: str | None = None
     default_consumption_l_100km: float = 5.5
     max_route_candidates: int = 75
@@ -64,16 +68,21 @@ class Settings:
     # Log the raw client IP in access logs. Off by default to avoid storing PII;
     # when off, a coarsely anonymized IP is logged instead.
     log_client_ip: bool = False
+    refresh_interval: str = "4h"
 
 
 def load_settings() -> Settings:
     load_dotenv()
+    try:
+        user_config = load_user_config(USER_CONFIG_PATH)
+    except UserConfigError:
+        # A corrupt user config is never overwritten implicitly. Patch 4 will
+        # expose this state through --show-settings/--configure-refresh.
+        user_config = UserConfig()
     return Settings(
         db_path=Path(os.getenv("GAS_DB_PATH", DEFAULT_DB_PATH)),
         minetur_snapshot_path=Path(os.getenv("MINETUR_SNAPSHOT_PATH", DEFAULT_MINETUR_SNAPSHOT_PATH)),
-        ballenoil_result_path=Path(os.getenv("BALLENOIL_RESULT_PATH", DEFAULT_BALLENOIL_RESULT_PATH)),
-        ballenoil_prices_path=Path(os.getenv("BALLENOIL_PRICES_PATH", DEFAULT_BALLENOIL_PRICES_PATH)),
-        ors_api_key=os.getenv("ORS_API_KEY"),
+        ors_api_key=resolve_ors_api_key(),
         default_consumption_l_100km=float(os.getenv("CONSUMPTION_L_100KM", "5.5")),
         max_route_candidates=int(os.getenv("MAX_ROUTE_CANDIDATES", "75")),
         default_prefilter_radius_km=float(os.getenv("PREFILTER_RADIUS_KM", "40")),
@@ -89,6 +98,7 @@ def load_settings() -> Settings:
         enable_api_docs=env_flag("FUELOPT_ENABLE_API_DOCS", False),
         trust_proxy_headers=env_flag("FUELOPT_TRUST_PROXY_HEADERS", False),
         log_client_ip=env_flag("FUELOPT_LOG_CLIENT_IP", False),
+        refresh_interval=user_config.refresh_interval,
     )
 
 

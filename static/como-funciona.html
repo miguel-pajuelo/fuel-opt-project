@@ -3,6 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/fuelopt-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/fuelopt-180.png">
   <title>&iquest;C&oacute;mo funciona FuelOpt? &mdash; FuelOpt</title>
   <style>
     :root {
@@ -49,267 +52,66 @@
   <a class="back" href="/">&#8592; Volver a FuelOpt</a>
 
   <h1>&iquest;C&oacute;mo funciona FuelOpt?</h1>
-  <p class="lead">&Uacute;ltima actualizaci&oacute;n: 2026-05-20</p>
+  <p class="lead">Una explicaci&oacute;n sencilla para empezar y detalles suficientes para entender c&oacute;mo se obtiene cada recomendaci&oacute;n.</p>
 
   <h2>1. Qu&eacute; hace FuelOpt</h2>
-  <p>
-    FuelOpt compara estaciones de servicio cercanas a tu ruta para estimar cu&aacute;l puede
-    resultarte m&aacute;s conveniente econ&oacute;micamente.
-  </p>
-  <p>
-    La app no se limita a buscar el precio por litro m&aacute;s bajo. Tambi&eacute;n tiene en cuenta
-    el desv&iacute;o necesario para llegar a cada gasolinera, el consumo medio de tu veh&iacute;culo
-    y la cantidad de combustible o presupuesto que quieres usar.
-  </p>
-  <p>El objetivo es responder a una pregunta pr&aacute;ctica:</p>
-  <p>
-    <strong>&iquest;Compensa desviarme hasta esta gasolinera o el ahorro del precio se pierde
-    por el combustible consumido en el trayecto?</strong>
-  </p>
+  <p>FuelOpt compara estaciones para ayudarte a decidir d&oacute;nde repostar. No mira solo el precio por litro: tambi&eacute;n estima lo que cuesta desplazarse hasta cada opci&oacute;n.</p>
+  <p>Por ejemplo, una estaci&oacute;n muy barata puede dejar de compensar si obliga a recorrer muchos kil&oacute;metros adicionales.</p>
 
-  <h2>2. Origen, destino y regreso al origen</h2>
-  <p>FuelOpt parte de los puntos que introduces en la barra de b&uacute;squeda:</p>
+  <h2>2. C&oacute;mo indicar un lugar</h2>
+  <p>Puedes buscar una localidad o hacer doble clic en el mapa para marcar un punto. En una consulta local basta con indicar el lugar desde el que partes.</p>
+  <p>Para estudiar un trayecto, indica un <strong>origen</strong> y un <strong>destino</strong>. Si activas <strong>Regreso al origen</strong>, FuelOpt eval&uacute;a una salida para repostar y volver al punto inicial.</p>
+
+  <h2>3. Datos de la b&uacute;squeda</h2>
+  <p>Antes de calcular, selecciona el combustible y decide si quieres indicar una cantidad de litros o un presupuesto. A&ntilde;ade el consumo medio del veh&iacute;culo para estimar el coste del desplazamiento.</p>
+  <p>El filtro de marcas permite buscar en todo el cat&aacute;logo, incluir marcas concretas o excluir algunas. Estos filtros se aplican antes de comparar las estaciones v&aacute;lidas.</p>
+
+  <h2>4. Modos de optimizaci&oacute;n</h2>
+  <h3>M&aacute;s ahorro</h3>
+  <p>Prioriza el mejor resultado econ&oacute;mico neto estimado, despu&eacute;s de tener en cuenta el combustible que puede consumir el desv&iacute;o. No equivale simplemente a elegir el precio por litro m&aacute;s bajo.</p>
+  <h3>Menor desv&iacute;o</h3>
+  <p>En un trayecto prioriza la menor distancia adicional. En una b&uacute;squeda local prioriza la estaci&oacute;n m&aacute;s cercana; la econom&iacute;a se utiliza para desempatar.</p>
+  <h3>Equilibrado</h3>
+  <p>Da el mismo peso a la posici&oacute;n econ&oacute;mica y a la posici&oacute;n por desv&iacute;o. No suma directamente euros y kil&oacute;metros ni muestra una puntuaci&oacute;n t&eacute;cnica al usuario.</p>
+
+  <h2>5. C&oacute;mo se calcula el coste real</h2>
+  <p>FuelOpt considera el precio del combustible, la cantidad que obtendr&iacute;as, la distancia adicional, el consumo medio del veh&iacute;culo y el coste estimado de recorrer ese desv&iacute;o.</p>
+  <p>Con una cantidad fija de litros compara el coste del repostaje m&aacute;s el desplazamiento. Con un presupuesto fijo estima los litros comprados y descuenta el combustible consumido para llegar a la estaci&oacute;n.</p>
+  <pre>coste efectivo estimado = repostaje + coste del desplazamiento</pre>
+  <p>El ahorro es una comparaci&oacute;n estimada frente a otras opciones, no dinero garantizado.</p>
+
+  <h2>6. C&oacute;mo se calculan las rutas</h2>
+  <p>Cuando OpenRouteService est&aacute; configurado y disponible, FuelOpt utiliza rutas por carretera para estimar distancias y desv&iacute;os.</p>
+  <p>Si no puede utilizarlo, recurre a Haversine, una estimaci&oacute;n geogr&aacute;fica local entre coordenadas. Esa aproximaci&oacute;n no conoce carreteras, sentidos, barreras, tr&aacute;fico ni peajes, y la interfaz la identifica como estimaci&oacute;n.</p>
+
+  <h2>7. C&oacute;mo se ordenan las alternativas</h2>
+  <p>FuelOpt calcula primero las m&eacute;tricas de todo el universo v&aacute;lido de candidatos y despu&eacute;s los ordena seg&uacute;n el modo elegido. El l&iacute;mite de resultados (<code>result_limit</code>) se aplica al final, por lo que no cambia qu&eacute; estaciones participan en el ranking.</p>
+  <p>Los empates se resuelven con reglas deterministas para que el orden no dependa de c&oacute;mo llegaron los datos. Las puntuaciones internas no se presentan como euros, kil&oacute;metros o porcentajes.</p>
+
+  <h2>8. De d&oacute;nde proceden los precios</h2>
+  <p>La fuente productiva de FuelOpt 0.1.0 es el cat&aacute;logo oficial de estaciones de servicio publicado por el Ministerio de Industria y Turismo (MINETUR). FuelOpt descarga y transforma esa informaci&oacute;n para trabajar con una copia local del cat&aacute;logo, que incluye estaciones, combustibles, precios y metadatos de frescura. La semilla instalada conserva la fuente, la fecha de obtenci&oacute;n y hashes verificables.</p>
+  <p>La copia se almacena en una base de datos SQLite dentro del perfil del usuario. Esto permite consultar y comparar estaciones con rapidez, conservar la &uacute;ltima informaci&oacute;n v&aacute;lida y seguir utilizando las funciones locales cuando una actualización no está disponible.</p>
+  <p>El catálogo se refresca con la frecuencia configurada —manualmente, al abrir o mediante la tarea periódica—. La actualización prepara y valida una base candidata antes de sustituir la activa, de modo que un fallo no elimina la última copia válida.</p>
+  <p>Los datos publicados por la fuente pueden llegar con retraso, contener incidencias o cambiar antes de que llegues a la estación. FuelOpt muestra la frescura disponible para que esa limitación pueda evaluarse.</p>
+
+  <h2>9. Qu&eacute; ocurre dentro de la aplicaci&oacute;n</h2>
+  <p>FuelOpt es una aplicación local. En Windows, el launcher inicia un servidor FastAPI enlazado a <code>127.0.0.1</code> y abre la interfaz en el navegador; no depende de un servidor público de FuelOpt para calcular las opciones.</p>
+  <p>Los recursos instalados de la aplicación están separados de los datos mutables del usuario. La base SQLite activa vive en el perfil local y es la fuente sobre la que FuelOpt filtra candidatos, calcula costes y ordena alternativas a partir del catálogo descargado.</p>
+  <p>Leaflet dibuja el mapa con archivos incluidos en la aplicación, aunque las teselas visibles se solicitan a OpenStreetMap. El servicio de refresco mantiene el catálogo y puede ejecutarse manualmente, al abrir o mediante una tarea programada de Windows.</p>
+
+  <h2>10. Privacidad y servicios externos</h2>
+  <p>FuelOpt no tiene telemetr&iacute;a propia ni un servidor central de b&uacute;squedas. ORS recibe los puntos necesarios solo cuando se utiliza para geocodificar o calcular rutas. OpenStreetMap recibe solicitudes de teselas del &aacute;rea visible.</p>
+  <p><strong>Abrir en Maps</strong> env&iacute;a el origen, destino y estaci&oacute;n a Google Maps solo cuando pulsas el bot&oacute;n. <strong>M&aacute;ndanos tu idea</strong> abre GitHub Issues y eres t&uacute; quien decide si publica informaci&oacute;n. Consulta la <a href="/privacidad">p&aacute;gina de privacidad</a>.</p>
+
+  <h2>11. L&iacute;mites y supuestos</h2>
   <ul>
-    <li><strong>Origen:</strong> punto desde el que sales.</li>
-    <li><strong>Destino:</strong> punto al que quieres ir.</li>
-    <li><strong>Regreso al origen:</strong> modo en el que se calcula una ruta de ida y vuelta desde el origen hasta la gasolinera.</li>
+    <li>el tr&aacute;fico y los precios no tienen por qu&eacute; estar actualizados en tiempo real;</li>
+    <li>la disponibilidad y el precio final de una estaci&oacute;n no est&aacute;n garantizados;</li>
+    <li>Haversine es una aproximaci&oacute;n y no una ruta por carretera;</li>
+    <li>el consumo real depende del veh&iacute;culo, la conducci&oacute;n y las condiciones;</li>
+    <li>la autonom&iacute;a y <code>remaining_fuel_liters</code> est&aacute;n pospuestos a una versi&oacute;n posterior a 0.1.0.</li>
   </ul>
-  <p>
-    Si activas <strong>Regreso al origen</strong>, FuelOpt entiende que quieres salir de un
-    punto, repostar y volver a ese mismo punto.
-  </p>
-  <p>
-    Si introduces origen y destino, FuelOpt eval&uacute;a estaciones que pueden encajar como
-    parada dentro de tu trayecto.
-  </p>
-
-  <h2>3. De d&oacute;nde salen los precios</h2>
-  <p>
-    Los precios de carburantes proceden de fuentes oficiales del Ministerio para la
-    Transici&oacute;n Ecol&oacute;gica y el Reto Demogr&aacute;fico, a trav&eacute;s del Geoportal de
-    Hidrocarburos / Geoportal de Gasolineras.
-  </p>
-  <p>
-    Las estaciones de servicio comunican sus precios y FuelOpt trabaja con una copia local
-    actualizada de esos datos.
-  </p>
-  <p>
-    FuelOpt muestra la fecha de actualizaci&oacute;n disponible para que puedas saber cu&aacute;ndo
-    se descargaron o refrescaron los precios.
-  </p>
-  <p>
-    <strong>Aviso importante:</strong> los precios pueden cambiar y pueden existir retrasos,
-    errores de comunicaci&oacute;n o diferencias puntuales respecto al precio visible en la
-    estaci&oacute;n. FuelOpt debe entenderse como una herramienta de estimaci&oacute;n y comparaci&oacute;n,
-    no como una garant&iacute;a absoluta de precio final.
-  </p>
-
-  <h2>4. C&oacute;mo se buscan gasolineras candidatas</h2>
-  <p>Cuando lanzas una b&uacute;squeda, FuelOpt filtra estaciones candidatas seg&uacute;n varios criterios:</p>
-  <ul>
-    <li>tipo de combustible seleccionado;</li>
-    <li>zona relevante respecto a tu ruta;</li>
-    <li>marcas incluidas o excluidas;</li>
-    <li>disponibilidad de precio para ese carburante;</li>
-    <li>distancia y desv&iacute;o respecto al trayecto;</li>
-    <li>datos m&iacute;nimos necesarios para calcular la ruta o estimaci&oacute;n.</li>
-  </ul>
-  <p>
-    Despu&eacute;s de ese filtrado inicial, FuelOpt eval&uacute;a cada estaci&oacute;n candidata y calcula
-    si realmente compensa.
-  </p>
-
-  <h2>5. C&oacute;mo funciona el filtro de marcas</h2>
-  <p>El filtro de marcas tiene tres comportamientos distintos:</p>
-
-  <h3>Todas</h3>
-  <p>
-    Cuando seleccionas <strong>Todas</strong>, FuelOpt no env&iacute;a una lista gigante de marcas
-    al algoritmo. Simplemente no aplica filtro de marca.
-  </p>
-  <p>Conceptualmente:</p>
-  <pre>buscar en todo el cat&aacute;logo</pre>
-
-  <h3>Selecci&oacute;n manual de marcas</h3>
-  <p>Si eliges marcas concretas, FuelOpt busca solo estaciones de esas marcas.</p>
-  <p>Ejemplo:</p>
-  <pre>Repsol + Cepsa</pre>
-  <p>significa:</p>
-  <pre>buscar solo estaciones Repsol o Cepsa</pre>
-  <p>
-    La selecci&oacute;n manual est&aacute; limitada a un n&uacute;mero m&aacute;ximo de marcas para evitar filtros
-    demasiado ambiguos o pesados.
-  </p>
-
-  <h3>Todas excepto algunas</h3>
-  <p>Si partes de <strong>Todas</strong> y desactivas una marca, FuelOpt interpreta:</p>
-  <pre>buscar en todas excepto esa marca</pre>
-  <p>Por ejemplo:</p>
-  <pre>Todas excepto Alcampo</pre>
-  <p>
-    Esto evita convertir una exclusi&oacute;n simple en una lista enorme de marcas seleccionadas
-    manualmente.
-  </p>
-
-  <h2>6. C&oacute;mo se calcula el desv&iacute;o</h2>
-  <p>FuelOpt compara dos rutas:</p>
-  <p><strong>1. Ruta directa:</strong></p>
-  <pre>origen &rarr; destino</pre>
-  <p><strong>2. Ruta pasando por una gasolinera:</strong></p>
-  <pre>origen &rarr; gasolinera &rarr; destino</pre>
-  <p>La diferencia entre ambas es el desv&iacute;o adicional:</p>
-  <pre>desv&iacute;o extra = ruta pasando por gasolinera - ruta directa</pre>
-  <p>Si est&aacute; activado <strong>Regreso al origen</strong>, la comparaci&oacute;n se adapta al caso:</p>
-  <pre>origen &rarr; gasolinera &rarr; origen</pre>
-  <p>
-    Cuando hay una ruta real disponible, FuelOpt puede utilizar el motor de rutas configurado.
-    Si no lo hay, puede recurrir a estimaciones aproximadas por distancia.
-  </p>
-
-  <h2>7. Coste del desv&iacute;o</h2>
-  <p>El desv&iacute;o no es gratis: si conduces m&aacute;s kil&oacute;metros para repostar, consumes combustible.</p>
-  <p>FuelOpt estima ese consumo usando el consumo medio que introduces:</p>
-  <pre>litros consumidos por el desv&iacute;o =
-  desv&iacute;o extra en km x consumo medio / 100</pre>
-  <p>
-    Despu&eacute;s, ese consumo se convierte en coste estimado usando un precio de referencia del
-    combustible.
-  </p>
-  <p>
-    La idea es evitar recomendar una gasolinera barata si llegar hasta ella consume m&aacute;s de
-    lo que realmente ahorras.
-  </p>
-
-  <h2>8. Modo Litros: ahorro estimado en euros</h2>
-  <p>En modo <strong>Litros</strong>, t&uacute; fijas cu&aacute;ntos litros quieres repostar.</p>
-  <p>Ejemplo:</p>
-  <pre>Quiero repostar 30 L</pre>
-  <p>Para cada gasolinera, FuelOpt calcula:</p>
-  <pre>coste de repostaje = litros x precio por litro</pre>
-  <p>y suma el coste estimado del desv&iacute;o:</p>
-  <pre>coste efectivo =
-  coste de repostaje + coste estimado del desv&iacute;o</pre>
-  <p>
-    Luego compara ese coste efectivo contra una referencia razonable, normalmente una
-    alternativa cercana o de menor desv&iacute;o.
-  </p>
-  <p>El ahorro estimado se calcula as&iacute;:</p>
-  <pre>ahorro estimado =
-  coste efectivo de referencia - coste efectivo de la opci&oacute;n elegida</pre>
-  <p>
-    Si el valor es positivo, la opci&oacute;n elegida ahorra dinero frente a la referencia. Si el
-    valor es negativo, la opci&oacute;n elegida no compensa econ&oacute;micamente frente a la referencia.
-  </p>
-
-  <h2>9. Modo Euros: litros extra estimados</h2>
-  <p>En modo <strong>Euros</strong>, t&uacute; fijas cu&aacute;nto dinero quieres gastar en surtidor.</p>
-  <p>Ejemplo:</p>
-  <pre>Quiero echar 30 &euro;</pre>
-  <p>
-    En este modo, todas las alternativas parten del mismo presupuesto. Por eso no tiene
-    sentido decir que una estaci&oacute;n "cuesta" m&aacute;s en surtidor: el usuario ha fijado el gasto.
-  </p>
-  <p>FuelOpt calcula cu&aacute;ntos litros compras con ese presupuesto:</p>
-  <pre>litros comprados = presupuesto / precio por litro</pre>
-  <p>Despu&eacute;s descuenta los litros consumidos por el desv&iacute;o:</p>
-  <pre>litros &uacute;tiles estimados =
-  litros comprados - litros consumidos en desv&iacute;o</pre>
-  <p>La m&eacute;trica principal en modo Euros debe expresar la ventaja en litros frente a la referencia:</p>
-  <pre>litros extra estimados =
-  litros &uacute;tiles de la opci&oacute;n elegida - litros &uacute;tiles de la referencia</pre>
-  <p>As&iacute;, FuelOpt responde a la pregunta correcta:</p>
-  <p>
-    <strong>Con el mismo dinero, &iquest;qu&eacute; opci&oacute;n me deja m&aacute;s combustible &uacute;til despu&eacute;s del desv&iacute;o?</strong>
-  </p>
-
-  <h2>10. C&oacute;mo se elige la mejor opci&oacute;n</h2>
-  <p>FuelOpt ordena las estaciones seg&uacute;n el modo seleccionado.</p>
-
-  <h3>En modo Litros</h3>
-  <p>Prioriza la opci&oacute;n con menor coste efectivo:</p>
-  <pre>coste de repostaje + coste estimado del desv&iacute;o</pre>
-
-  <h3>En modo Euros</h3>
-  <p>Prioriza la opci&oacute;n con m&aacute;s litros &uacute;tiles estimados:</p>
-  <pre>litros comprados - litros consumidos en desv&iacute;o</pre>
-  <p>
-    En caso de empate, puede tener en cuenta criterios secundarios como menor desv&iacute;o o
-    mejor precio.
-  </p>
-
-  <h2>11. Qu&eacute; son las alternativas</h2>
-  <p>El bloque <strong>Otras alternativas</strong> muestra opciones que tambi&eacute;n han sido evaluadas.</p>
-  <p>
-    Sirve para entender por qu&eacute; la recomendaci&oacute;n principal es la mejor seg&uacute;n el criterio
-    elegido y para comparar otras estaciones cercanas o econ&oacute;micamente competitivas.
-  </p>
-  <p>En modo Litros, las alternativas se comparan principalmente por coste efectivo.</p>
-  <p>En modo Euros, las alternativas deben interpretarse por litros &uacute;tiles estimados.</p>
-
-  <h2>12. Por qu&eacute; no siempre gana el precio m&aacute;s bajo</h2>
-  <p>
-    Una estaci&oacute;n puede tener el precio por litro m&aacute;s bajo y aun as&iacute; no ser la mejor opci&oacute;n.
-  </p>
-  <p>Ejemplo:</p>
-  <ul>
-    <li>Gasolinera A: barata, pero muy lejos.</li>
-    <li>Gasolinera B: algo m&aacute;s cara, pero casi en tu ruta.</li>
-  </ul>
-  <p>
-    Si el desv&iacute;o hasta la gasolinera barata consume demasiado combustible, FuelOpt puede
-    elegir la opci&oacute;n aparentemente m&aacute;s cara porque su coste efectivo o su combustible
-    &uacute;til final es mejor.
-  </p>
-
-  <h2>13. Limitaciones del c&aacute;lculo</h2>
-  <p>FuelOpt trabaja con estimaciones. El resultado puede variar por:</p>
-  <ul>
-    <li>cambios recientes de precios;</li>
-    <li>precisi&oacute;n de los datos oficiales;</li>
-    <li>ubicaci&oacute;n aproximada de origen o destino;</li>
-    <li>disponibilidad del servicio de rutas;</li>
-    <li>consumo real del veh&iacute;culo;</li>
-    <li>tr&aacute;fico, pendientes, conducci&oacute;n y condiciones de circulaci&oacute;n;</li>
-    <li>errores o inconsistencias en la marca o r&oacute;tulo de una estaci&oacute;n.</li>
-  </ul>
-  <p>
-    La app busca dar una recomendaci&oacute;n &uacute;til y transparente, pero no sustituye la
-    comprobaci&oacute;n final del precio en la estaci&oacute;n.
-  </p>
-
-  <h2>14. Privacidad y datos de uso</h2>
-  <p>
-    FuelOpt procesa los datos que introduces para calcular la recomendaci&oacute;n en tiempo real.
-  </p>
-  <p>
-    La app no necesita almacenar tu historial de b&uacute;squedas para funcionar. Los puntos de
-    origen, destino y par&aacute;metros de b&uacute;squeda se utilizan para calcular la ruta y la
-    comparaci&oacute;n, y se descartan despu&eacute;s de responder.
-  </p>
-  <p>Para m&aacute;s informaci&oacute;n, consulta la <a href="/privacidad">pol&iacute;tica de privacidad</a>.</p>
-
-  <h2>15. Abrir la ruta en Google Maps</h2>
-  <p>
-    Cuando pulsas <strong>Abrir en Maps</strong>, FuelOpt genera un enlace hacia Google Maps
-    con la estaci&oacute;n seleccionada.
-  </p>
-  <p>Si hay origen y destino, la gasolinera puede abrirse como parada dentro de la ruta:</p>
-  <pre>origen &rarr; gasolinera &rarr; destino</pre>
-  <p>Si est&aacute; activado <strong>Regreso al origen</strong>, se intenta representar:</p>
-  <pre>origen &rarr; gasolinera &rarr; origen</pre>
-  <p>
-    Google Maps se abre en una pesta&ntilde;a externa y aplica sus propias reglas de navegaci&oacute;n,
-    tr&aacute;fico y rutas.
-  </p>
-
-  <h2>Si has llegado hasta aqu&iacute;</h2>
-  <p>
-    Te doy las gracias por el gran inter&eacute;s en este peque&ntilde;o proyecto que me ha llevado
-    tanto trabajo. Si tienes alguna sugerencia, cambio o idea, no te olvides de que hay
-    un bot&oacute;n en la esquina superior derecha mediante el cual nos puedes mandar tu idea
-    directamente a nosotros para hacer que esta plataforma crezca y sea cada d&iacute;a mejor.
-  </p>
-  <p>Miguel Pajuelo G&oacute;mez</p>
+  <p>FuelOpt ayuda a comparar, pero conviene comprobar el precio y la ruta antes de desplazarse.</p>
 
   <footer>
     <p>FuelOpt &mdash; Optimizador de repostaje para Espa&ntilde;a &mdash; <a href="/">Volver al inicio</a></p>

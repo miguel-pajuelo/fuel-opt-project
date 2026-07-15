@@ -1,0 +1,15 @@
+Microsoft Visual C++ Runtime and Universal CRT redistribution notice
+
+FuelOpt's CPython 3.12.10 runtime includes unmodified Microsoft Visual C++
+Runtime and application-local Universal CRT files. Microsoft documents these
+files as redistributable code subject to the applicable Microsoft Software
+License Terms. This notice does not replace those terms.
+
+Official redistribution list for Visual Studio 2022:
+https://learn.microsoft.com/visualstudio/releases/2022/redistribution
+
+Official Universal CRT deployment guidance:
+https://learn.microsoft.com/cpp/windows/universal-crt-deployment
+
+Visual Studio license terms directory:
+https://visualstudio.microsoft.com/license-terms/

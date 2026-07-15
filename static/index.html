@@ -3,18 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/fuelopt-32.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/fuelopt-180.png">
   <title>FuelOpt &#8212; Encuentra la gasolinera m&#225;s barata en tu ruta</title>
   <meta name="description" content="Calcula qu&#233; gasolinera te sale m&#225;s barata teniendo en cuenta el precio del combustible y el desv&#237;o de tu ruta. Gratis, sin registro.">
   <meta property="og:title" content="FuelOpt &#8212; Optimizador de repostaje">
   <meta property="og:description" content="Encuentra la gasolinera m&#225;s econ&#243;mica en tu ruta por Espa&#241;a. Compara precio real incluyendo el coste del desv&#237;o.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://fuelopt.es">
   <meta name="theme-color" content="#171411">
-  <script data-goatcounter="https://fuelopt.goatcounter.com/count"
-          async src="//gc.zgo.at/count.js"></script>
-  <link rel="preconnect" href="https://unpkg.com">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
-  <link rel="stylesheet" href="/static/styles.css?v=feedback-modal-20260519-10">
+  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css?v=1.9.4">
+  <link rel="stylesheet" href="/static/styles.css?v=onboarding-v1">
 </head>
 <body>
   <div class="shell app-shell">
@@ -24,27 +23,18 @@
         <span class="beta-badge">Beta</span>
         <a class="header-privacy-link" href="/privacidad">Privacidad</a>
         <a class="header-privacy-link" href="/como-funciona">¿Cómo funciona?</a>
+        <button class="header-privacy-link quick-help-trigger" id="quick_help_trigger" type="button">Ayuda rápida</button>
       </div>
       <div class="price-chip" aria-live="polite">
         <span id="catalog_freshness_dot" class="freshness-dot freshness-unknown" aria-hidden="true"></span>
         <span id="refresh_status">Precios actualizados: --</span>
       </div>
       <nav class="nav mini-nav" aria-label="Enlaces">
-        <button class="feedback-chip" id="feedback_trigger" type="button">
+        <a class="feedback-chip" href="https://github.com/miguel-pajuelo/fuel-opt-project/issues/new" target="_blank" rel="noopener noreferrer" aria-label="Mándanos tu idea en GitHub (se abre en una pestaña nueva)">
           <span class="feedback-chip__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
           </span>
           <span class="feedback-chip__main">Mándanos tu idea</span>
-        </button>
-        <a class="support-chip" href="https://ko-fi.com/fuelopt" target="_blank" rel="noopener noreferrer" aria-label="Apoyar FuelOpt en Ko-fi">
-          <span class="support-chip__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" focusable="false">
-              <path d="M6 8h10v4.5a4.5 4.5 0 0 1-4.5 4.5h-1A4.5 4.5 0 0 1 6 12.5V8Z"></path>
-              <path d="M16 9h1.5a2.5 2.5 0 0 1 0 5H16"></path>
-              <path d="M7 19h9"></path>
-            </svg>
-          </span>
-          <span class="support-chip__main">Apoyar FuelOpt</span>
         </a>
       </nav>
     </header>
@@ -57,7 +47,7 @@
 
       <section class="controls">
         <div class="config-grid">
-          <div class="config-field">
+          <div class="config-field span-2">
             <label class="label" for="fuel_type_trigger">Combustible</label>
             <div class="pdd" id="fuel_type" data-value="">
               <button class="pdd-trigger" id="fuel_type_trigger" type="button" aria-expanded="false" aria-haspopup="listbox" aria-label="Combustible">
@@ -68,20 +58,32 @@
             </div>
           </div>
 
-          <div class="config-field">
-            <label class="label" for="optimization_mode_trigger">Objetivo</label>
-            <div class="pdd" id="optimization_mode" data-value="economic">
-              <button class="pdd-trigger" id="optimization_mode_trigger" type="button" aria-expanded="false" aria-haspopup="listbox" aria-label="Objetivo">
-                <span class="pdd-selected">M&#225;ximo ahorro</span>
-                <svg class="pdd-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-              </button>
-              <div class="pdd-menu" role="listbox">
-                <div class="pdd-option active" data-value="economic" role="option" aria-selected="true" tabindex="-1">M&#225;ximo ahorro</div>
-                <div class="pdd-option" data-value="balanced" role="option" aria-selected="false" tabindex="-1">Equilibrado</div>
-                <div class="pdd-option" data-value="minimal_detour" role="option" aria-selected="false" tabindex="-1">M&#237;nimo desv&#237;o</div>
-              </div>
+          <fieldset class="config-field optimization-mode-field span-2">
+            <legend class="label">Objetivo de optimizaci&#243;n</legend>
+            <div class="optimization-mode-options">
+              <label class="optimization-mode-option" for="optimization_mode_economic">
+                <input id="optimization_mode_economic" type="radio" name="optimization_mode" value="economic" checked aria-describedby="optimization_mode_economic_description">
+                <span class="optimization-mode-copy">
+                  <strong>M&#225;s ahorro</strong>
+                  <span id="optimization_mode_economic_description">Prioriza el mayor ahorro neto estimado, descontando el coste del desplazamiento.</span>
+                </span>
+              </label>
+              <label class="optimization-mode-option" for="optimization_mode_minimal_detour">
+                <input id="optimization_mode_minimal_detour" type="radio" name="optimization_mode" value="minimal_detour" aria-describedby="optimization_mode_minimal_detour_description">
+                <span class="optimization-mode-copy">
+                  <strong>Menor desv&#237;o</strong>
+                  <span id="optimization_mode_minimal_detour_description">Prioriza la estaci&#243;n que exige menos distancia adicional. En b&#250;squedas locales, prioriza la estaci&#243;n m&#225;s cercana.</span>
+                </span>
+              </label>
+              <label class="optimization-mode-option" for="optimization_mode_balanced">
+                <input id="optimization_mode_balanced" type="radio" name="optimization_mode" value="balanced" aria-describedby="optimization_mode_balanced_description">
+                <span class="optimization-mode-copy">
+                  <strong>Equilibrado</strong>
+                  <span id="optimization_mode_balanced_description">Equilibra por igual el ahorro estimado y el desv&#237;o entre las opciones encontradas.</span>
+                </span>
+              </label>
             </div>
-          </div>
+          </fieldset>
 
           <div class="config-field amount-field span-2">
             <label class="label" for="liters">Cantidad</label>
@@ -111,14 +113,24 @@
               </div>
               <button id="select_all_brands" class="link-button active" type="button" aria-pressed="true">Todas</button>
             </div>
-            <div id="brand_checks" class="brand-grid"></div>
+            <div id="brand_checks" class="brand-grid" aria-busy="true">
+              <div class="brand-loading" role="status" aria-live="polite">
+                <p>Cargando marcas&#8230;</p>
+                <div class="brand-loading-skeleton" aria-hidden="true">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       <footer class="side-footer">
-        <button class="primary" id="submit" type="button">
-          <span>Calcular mejor repostaje</span>
+        <button class="primary" id="submit" type="button" aria-busy="false">
+          <span class="primary-spinner" aria-hidden="true" hidden></span>
+          <span data-submit-label>Calcular mejor repostaje</span>
           <span class="primary-arrow" aria-hidden="true">&#8594;</span>
         </button>
         <div id="status" class="status" aria-live="polite"></div>
@@ -200,34 +212,40 @@
     </main>
   </div>
 
-  <div id="feedback_overlay" class="feedback-overlay" role="dialog" aria-modal="true" aria-label="Enviar idea" hidden>
-    <div class="feedback-modal">
-      <div class="feedback-modal__head">
-        <div class="feedback-modal__head-top">
-          <span class="feedback-modal__icon-circle" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
-          </span>
-          <button class="feedback-modal__close" id="feedback_close" type="button" aria-label="Cerrar">&#10005;</button>
-        </div>
-        <p class="feedback-modal__title">¿Tienes una idea para mejorar FuelOpt?</p>
-        <p class="feedback-modal__subtitle">Cuéntanosla. Leemos cada sugerencia.</p>
-      </div>
-      <div class="feedback-modal__body">
-        <div class="feedback-field">
-          <label class="feedback-label" for="feedback_email">Correo electrónico</label>
-          <input class="feedback-input" id="feedback_email" type="email" autocomplete="email" placeholder="tu@correo.com">
-        </div>
-        <div class="feedback-field">
-          <label class="feedback-label" for="feedback_message">Cuéntanos tu idea</label>
-          <textarea class="feedback-input feedback-textarea" id="feedback_message" placeholder="Escribe aquí tu idea, sugerencia o mejora…"></textarea>
-        </div>
-        <p id="feedback_success" class="feedback-success" hidden>¡Gracias! Hemos recibido tu mensaje.</p>
-        <button class="feedback-submit" id="feedback_submit" type="button">Enviar idea &#8594;</button>
-      </div>
+  <dialog class="onboarding-dialog" id="quick_help_dialog" aria-labelledby="quick_help_title" aria-describedby="quick_help_intro">
+    <div class="onboarding-dialog__content">
+      <button class="onboarding-dialog__close" id="quick_help_close" type="button" aria-label="Cerrar ayuda rápida">&#10005;</button>
+      <div class="onboarding-dialog__eyebrow">Guía rápida</div>
+      <h2 id="quick_help_title">Empieza a ahorrar con FuelOpt</h2>
+      <p class="onboarding-dialog__intro" id="quick_help_intro">Encuentra dónde repostar teniendo en cuenta el precio y el desplazamiento.</p>
+      <ol class="onboarding-steps">
+        <li>
+          <span class="onboarding-step-number" aria-hidden="true">1</span>
+          <div>
+            <h3>Elige el lugar</h3>
+            <p>Busca una localidad o haz doble clic sobre el mapa para marcar el punto de salida.</p>
+          </div>
+        </li>
+        <li>
+          <span class="onboarding-step-number" aria-hidden="true">2</span>
+          <div>
+            <h3>Configura tu búsqueda</h3>
+            <p>Selecciona el combustible, la cantidad, el criterio de optimización y las marcas que quieras comparar.</p>
+          </div>
+        </li>
+        <li>
+          <span class="onboarding-step-number" aria-hidden="true">3</span>
+          <div>
+            <h3>Compara los resultados</h3>
+            <p>Pulsa “Calcular mejor repostaje” para ver la mejor opción y consultar otras alternativas.</p>
+          </div>
+        </li>
+      </ol>
+      <button class="onboarding-dialog__primary" id="quick_help_start" type="button">Empezar</button>
     </div>
-  </div>
+  </dialog>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
-  <script src="/static/app.js?v=feedback-modal-20260519-11"></script>
+  <script src="/static/vendor/leaflet/leaflet.js?v=1.9.4"></script>
+  <script src="/static/app.js?v=onboarding-v1"></script>
 </body>
 </html>

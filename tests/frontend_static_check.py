@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sys
+from html import unescape
 from pathlib import Path
 
 
@@ -17,6 +18,17 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def _html_attributes(tag: str) -> dict[str, str]:
+    return {
+        name: unescape(value)
+        for name, _quote, value in re.findall(
+            r"([\w:-]+)\s*=\s*([\"'])(.*?)\2",
+            tag,
+            flags=re.DOTALL,
+        )
+    }
+
+
 def test_frontend_is_extracted() -> None:
     html = _read("static/index.html")
     _assert('href="/static/styles.css' in html, "index.html does not load static CSS.")
@@ -30,7 +42,6 @@ def test_dynamic_html_uses_escape_helper() -> None:
     _assert("function escapeHtml" in js, "escapeHtml helper missing.")
     risky_patterns = [
         r"\$\('result'\)\.innerHTML = `[\s\S]*\$\{station\.name\}",
-        r"\$\('result'\)\.innerHTML = `[\s\S]*\$\{selected\.why_selected\}",
         r"box\.innerHTML = `<button[\s\S]*\$\{error\.message\}",
         r"\.map\(f => `<option value=\"\$\{f\.key\}",
     ]
@@ -41,10 +52,167 @@ def test_dynamic_html_uses_escape_helper() -> None:
         "escapeHtml(opt.key)",
         "escapeHtml(opt.label)",
         "const stationName = escapeHtml(station.name ||",
-        "const whySelected = escapeHtml(selected.why_selected",
     ]
     for fragment in required_safe_fragments:
         _assert(fragment in js, f"Expected escaped fragment missing: {fragment}")
+
+
+def test_optimization_mode_selector_is_native_and_accessible() -> None:
+    html = _read("static/index.html")
+    styles = _read("static/styles.css")
+    decoded = unescape(html)
+    radio_tags = [
+        tag
+        for tag in re.findall(r"<input\b[^>]*>", html, flags=re.IGNORECASE)
+        if _html_attributes(tag).get("type") == "radio"
+        and _html_attributes(tag).get("name") == "optimization_mode"
+    ]
+    _assert(len(radio_tags) == 3, f"Expected exactly three optimization radios, got {radio_tags}")
+    radios = {_html_attributes(tag)["value"]: _html_attributes(tag) for tag in radio_tags}
+    _assert(set(radios) == {"economic", "minimal_detour", "balanced"}, radios)
+    _assert("checked" in radio_tags[0] and radios["economic"]["id"] == "optimization_mode_economic", radios)
+    _assert(sum(" checked" in tag for tag in radio_tags) == 1, "Only economic may be selected by default.")
+    _assert('<fieldset class="config-field optimization-mode-field span-2">' in html, "Optimization fieldset missing.")
+    _assert("<legend class=\"label\">Objetivo de optimizaci&#243;n</legend>" in html, "Optimization legend missing.")
+    for value, label in {
+        "economic": "Más ahorro",
+        "minimal_detour": "Menor desvío",
+        "balanced": "Equilibrado",
+    }.items():
+        radio_id = radios[value]["id"]
+        label_match = re.search(
+            rf'<label\b[^>]*\bfor="{re.escape(radio_id)}"[^>]*>(.*?)</label>',
+            html,
+            flags=re.DOTALL,
+        )
+        _assert(label_match is not None, f"Missing associated label for {value}.")
+        label_text = unescape(re.sub(r"<[^>]+>", " ", label_match.group(1)))
+        _assert(label in " ".join(label_text.split()), f"Public label missing for {value}.")
+    for description in (
+        "Prioriza el mayor ahorro neto estimado, descontando el coste del desplazamiento.",
+        "Prioriza la estación que exige menos distancia adicional.",
+        "En búsquedas locales, prioriza la estación más cercana.",
+        "Equilibra por igual el ahorro estimado y el desvío entre las opciones encontradas.",
+    ):
+        _assert(description in decoded, f"Optimization description missing: {description}")
+    _assert('role="radio"' not in html, "Native radios must not duplicate ARIA radio semantics.")
+    _assert('id="optimization_mode"' not in html, "Legacy optimization dropdown container remains.")
+    _assert("optimization_mode_trigger" not in html, "Legacy optimization dropdown trigger remains.")
+    _assert(".optimization-mode-option:has(input:checked)" in styles, "Selected radio card styling missing.")
+    _assert(".optimization-mode-option:has(input:focus-visible)" in styles, "Visible keyboard focus styling missing.")
+    legend_rule = re.search(r"\.optimization-mode-field > legend\s*\{(?P<body>[^}]*)\}", styles)
+    _assert(legend_rule is not None, "Optimization legend style rule missing.")
+    options_rule = re.search(r"\.optimization-mode-options\s*\{(?P<body>[^}]*)\}", styles)
+    _assert(options_rule is not None, "Optimization options style rule missing.")
+    _assert("margin-top: 15px" in options_rule.group("body"), "Optimization cards need visible separation from the legend.")
+
+
+def test_optimization_mode_request_and_result_state_are_separate() -> None:
+    js = _read("static/app.js")
+    _assert("function getSelectedOptimizationMode()" in js, "Optimization radio reader missing.")
+    _assert(
+        "document.querySelector('input[name=\"optimization_mode\"]:checked')" in js,
+        "Optimization mode must be read from the checked native radio.",
+    )
+    _assert("const requestedOptimizationMode = getSelectedOptimizationMode();" in js, "Mode must be captured once per request.")
+    _assert("optimization_mode: requestedOptimizationMode" in js, "Payload must use the captured enum value.")
+    _assert("getPddValue('optimization_mode')" not in js, "Legacy dropdown reader remains for optimization mode.")
+    _assert("initPDD('optimization_mode')" not in js, "Legacy dropdown listener remains for optimization mode.")
+    _assert("renderedOptimizationMode: null" in js, "Rendered result mode needs independent state.")
+    _assert(
+        "state.renderedOptimizationMode = requestedOptimizationMode;" in js,
+        "Rendered mode must update only from a successful requested mode.",
+    )
+    _assert(
+        js.index("const { data } = await requestOptimization(payload);")
+        < js.index("state.renderedOptimizationMode = requestedOptimizationMode;"),
+        "Rendered mode changed before a successful response.",
+    )
+    _assert("data.optimization_mode !== requestedOptimizationMode" in js, "Response mode mismatch must not be silently relabeled.")
+    _assert("result_limit: 10" in js, "Result limit changed during selector integration.")
+    _assert("remaining_fuel_liters" not in js, "Autonomy entered the frontend payload.")
+
+
+def test_result_presentation_is_simplified_and_route_warning_is_plain() -> None:
+    js = _read("static/app.js")
+    styles = _read("static/styles.css")
+    for removed_copy in (
+        "Ordenado por:",
+        "Por qué aparece aquí",
+        "Fuente de ruta",
+        "Ruta calculada con OpenRouteService",
+        "Estimación mediante distancia geográfica",
+    ):
+        _assert(removed_copy not in js, f"Redundant result copy remains: {removed_copy}")
+    _assert("why_selected" not in js, "Frontend must not render the backend why_selected field.")
+    _assert("balanced_score" not in js, "Internal balanced score leaked into frontend code.")
+    _assert("economic_rank" not in js and "distance_rank" not in js, "Internal ranks leaked into frontend code.")
+    for removed_selector in (".result-mode-summary", ".why-selected", ".result-route-source"):
+        _assert(removed_selector not in styles, f"Unused result style remains: {removed_selector}")
+    _assert(js.count("Ruta estimada por distancia") == 1, "Approximate route title must appear exactly once.")
+    _assert(
+        js.count("El coste de ruta se ha calculado con una aproximación de distancia.") == 1,
+        "Approximate route warning must use the approved plain-language copy exactly once.",
+    )
+    _assert("warning.code === 'using_haversine_estimate'" in js, "Approximate route copy must be limited to its structured warning.")
+
+
+def test_optimize_loading_state_is_accessible_and_bounded() -> None:
+    html = _read("static/index.html")
+    js = _read("static/app.js")
+    styles = _read("static/styles.css")
+    decoded_html = unescape(html)
+    _assert('id="submit" type="button" aria-busy="false"' in html, "Submit button needs an explicit idle aria-busy state.")
+    _assert('class="primary-spinner" aria-hidden="true" hidden' in html, "Decorative submit spinner is missing.")
+    _assert("data-submit-label" in html, "Submit label needs a stable update target.")
+    _assert("Calcular mejor repostaje" in decoded_html, "Idle submit label changed unexpectedly.")
+    for message in ("Buscando estaciones…", "Calculando recorridos…", "Ordenando alternativas…"):
+        _assert(js.count(message) == 1, f"Loading message must exist exactly once: {message}")
+    _assert("}, 1700);" in js, "Loading messages should advance every 1.7 seconds.")
+    _assert("window.clearInterval(optimizeLoadingTimer)" in js, "Loading timer is not cleared.")
+    _assert("if (state.optimizeInFlight) return;" in js, "Concurrent optimization requests are not guarded.")
+    _assert("state.optimizeInFlight = true;" in js and "state.optimizeInFlight = false;" in js, "Request guard is not restored.")
+    _assert("function setOptimizeLoadingState(isLoading)" in js, "Submit loading state helper missing.")
+    _assert("button.setAttribute('aria-busy', String(isLoading))" in js, "Submit aria-busy is not synchronized.")
+    _assert("Calculando mejor repostaje…" in js, "Busy submit label missing.")
+    _assert("function renderOptimizeLoadingResult()" in js, "Result loading renderer missing.")
+    _assert('class="result-loading-skeleton" aria-hidden="true"' in js, "Decorative result skeleton must be hidden from assistive technology.")
+    _assert('role="status" aria-live="polite" data-optimize-loading-message' in js, "Result progress needs one polite live region.")
+    _assert("resultElement.setAttribute('aria-busy', 'true')" in js, "Result panel does not enter aria-busy state.")
+    optimize_region = js[js.index("async function optimize()") : js.index("initPDD('fuel_type')")]
+    _assert("finally" in optimize_region, "Optimization cleanup must run in a finally block.")
+    _assert("stopOptimizeLoadingMessages();" in optimize_region, "Optimization cleanup must stop its timer.")
+    _assert("setOptimizeLoadingState(false);" in optimize_region, "Submit button is not restored after success or error.")
+    _assert('role="alert"' in optimize_region, "Optimization errors need an accessible alert.")
+    start_region = js[js.index("function startOptimizeLoadingMessages()") : js.index("function stopOptimizeLoadingMessages()")]
+    _assert("$('status')" not in start_region, "Progress must not be duplicated below the submit button.")
+    _assert(".result-loading-skeleton" in styles and ".primary-spinner" in styles, "Loading visuals are not styled.")
+    _assert(".primary:focus-visible" in styles, "Submit button needs an explicit visible keyboard focus.")
+    _assert("@media (prefers-reduced-motion: reduce)" in styles, "Reduced motion is not respected.")
+
+
+def test_brand_loading_and_all_button_state_are_unambiguous() -> None:
+    html = _read("static/index.html")
+    js = _read("static/app.js")
+    styles = _read("static/styles.css")
+    decoded_html = unescape(html)
+    brand_start = decoded_html.index('id="brand_checks"')
+    brand_region = decoded_html[brand_start : decoded_html.index('class="side-footer"', brand_start)]
+    _assert("Cargando marcas…" in brand_region, "Initial brand loading message missing.")
+    _assert("0 estaciones" not in brand_region, "Brand loading state must not claim zero stations.")
+    _assert('aria-busy="true"' in html[html.index('id="brand_checks"') : html.index('id="brand_checks"') + 100], "Brand list needs an initial busy state.")
+    _assert('class="brand-loading-skeleton" aria-hidden="true"' in html, "Brand skeleton must be decorative.")
+    _assert("function renderBrandsLoading()" in js, "Reusable brand loading renderer missing.")
+    load_region = js[js.index("async function loadOptions()") : js.index("$('select_all_brands').addEventListener")]
+    _assert(load_region.index("renderBrandsLoading();") < load_region.index("Promise.all"), "Brand loading state must appear before the existing requests.")
+    _assert("container.setAttribute('aria-busy', 'false')" in js, "Brand busy state is not cleared after rendering.")
+    _assert("$('select_all_brands').textContent = 'Todas';" in js, "All-brands button text must remain stable.")
+    _assert("Todas excepto" not in js and "Todas excepto" not in decoded_html, "Dynamic all-except label remains.")
+    _assert("classList.toggle('active', allSelected)" in js, "All-brands active state must mean every brand is selected.")
+    _assert("setAttribute('aria-pressed', String(allSelected))" in js, "All-brands pressed state is ambiguous.")
+    _assert("$('brand_checks').addEventListener('change'" in js, "Individual brand switches lost their handler.")
+    _assert(".brand-loading" in styles and ".brand-loading-skeleton" in styles, "Brand loading state is not styled.")
+    _assert(".link-button:focus-visible" in styles, "All-brands button needs an explicit visible keyboard focus.")
 
 
 def test_frontend_has_no_visible_mojibake() -> None:
@@ -99,28 +267,105 @@ def test_catalog_and_route_status_copy_present() -> None:
     _assert("function catalogFreshnessClass" in js, "Catalog freshness color helper missing.")
     _assert("freshness-fresh" in js and "freshness-recent" in js and "freshness-stale" in js, "Freshness color classes should be assigned by JS.")
     _assert("Ruta estimada por distancia" in js, "Haversine route status copy missing.")
-    _assert("Ruta calculada con OpenRouteService" not in js, "ORS route note should not be shown in results.")
+    _assert("Ruta calculada con OpenRouteService" not in js, "ORS must not add a technical route-source block.")
     _assert("emptyResultHtml" in js, "No-result helper missing.")
 
 
-def test_header_support_chip_presentational_only() -> None:
+def test_header_has_no_support_chip_and_keeps_primary_actions() -> None:
     html = _read("static/index.html")
+    js = _read("static/app.js")
     styles = _read("static/styles.css")
 
-    _assert("Apoyar FuelOpt" in html, "Support chip should show 'Apoyar FuelOpt'.")
-    _assert("Ko-fi" not in html.split('class="support-chip__main"')[1], "Support chip should not show the Ko-fi sublabel.")
-    _assert('class="support-chip"' in html, "Support chip markup missing.")
-    _assert('href="https://ko-fi.com/fuelopt"' in html, "Support chip should link to the real FuelOpt Ko-fi page.")
-    _assert('target="_blank"' in html and 'rel="noopener noreferrer"' in html, "External Ko-fi link should open safely.")
+    combined = "\n".join([html, styles]).lower()
+    removed_tokens = (
+        "ko" + "-fi",
+        "ko" + "-fi.com",
+        "buyme" + "acoffee",
+        "buy me a " + "coffee",
+        "apoyar " + "fuelopt",
+        "support" + "-chip",
+    )
+    for token in removed_tokens:
+        _assert(token not in combined, f"Removed support component token remains: {token!r}")
+
     _assert('class="header-privacy-link"' in html, "Privacy link should be placed next to the FuelOpt wordmark.")
-    _assert("support-chip__icon" in html, "Support chip should include a local inline icon area.")
-    _assert(".support-chip" in styles, "Support chip CSS missing.")
     _assert(".header-privacy-link" in styles, "Header privacy link CSS missing.")
-    _assert(".support-chip__meta" not in styles, "Removed Ko-fi sublabel CSS should not remain.")
-    _assert("https://ko-fi.com/fuelopt" in html, "Support chip should use the provided Ko-fi URL.")
-    _assert("ko-fi.com" not in styles.lower(), "Support chip CSS must not load Ko-fi resources.")
-    _assert("cdn.ko-fi" not in html.lower() and "cdn.ko-fi" not in styles.lower(), "No external Ko-fi runtime script or asset should be loaded.")
-    _assert("Privacidad" in html[:html.find('class="support-chip"')], "Privacy link should appear before the support chip near the wordmark.")
+    _assert('href="/privacidad"' in html, "Privacy link should remain in the header.")
+    _assert('href="/como-funciona"' in html, "How-it-works link should remain in the header.")
+    issues_url = "https://github.com/miguel-pajuelo/fuel-opt-project/issues/new"
+    _assert('class="feedback-chip"' in html, "Feedback action should remain in the header.")
+    _assert(".feedback-chip" in styles, "Feedback action styling should remain available.")
+    _assert(f'href="{issues_url}"' in html, "Feedback action must link directly to GitHub Issues.")
+    _assert('target="_blank"' in html, "GitHub Issues link must open in a new tab.")
+    _assert('rel="noopener noreferrer"' in html, "GitHub Issues link must isolate window.opener.")
+    _assert('aria-label="Mándanos tu idea en GitHub (se abre en una pestaña nueva)"' in html, "GitHub Issues link needs an accessible external-link name.")
+    _assert('<span class="feedback-chip__main">Mándanos tu idea</span>\n        </a>' in html, "GitHub Issues action must be a correctly closed anchor.")
+    _assert(f'{issues_url}?' not in html, "GitHub Issues link must not include collected or personal query parameters.")
+
+    removed_feedback_tokens = (
+        "feedback_overlay",
+        "feedback_email",
+        "feedback_message",
+        "feedback_submit",
+        "feedback_success",
+        "initFeedbackModal",
+        "fetch('/feedback'",
+        ".feedback-overlay",
+        ".feedback-modal",
+        ".feedback-field",
+        ".feedback-input",
+        ".feedback-submit",
+    )
+    combined_feedback = "\n".join([html, js, styles])
+    for token in removed_feedback_tokens:
+        _assert(token not in combined_feedback, f"Removed feedback form token remains: {token!r}")
+
+
+def test_first_opening_quick_help_is_accessible_and_non_blocking() -> None:
+    html = _read("static/index.html")
+    js = _read("static/app.js")
+    styles = _read("static/styles.css")
+
+    _assert('<dialog class="onboarding-dialog" id="quick_help_dialog"' in html, "Quick help should use a native dialog.")
+    _assert('aria-labelledby="quick_help_title"' in html, "Quick help title must label the dialog.")
+    _assert('aria-describedby="quick_help_intro"' in html, "Quick help introduction must describe the dialog.")
+    _assert("Empieza a ahorrar con FuelOpt" in html, "Quick help title is missing.")
+    for step in ("Elige el lugar", "Configura tu búsqueda", "Compara los resultados"):
+        _assert(step in html, f"Quick help step is missing: {step}")
+    _assert('id="quick_help_start"' in html and ">Empezar</button>" in html, "Quick help primary action is missing.")
+    _assert('id="quick_help_trigger"' in html and "Ayuda rápida" in html, "Manual quick-help access is missing.")
+
+    _assert("fuelopt:onboarding:v1:dismissed" in js, "Quick help storage key must be versioned.")
+    _assert("window.localStorage.getItem(ONBOARDING_STORAGE_KEY)" in js, "Quick help should read its dismissed state.")
+    _assert("window.localStorage.setItem(ONBOARDING_STORAGE_KEY, 'true')" in js, "Automatic dismissal should be persisted.")
+    _assert(js.count("catch (_error)") >= 2, "Quick help storage access must tolerate failures.")
+    _assert("if (!wasQuickHelpDismissed())" in js, "Quick help should only open automatically before dismissal.")
+    _assert("openQuickHelp({ automatic: true })" in js, "First-opening quick help should be marked as automatic.")
+    _assert("openQuickHelp({ opener: trigger })" in js, "Quick help should be manually reopenable.")
+    _assert("if (openedAutomatically) rememberQuickHelpDismissal()" in js, "Only an automatic opening should persist dismissal.")
+    _assert("dialog.addEventListener('cancel'" in js and "event.preventDefault()" in js, "Escape dismissal must be handled deliberately.")
+    _assert("returnFocusTarget" in js and "focusTarget.focus()" in js, "Focus should return to the opening control.")
+    _assert("closeButton.focus()" in js, "Focus should move into the dialog when it opens.")
+    _assert(".onboarding-dialog::backdrop" in styles, "Quick help needs a visually subdued backdrop.")
+    _assert("width: min(520px, calc(100% - 24px))" in styles, "Quick help should fit narrow viewports.")
+    _assert("overflow-x: hidden" in styles, "Quick help must prevent horizontal overflow.")
+    dialog_rule = re.search(r"\.onboarding-dialog\s*\{(?P<body>[^}]*)\}", styles)
+    _assert(dialog_rule and "font-family: inherit" in dialog_rule.group("body"), "Quick help must use the app typography.")
+    primary_rule = re.search(r"\.onboarding-dialog__primary\s*\{(?P<body>[^}]*)\}", styles)
+    _assert(primary_rule and "background: var(--gold)" in primary_rule.group("body"), "Quick help CTA must use the app gold treatment.")
+
+    onboarding_start = js.find("(function initQuickHelp()")
+    onboarding_end = js.find("let refreshMessageTimer", onboarding_start)
+    map_start = js.find("const map = L.map")
+    onboarding_js = js[onboarding_start:onboarding_end]
+    _assert(0 <= onboarding_start < onboarding_end < map_start, "Quick help must initialize before map and data startup.")
+    _assert("await " not in onboarding_js, "Opening quick help must not wait for startup work.")
+    _assert("fetch(" not in onboarding_js and "loadOptions" not in onboarding_js, "Quick help must not issue or restart data requests.")
+    _assert("Cargando marcas" in html and "renderBrandsLoading" in js, "Existing brand loading feedback must remain available behind quick help.")
+
+    tutorial_html = html[html.find('<dialog class="onboarding-dialog"'):html.find("</dialog>")]
+    for forbidden in ("API", "ORS", "Haversine", "base de datos", "backend", "algoritmo"):
+        _assert(forbidden.lower() not in tutorial_html.lower(), f"Quick help contains a technical term: {forbidden}")
 
 
 def test_sidebar_and_floating_search_layout() -> None:
@@ -129,6 +374,9 @@ def test_sidebar_and_floating_search_layout() -> None:
     js = _read("static/app.js")
     combined = "\n".join([html, styles, js])
     _assert("config_sidebar" in html, "Left configuration sidebar should exist.")
+    controls_rule = re.search(r"\.controls\s*\{(?P<body>[^}]*)\}", styles)
+    _assert(controls_rule and "padding-right: 12px" in controls_rule.group("body"), "Scrollable sidebar content needs clearance from its scrollbar.")
+    _assert(controls_rule and "overflow-x: hidden" in controls_rule.group("body"), "Sidebar clearance must not introduce horizontal scrolling.")
     _assert("floating-sidebar" in html, "Sidebar should use the compact floating visual treatment.")
     _assert("Llena tu depósito" in html, "Sidebar headline should match the target visual direction.")
     _assert("Ahorra en cada repostaje" not in html, "Temporary sidebar headline should not remain.")
@@ -169,6 +417,10 @@ def test_haversine_copy_appears_once() -> None:
     _assert(
         js.count("Ruta estimada por distancia") == 1,
         "Haversine copy should appear once, only as structured warning.",
+    )
+    _assert(
+        js.count("El coste de ruta se ha calculado con una aproximación de distancia.") == 1,
+        "Plain-language approximate route message should appear once.",
     )
 
 
@@ -376,16 +628,20 @@ def test_result_panel_layout_and_alternatives_state() -> None:
     _assert("data-maps-url" in js, "Maps button should store the generated route URL.")
     _assert("window.open(mapsUrl, '_blank', 'noopener,noreferrer')" in js, "Maps button should open safely in a new tab.")
     _assert("function renderAlternativesList" in js, "Compact alternatives list helper missing.")
-    _assert("function renderAlternativesList(alternatives, selectedIndex, isBudgetMode)" in js, "Alternatives list should know the selected result and input mode.")
-    _assert("aria-current" in js and "rank${selected ? ' selected' : ''}" in js, "Selected alternative row should remain visible and marked.")
-    _assert("const alternativesScrollTop = panel.scrollTop || 0" in js, "Alternative click should preserve internal scroll position.")
+    _assert("function renderAlternativesList(alternatives, isBudgetMode)" in js, "Alternatives list should render compact result rows.")
+    _assert(".filter(({ index }) => index !== selectedIndex)" in js, "The main result must not be repeated among alternatives.")
+    _assert("const visibleAlternatives = alternatives.slice(0, 2)" in js, "The next two alternatives must be visible by default.")
+    _assert("const additionalAlternatives = alternatives.slice(2)" in js, "Only later alternatives should be expandable.")
+    _assert("Ver más alternativas" in js and "Ver menos alternativas" in js, "Additional alternatives need a clear opener.")
+    _assert("const alternativesScrollTop = panel?.scrollTop || 0" in js, "Expanded alternative click should preserve internal scroll position.")
     _assert("restoredPanel.scrollTop = alternativesScrollTop" in js, "Alternative scroll position should be restored after rerender.")
-    _assert(".rank.selected" in styles, "Selected alternative row styling is missing.")
+    _assert(".ranking--preview" in styles, "Visible alternative rows need a permanent preview region.")
+    _assert(".alternatives-more-toggle" in styles, "Additional alternatives opener styling is missing.")
     _assert("classList.toggle('result-panel--expanded', isOpen)" in js, "Expanded state should be toggled by alternatives helper.")
     _assert("classList.toggle('result-panel--collapsed', !isOpen)" in js, "Collapsed state should be toggled by alternatives helper.")
     _assert("function renderResult(data, selectedIndex = 0, keepAlternativesOpen = false)" in js, "Alternatives should be closed by default in renderResult.")
     _assert("renderResult(data, 0, false)" in js, "Optimization should render alternatives collapsed initially.")
-    _assert("const alternativesOpen = alternatives.length > 0 && keepAlternativesOpen" in js, "Initial alternatives state should respect availability.")
+    _assert("const alternativesOpen = additionalAlternatives.length > 0 && keepAlternativesOpen" in js, "Only additional alternatives should be expandable.")
     _assert("panel.classList.toggle('collapsed', !isOpen)" in js, "Alternatives list should collapse without leaving a placeholder.")
     ranking_rule = re.search(r"\.ranking\s*\{(?P<body>[^}]*)\}", styles)
     _assert(ranking_rule, "Alternatives ranking style rule missing.")
@@ -770,6 +1026,23 @@ def test_external_leaflet_has_sri() -> None:
     (those tags are same-origin and exempt from the SRI requirement)."""
     html = _read("static/index.html")
     _assert("leaflet" in html.lower(), "Leaflet does not appear to be loaded by index.html.")
+    _assert(
+        'href="/static/vendor/leaflet/leaflet.css?v=1.9.4"' in html,
+        "The installed frontend must load its vendored Leaflet stylesheet.",
+    )
+    _assert(
+        'src="/static/vendor/leaflet/leaflet.js?v=1.9.4"' in html,
+        "The installed frontend must load its vendored Leaflet script.",
+    )
+    _assert("unpkg.com/leaflet" not in html, "Leaflet must not depend on a CDN in the desktop build.")
+    for relative in (
+        "static/vendor/leaflet/leaflet.css",
+        "static/vendor/leaflet/leaflet.js",
+        "static/vendor/leaflet/LICENSE",
+        "static/vendor/leaflet/images/marker-icon.png",
+        "static/vendor/leaflet/images/marker-shadow.png",
+    ):
+        _assert((ROOT / relative).is_file(), f"Vendored Leaflet asset is missing: {relative}")
     tag_re = re.compile(r"<(?:link|script)\b[^>]*leaflet[^>]*>", re.IGNORECASE)
     external_re = re.compile(r'(?:href|src)\s*=\s*"(?:https?:)?//', re.IGNORECASE)
     for tag in tag_re.findall(html):
@@ -784,14 +1057,84 @@ def test_external_leaflet_has_sri() -> None:
             )
 
 
+def test_no_unauthorized_analytics_or_retired_domains() -> None:
+    files = ("static/index.html", "static/app.js", "static/robots.txt")
+    combined = "\n".join((ROOT / relative).read_text(encoding="utf-8").lower() for relative in files)
+    forbidden = (
+        "goat" + "counter",
+        "gc" + ".zgo.at",
+        "fuelopt" + ".es",
+        "ko" + "-fi",
+        "buyme" + "acoffee",
+    )
+    for value in forbidden:
+        _assert(value not in combined, f"Retired or unauthorized frontend integration found: {value}")
+    html = (ROOT / "static/index.html").read_text(encoding="utf-8")
+    external_script = re.compile(r"<script\b[^>]*\bsrc\s*=\s*['\"](?:https?:)?//", re.IGNORECASE)
+    _assert(not external_script.search(html), "Frontend must not load unauthorized external scripts")
+
+
+def test_public_privacy_and_how_it_works_match_current_frontend() -> None:
+    privacy = _read("static/privacy.html")
+    how_it_works = _read("static/como-funciona.html")
+
+    for term in (
+        "fuelopt:onboarding:v1:dismissed",
+        "OpenRouteService",
+        "OpenStreetMap",
+        "Google Maps",
+        "GitHub Issues",
+    ):
+        _assert(term in privacy, f"Privacy page is missing the current integration: {term}")
+    _assert("ya no utiliza SMTP" in privacy, "Privacy page must not describe mail feedback as active")
+    _assert("formulario de feedback" not in privacy.lower(), "Retired feedback form remains in privacy copy")
+
+    for term in (
+        "M&aacute;s ahorro",
+        "Menor desv&iacute;o",
+        "Equilibrado",
+        "result_limit",
+        "OpenRouteService",
+        "Haversine",
+        "FastAPI",
+        "SQLite",
+        "remaining_fuel_liters",
+    ):
+        _assert(term in how_it_works, f"How-it-works page is missing current behavior: {term}")
+    for retired in ("GMAIL_USER", "GMAIL_APP_PASSWORD", "FEEDBACK_RECIPIENT", "fuelopt" + ".es"):
+        _assert(retired not in privacy and retired not in how_it_works, f"Retired public reference remains: {retired}")
+
+
+def test_map_attribution_uses_official_osm_and_ors_credits() -> None:
+    js = _read("static/app.js")
+    _assert(
+        "https://tile.openstreetmap.org/{z}/{x}/{y}.png" in js,
+        "Leaflet must use the official OpenStreetMap tile URL without subdomains",
+    )
+    _assert("https://www.openstreetmap.org/copyright" in js, "OpenStreetMap copyright link is missing")
+    _assert("OpenStreetMap contributors" in js, "OpenStreetMap attribution is missing")
+    _assert("https://openrouteservice.org/" in js and "openrouteservice.org" in js, "ORS attribution is missing")
+    _assert("by HeiGIT" in js, "HeiGIT attribution is missing")
+    _assert("Fuente de ruta" not in js, "Technical route-source blocks must not return to result cards")
+
+
 def run() -> None:
     test_frontend_is_extracted()
     test_external_leaflet_has_sri()
+    test_no_unauthorized_analytics_or_retired_domains()
+    test_public_privacy_and_how_it_works_match_current_frontend()
+    test_map_attribution_uses_official_osm_and_ors_credits()
     test_dynamic_html_uses_escape_helper()
+    test_optimization_mode_selector_is_native_and_accessible()
+    test_optimization_mode_request_and_result_state_are_separate()
+    test_result_presentation_is_simplified_and_route_warning_is_plain()
+    test_optimize_loading_state_is_accessible_and_bounded()
+    test_brand_loading_and_all_button_state_are_unambiguous()
     test_frontend_has_no_visible_mojibake()
     test_result_metrics_are_rendered_once()
     test_catalog_and_route_status_copy_present()
-    test_header_support_chip_presentational_only()
+    test_header_has_no_support_chip_and_keeps_primary_actions()
+    test_first_opening_quick_help_is_accessible_and_non_blocking()
     test_sidebar_and_floating_search_layout()
     test_app_js_renders_warnings()
     test_haversine_copy_appears_once()

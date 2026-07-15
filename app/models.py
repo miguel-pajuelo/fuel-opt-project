@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Literal, cast
 
 
 FUEL_FIELDS: dict[str, tuple[str, str]] = {
@@ -12,6 +12,20 @@ FUEL_FIELDS: dict[str, tuple[str, str]] = {
     "gasolina_98": ("Precio Gasolina 98 E5", "Gasolina 98 E5"),
     "gasolina_98e10": ("Precio Gasolina 98 E10", "Gasolina 98 E10"),
 }
+
+OptimizationMode = Literal["economic", "minimal_detour", "balanced"]
+OPTIMIZATION_MODES: tuple[OptimizationMode, ...] = (
+    "economic",
+    "minimal_detour",
+    "balanced",
+)
+
+
+def validate_optimization_mode(value: str) -> OptimizationMode:
+    if value not in OPTIMIZATION_MODES:
+        allowed = ", ".join(OPTIMIZATION_MODES)
+        raise ValueError(f"optimization_mode must be one of: {allowed}.")
+    return cast(OptimizationMode, value)
 
 
 @dataclass(frozen=True)
@@ -98,12 +112,15 @@ class OptimizationInput:
     preferred_corridor_km: float = 10.0
     max_search_extent_km: float = 150.0
     economic_expansion_enabled: bool = True
-    optimization_mode: str = "economic"
+    optimization_mode: OptimizationMode = "economic"
     max_candidates: int = 75
     route_detour_factor: float = 1.25
     local_search_radius_km: float = 50.0
     corridor_radius_km: float = 10.0
     same_place_threshold_km: float = 1.0
+
+    def __post_init__(self) -> None:
+        validate_optimization_mode(self.optimization_mode)
 
 
 @dataclass(frozen=True)
@@ -132,7 +149,7 @@ class CandidateResult:
     input_mode: str
     optimization_score_eur: float
     detour_penalty_eur: float
-    optimization_mode: str
+    optimization_mode: OptimizationMode
     why_selected: str
     net_liters: float
     net_km: float

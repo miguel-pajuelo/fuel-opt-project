@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import random
 import sys
+from dataclasses import replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -23,7 +27,16 @@ from app.data_sources.public_access import (
     is_publicly_eligible,
 )
 from app.models import Coordinates, OptimizationInput, Price, Station
-from app.optimizer.ranking import optimize_candidates, optimize_from_db, prefilter_candidates, prefilter_candidates_with_trace
+from app.optimizer.ranking import (
+    BALANCED_DISTANCE_WEIGHT,
+    BALANCED_ECONOMIC_WEIGHT,
+    _balanced_rank_components,
+    _rank_results,
+    optimize_candidates,
+    optimize_from_db,
+    prefilter_candidates,
+    prefilter_candidates_with_trace,
+)
 from app.storage.database import (
     canonical_brand_counts,
     coverage_snapshot,
@@ -599,6 +612,685 @@ class _FixedRouteProvider:
 
     def direct_distance_km(self, origin, destination):
         return 10.0
+
+
+class _MappedRouteProvider:
+    def __init__(
+        self,
+        distances: dict[str, tuple[float, float]],
+        direct_distance_km: float,
+        route_source: str = "openrouteservice_directions",
+    ) -> None:
+        self.distances = distances
+        self.direct_distance = direct_distance_km
+        self.route_source = route_source
+
+    def distances_for_candidates(self, origin, destination, stations):
+        return {
+            station.station_id: self.distances[station.station_id]
+            for station in stations
+            if station.station_id in self.distances
+        }
+
+    def direct_distance_km(self, origin, destination):
+        return self.direct_distance
+
+
+def _ranking_station(station_id: str, lat: float = 40.0, lon: float = -3.0) -> Station:
+    return Station(
+        station_id=station_id,
+        brand="TEST",
+        name=f"Station {station_id}",
+        address="",
+        postal_code="",
+        municipality="",
+        province="",
+        lat=lat,
+        lon=lon,
+        source="TEST",
+    )
+
+
+def _economic_golden_snapshot(results) -> dict[str, object]:
+    return {
+        "ids": [item.station.station_id for item in results],
+        "effective_costs": [round(item.effective_total_cost_eur, 6) for item in results],
+        "net_liters": [round(item.net_liters, 6) for item in results],
+        "detours": [round(item.extra_detour_km, 6) for item in results],
+        "route_sources": [item.route_source for item in results],
+        "winner_reason": results[0].why_selected if results else "",
+    }
+
+
+def test_economic_ranking_golden_liters_and_budget() -> None:
+    stations = [_ranking_station("A"), _ranking_station("B"), _ranking_station("C")]
+    candidates = list(zip(stations, [1.50, 1.45, 1.60]))
+    provider = _MappedRouteProvider(
+        {"A": (50.0, 50.0), "B": (55.0, 55.0), "C": (52.0, 52.0)},
+        direct_distance_km=100.0,
+    )
+    base = dict(
+        origin=Coordinates(40.0, -3.0),
+        destination=Coordinates(41.0, -3.0),
+        fuel_type="gasoleo_a",
+        consumption_l_100km=5.0,
+        optimization_mode="economic",
+    )
+
+    liters = optimize_candidates(
+        candidates,
+        OptimizationInput(**base, input_mode="liters", liters=30.0),
+        route_provider=provider,
+    )
+    _assert(
+        _economic_golden_snapshot(liters)
+        == {
+            "ids": ["B", "A", "C"],
+            "effective_costs": [44.25, 45.0, 48.3],
+            "net_liters": [29.5, 30.0, 29.8],
+            "detours": [10.0, 0.0, 4.0],
+            "route_sources": ["openrouteservice_directions"] * 3,
+            "winner_reason": "Prioriza el menor coste total estimado después de considerar el desplazamiento.",
+        },
+        _economic_golden_snapshot(liters),
+    )
+
+    budget = optimize_candidates(
+        candidates,
+        OptimizationInput(
+            **base,
+            input_mode="budget",
+            budget_amount_eur=40.0,
+        ),
+        route_provider=provider,
+    )
+    _assert(
+        _economic_golden_snapshot(budget)
+        == {
+            "ids": ["B", "A", "C"],
+            "effective_costs": [40.75, 40.0, 40.3],
+            "net_liters": [27.086207, 26.666667, 24.8],
+            "detours": [10.0, 0.0, 4.0],
+            "route_sources": ["openrouteservice_directions"] * 3,
+            "winner_reason": (
+                "Prioriza la mayor cantidad neta estimada de combustible después de considerar "
+                "el desplazamiento."
+            ),
+        },
+        _economic_golden_snapshot(budget),
+    )
+
+
+def test_economic_ranking_golden_local_tie_and_input_order() -> None:
+    stations = [_ranking_station("A"), _ranking_station("B"), _ranking_station("C")]
+    provider = _MappedRouteProvider(
+        {"A": (1.0, 1.0), "B": (1.0, 1.0), "C": (3.0, 3.0)},
+        direct_distance_km=0.0,
+        route_source="fixed_local",
+    )
+    request = OptimizationInput(
+        origin=Coordinates(40.0, -3.0),
+        destination=Coordinates(40.0, -3.0),
+        liters=20.0,
+        consumption_l_100km=5.0,
+        optimization_mode="economic",
+    )
+
+    tied = optimize_candidates(
+        [(stations[0], 1.50), (stations[1], 1.50), (stations[2], 1.55)],
+        request,
+        route_provider=provider,
+    )
+    _assert(
+        _economic_golden_snapshot(tied)
+        == {
+            "ids": ["A", "B", "C"],
+            "effective_costs": [30.15, 30.15, 31.45],
+            "net_liters": [19.9, 19.9, 19.7],
+            "detours": [2.0, 2.0, 6.0],
+            "route_sources": ["fixed_local"] * 3,
+            "winner_reason": "Prioriza el menor coste total estimado después de considerar el desplazamiento.",
+        },
+        _economic_golden_snapshot(tied),
+    )
+
+    expected_ids = ["B", "A", "C"]
+    for ordered in (
+        [(stations[0], 1.50), (stations[1], 1.45), (stations[2], 1.55)],
+        [(stations[2], 1.55), (stations[1], 1.45), (stations[0], 1.50)],
+    ):
+        results = optimize_candidates(ordered, request, route_provider=provider)
+        _assert([item.station.station_id for item in results] == expected_ids, results)
+
+
+def test_economic_ranking_golden_haversine() -> None:
+    candidates = [
+        (_ranking_station("near", lat=40.0, lon=-3.001), 1.50),
+        (_ranking_station("cheap", lat=40.0, lon=-3.010), 1.40),
+    ]
+    request = OptimizationInput(
+        origin=Coordinates(40.0, -3.0),
+        destination=Coordinates(40.0, -3.0),
+        liters=30.0,
+        consumption_l_100km=5.0,
+        optimization_mode="economic",
+        route_detour_factor=1.25,
+    )
+    results = optimize_candidates(candidates, request)
+    snapshot = _economic_golden_snapshot(results)
+    _assert(snapshot["ids"] == ["cheap", "near"], snapshot)
+    _assert(snapshot["route_sources"] == ["haversine_estimate", "haversine_estimate"], snapshot)
+    _assert(snapshot["effective_costs"] == [42.154389, 45.015439], snapshot)
+    _assert(snapshot["net_liters"] == [29.893525, 29.989352], snapshot)
+    _assert(snapshot["detours"] == [2.129509, 0.212951], snapshot)
+
+
+def test_economic_api_golden_result_limit_is_final() -> None:
+    with TemporaryDirectory(prefix="fuelopt-ranking-") as temp_dir:
+        db_path = Path(temp_dir) / "ranking.sqlite"
+        stations = [
+            _ranking_station(str(index), lat=40.0, lon=-3.0 - index / 1000.0)
+            for index in range(1, 11)
+        ]
+        prices = [Price(str(index), "gasoleo_a", 1.40 + index / 100.0, None, "TEST") for index in range(1, 11)]
+        replace_catalog(db_path, stations, prices, metadata={"source": "TEST"})
+        previous_settings = api_main.settings
+        api_main.settings = Settings(db_path=db_path, ors_api_key=None)
+        try:
+            base = dict(
+                origin_lat=40.0,
+                origin_lon=-3.0,
+                destination_lat=40.0,
+                destination_lon=-3.0,
+                fuel_type="gasoleo_a",
+                liters=30.0,
+                max_candidates=10,
+                optimization_mode="economic",
+            )
+            top_three = api_main.optimize(api_main.OptimizeRequest(**base, result_limit=3))
+            top_ten = api_main.optimize(api_main.OptimizeRequest(**base, result_limit=10))
+        finally:
+            api_main.settings = previous_settings
+
+    three_ids = [item["station"]["station_id"] for item in top_three["items"]]
+    ten_ids = [item["station"]["station_id"] for item in top_ten["items"]]
+    _assert(three_ids == ten_ids[:3], {"top_three": three_ids, "top_ten": ten_ids})
+    _assert(top_three["count"] == top_ten["count"] == 10, (top_three["count"], top_ten["count"]))
+    _assert(top_three["returned"] == 3 and top_ten["returned"] == 10, (top_three, top_ten))
+
+
+def test_optimization_mode_contract_is_explicit() -> None:
+    _assert(api_main.OptimizeRequest().optimization_mode == "economic", "Economic default changed.")
+    for mode in ("economic", "minimal_detour", "balanced"):
+        payload = api_main.OptimizeRequest(optimization_mode=mode)
+        _assert(payload.optimization_mode == mode, payload)
+        domain = OptimizationInput(
+            origin=Coordinates(40.0, -3.0),
+            destination=Coordinates(40.0, -3.0),
+            optimization_mode=mode,
+        )
+        _assert(domain.optimization_mode == mode, domain)
+
+    for invalid in ("unknown", "Economic", " economic", "balanced "):
+        try:
+            api_main.OptimizeRequest(optimization_mode=invalid)
+        except ValidationError as exc:
+            _assert("optimization_mode" in str(exc), exc)
+        else:
+            raise AssertionError(f"OptimizeRequest accepted invalid mode: {invalid!r}")
+        try:
+            OptimizationInput(
+                origin=Coordinates(40.0, -3.0),
+                destination=Coordinates(40.0, -3.0),
+                optimization_mode=invalid,
+            )
+        except ValueError as exc:
+            _assert("optimization_mode must be one of" in str(exc), exc)
+        else:
+            raise AssertionError(f"OptimizationInput accepted invalid mode: {invalid!r}")
+
+    _assert("remaining_fuel_liters" not in api_main.OptimizeRequest.model_fields, "Autonomy field entered 8C.1-8C.2.")
+    _assert("return_to_origin" not in api_main.OptimizeRequest.model_fields, "Backend return_to_origin entered 8C.1-8C.2.")
+
+
+def test_minimal_detour_ranks_trip_and_local_candidates() -> None:
+    trip_candidates = [
+        (_ranking_station("cheap-far"), 1.00),
+        (_ranking_station("near-expensive"), 1.50),
+        (_ranking_station("tie-cheap"), 1.20),
+        (_ranking_station("tie-expensive"), 1.30),
+    ]
+    trip_provider = _MappedRouteProvider(
+        {
+            "cheap-far": (60.0, 60.0),
+            "near-expensive": (50.0, 50.0),
+            "tie-cheap": (52.5, 52.5),
+            "tie-expensive": (52.5, 52.5),
+        },
+        direct_distance_km=100.0,
+    )
+    trip_request = OptimizationInput(
+        origin=Coordinates(40.0, -3.0),
+        destination=Coordinates(41.0, -3.0),
+        liters=30.0,
+        consumption_l_100km=5.0,
+        optimization_mode="minimal_detour",
+    )
+    trip_results = optimize_candidates(trip_candidates, trip_request, route_provider=trip_provider)
+    _assert(
+        [item.station.station_id for item in trip_results]
+        == ["near-expensive", "tie-cheap", "tie-expensive", "cheap-far"],
+        _economic_golden_snapshot(trip_results),
+    )
+    _assert(trip_results[0].price_eur_l > trip_results[-1].price_eur_l, trip_results)
+    _assert(trip_results[1].extra_detour_km == trip_results[2].extra_detour_km, trip_results)
+    _assert(trip_results[1].effective_total_cost_eur < trip_results[2].effective_total_cost_eur, trip_results)
+
+    local_candidates = [
+        (_ranking_station("closer-outbound"), 1.60),
+        (_ranking_station("shorter-roundtrip"), 1.40),
+    ]
+    local_provider = _MappedRouteProvider(
+        {
+            "closer-outbound": (2.0, 10.0),
+            "shorter-roundtrip": (5.0, 0.0),
+        },
+        direct_distance_km=0.0,
+        route_source="fixed_local",
+    )
+    local_request = OptimizationInput(
+        origin=Coordinates(40.0, -3.0),
+        destination=Coordinates(40.0, -3.0),
+        liters=30.0,
+        consumption_l_100km=5.0,
+        optimization_mode="minimal_detour",
+    )
+    local_results = optimize_candidates(local_candidates, local_request, route_provider=local_provider)
+    _assert(
+        [item.station.station_id for item in local_results]
+        == ["closer-outbound", "shorter-roundtrip"],
+        _economic_golden_snapshot(local_results),
+    )
+    _assert(local_results[0].distance_to_station_km < local_results[1].distance_to_station_km, local_results)
+    _assert(local_results[0].extra_detour_km > local_results[1].extra_detour_km, local_results)
+
+
+def test_why_selected_is_mode_specific_and_schema_compatible() -> None:
+    candidates = [
+        (_ranking_station("A"), 1.45),
+        (_ranking_station("B"), 1.50),
+        (_ranking_station("C"), 1.55),
+    ]
+    trip_provider = _MappedRouteProvider(
+        {"A": (55.0, 55.0), "B": (50.0, 50.0), "C": (52.0, 52.0)},
+        direct_distance_km=100.0,
+    )
+    trip_base = dict(
+        origin=Coordinates(40.0, -3.0),
+        destination=Coordinates(41.0, -3.0),
+        consumption_l_100km=5.0,
+    )
+
+    economic_liters = optimize_candidates(
+        candidates,
+        OptimizationInput(**trip_base, liters=30.0, optimization_mode="economic"),
+        route_provider=trip_provider,
+    )
+    economic_budget = optimize_candidates(
+        candidates,
+        OptimizationInput(
+            **trip_base,
+            input_mode="budget",
+            budget_amount_eur=40.0,
+            optimization_mode="economic",
+        ),
+        route_provider=trip_provider,
+    )
+    minimal_trip = optimize_candidates(
+        candidates,
+        OptimizationInput(**trip_base, liters=30.0, optimization_mode="minimal_detour"),
+        route_provider=trip_provider,
+    )
+    local_provider = _MappedRouteProvider(
+        {"A": (2.0, 2.0), "B": (1.0, 1.0), "C": (3.0, 3.0)},
+        direct_distance_km=0.0,
+        route_source="haversine_estimate",
+    )
+    minimal_local = optimize_candidates(
+        candidates,
+        OptimizationInput(
+            origin=Coordinates(40.0, -3.0),
+            destination=Coordinates(40.0, -3.0),
+            liters=30.0,
+            consumption_l_100km=5.0,
+            optimization_mode="minimal_detour",
+        ),
+        route_provider=local_provider,
+    )
+    balanced = optimize_candidates(
+        candidates,
+        OptimizationInput(**trip_base, liters=30.0, optimization_mode="balanced"),
+        route_provider=trip_provider,
+    )
+
+    _assert(
+        {item.why_selected for item in economic_liters}
+        == {"Prioriza el menor coste total estimado después de considerar el desplazamiento."},
+        economic_liters,
+    )
+    _assert(
+        {item.why_selected for item in economic_budget}
+        == {
+            "Prioriza la mayor cantidad neta estimada de combustible después de considerar "
+            "el desplazamiento."
+        },
+        economic_budget,
+    )
+    _assert(
+        {item.why_selected for item in minimal_trip}
+        == {
+            "Prioriza el menor desvío adicional estimado; el resultado económico se utiliza "
+            "para desempatar."
+        },
+        minimal_trip,
+    )
+    _assert(
+        {item.why_selected for item in minimal_local}
+        == {
+            "Prioriza la estación más cercana estimada; el resultado económico se utiliza "
+            "para desempatar."
+        },
+        minimal_local,
+    )
+    _assert(
+        {item.why_selected for item in balanced}
+        == {
+            "Busca un compromiso entre el resultado económico estimado y el desvío entre las "
+            "opciones encontradas. Ambos criterios tienen el mismo peso en la ordenación."
+        },
+        balanced,
+    )
+    for result in economic_liters + economic_budget + minimal_trip + minimal_local + balanced:
+        payload = result.to_dict()
+        _assert(isinstance(payload["why_selected"], str) and payload["why_selected"], payload)
+        explanation = payload["why_selected"].lower()
+        for forbidden in ("balanced_score", "economic_rank", "distance_rank", "%", "exacta"):
+            _assert(forbidden not in explanation, (forbidden, explanation))
+        _assert("balanced_score" not in payload, payload)
+        _assert("economic_rank" not in payload and "distance_rank" not in payload, payload)
+
+
+def test_balanced_ranking_uses_equal_normalized_rank_weights() -> None:
+    _assert(BALANCED_ECONOMIC_WEIGHT == 0.5, BALANCED_ECONOMIC_WEIGHT)
+    _assert(BALANCED_DISTANCE_WEIGHT == 0.5, BALANCED_DISTANCE_WEIGHT)
+    candidates = [
+        (_ranking_station("A-economic-extreme"), 1.00),
+        (_ranking_station("B-compromise"), 1.10),
+        (_ranking_station("C-middle"), 1.20),
+        (_ranking_station("D-expensive"), 1.30),
+    ]
+    provider = _MappedRouteProvider(
+        {
+            "A-economic-extreme": (65.0, 65.0),
+            "B-compromise": (50.0, 50.0),
+            "C-middle": (52.5, 52.5),
+            "D-expensive": (55.0, 55.0),
+        },
+        direct_distance_km=100.0,
+    )
+    base = dict(
+        origin=Coordinates(40.0, -3.0),
+        destination=Coordinates(41.0, -3.0),
+        liters=30.0,
+        consumption_l_100km=5.0,
+    )
+    economic = optimize_candidates(
+        candidates,
+        OptimizationInput(**base, optimization_mode="economic"),
+        route_provider=provider,
+    )
+    minimal = optimize_candidates(
+        candidates,
+        OptimizationInput(**base, optimization_mode="minimal_detour"),
+        route_provider=provider,
+    )
+    balanced = optimize_candidates(
+        candidates,
+        OptimizationInput(**base, optimization_mode="balanced"),
+        route_provider=provider,
+    )
+    _assert(
+        [item.station.station_id for item in economic]
+        == ["A-economic-extreme", "B-compromise", "C-middle", "D-expensive"],
+        economic,
+    )
+    _assert(
+        [item.station.station_id for item in minimal]
+        == ["B-compromise", "C-middle", "D-expensive", "A-economic-extreme"],
+        minimal,
+    )
+    _assert(balanced[0].station.station_id == "B-compromise", balanced)
+    _assert(balanced[0].station.station_id != economic[0].station.station_id, balanced)
+    _assert("balanced_score" not in balanced[0].to_dict(), balanced[0].to_dict())
+    _assert("economic_rank" not in balanced[0].to_dict(), balanced[0].to_dict())
+    _assert("distance_rank" not in balanced[0].to_dict(), balanced[0].to_dict())
+
+    close_but_bad = [
+        (_ranking_station("A-good"), 1.00),
+        (_ranking_station("B-average"), 1.20),
+        (_ranking_station("C-poor"), 1.40),
+        (_ranking_station("D-close-expensive"), 1.80),
+    ]
+    close_provider = _MappedRouteProvider(
+        {
+            "A-good": (50.5, 50.5),
+            "B-average": (52.5, 52.5),
+            "C-poor": (55.0, 55.0),
+            "D-close-expensive": (50.0, 50.0),
+        },
+        direct_distance_km=100.0,
+    )
+    close_balanced = optimize_candidates(
+        close_but_bad,
+        OptimizationInput(**base, optimization_mode="balanced"),
+        route_provider=close_provider,
+    )
+    _assert(close_balanced[0].station.station_id != "D-close-expensive", close_balanced)
+
+
+def _balanced_fixture_results(station_ids: list[str]):
+    request = OptimizationInput(
+        origin=Coordinates(40.0, -3.0),
+        destination=Coordinates(41.0, -3.0),
+        liters=30.0,
+        consumption_l_100km=5.0,
+        optimization_mode="balanced",
+    )
+    candidates = [(_ranking_station(station_id), 1.50) for station_id in station_ids]
+    provider = _MappedRouteProvider(
+        {station_id: (50.0, 50.0) for station_id in station_ids},
+        direct_distance_km=100.0,
+    )
+    return optimize_candidates(candidates, request, route_provider=provider), request
+
+
+def _balanced_components_by_station(results, request) -> dict[str, tuple[float, float, float]]:
+    components = _balanced_rank_components(results, request)
+    return {item.station.station_id: components[id(item)] for item in results}
+
+
+def test_balanced_equal_semantic_metrics_share_ranks_and_score() -> None:
+    results, request = _balanced_fixture_results(["B", "A"])
+    tied = [
+        replace(
+            item,
+            optimization_score_eur=10.0,
+            effective_total_cost_eur=10.0,
+            extra_detour_km=5.0,
+            total_detour_km=5.0,
+            distance_to_station_km=5.0,
+        )
+        for item in results
+    ]
+    components = _balanced_components_by_station(tied, request)
+    _assert(components["A"] == (0.0, 0.0, 0.0), components)
+    _assert(components["B"] == components["A"], components)
+    ordered = _rank_results(tied, request)
+    _assert([item.station.station_id for item in ordered] == ["A", "B"], ordered)
+
+
+def test_balanced_semantic_ties_are_independent_per_dimension() -> None:
+    same_cost, request = _balanced_fixture_results(["near", "far"])
+    same_cost = [
+        replace(
+            item,
+            optimization_score_eur=10.0,
+            effective_total_cost_eur=10.0,
+            extra_detour_km=1.0 if item.station.station_id == "near" else 10.0,
+            total_detour_km=1.0 if item.station.station_id == "near" else 10.0,
+        )
+        for item in same_cost
+    ]
+    cost_components = _balanced_components_by_station(same_cost, request)
+    _assert(cost_components["near"][0] == cost_components["far"][0] == 0.0, cost_components)
+    _assert(cost_components["near"][1] == 0.0, cost_components)
+    _assert(cost_components["far"][1] == 1.0, cost_components)
+    _assert(_rank_results(same_cost, request)[0].station.station_id == "near", cost_components)
+
+    same_distance, request = _balanced_fixture_results(["cheap", "expensive"])
+    same_distance = [
+        replace(
+            item,
+            optimization_score_eur=10.0 if item.station.station_id == "cheap" else 20.0,
+            effective_total_cost_eur=10.0 if item.station.station_id == "cheap" else 20.0,
+            extra_detour_km=5.0,
+            total_detour_km=5.0,
+        )
+        for item in same_distance
+    ]
+    distance_components = _balanced_components_by_station(same_distance, request)
+    _assert(distance_components["cheap"][1] == distance_components["expensive"][1] == 0.0, distance_components)
+    _assert(distance_components["cheap"][0] == 0.0, distance_components)
+    _assert(distance_components["expensive"][0] == 1.0, distance_components)
+    _assert(_rank_results(same_distance, request)[0].station.station_id == "cheap", distance_components)
+
+
+def test_balanced_uses_competition_ranking_for_tied_groups() -> None:
+    results, request = _balanced_fixture_results(["A", "B", "C", "D", "E"])
+    economic_values = {"A": 1.0, "B": 2.0, "C": 2.0, "D": 2.0, "E": 3.0}
+    ranked = [
+        replace(
+            item,
+            optimization_score_eur=economic_values[item.station.station_id],
+            effective_total_cost_eur=economic_values[item.station.station_id],
+            extra_detour_km=5.0,
+            total_detour_km=5.0,
+        )
+        for item in results
+    ]
+    components = _balanced_components_by_station(ranked, request)
+    _assert(components["A"][0] == 0.0, components)
+    _assert(components["B"][0] == components["C"][0] == components["D"][0] == 0.25, components)
+    _assert(components["E"][0] == 1.0, components)
+    _assert(all(component[1] == 0.0 for component in components.values()), components)
+
+
+def test_balanced_all_tied_uses_only_id_and_ignores_input_order() -> None:
+    results, request = _balanced_fixture_results(["C", "A", "B"])
+    tied = [
+        replace(
+            item,
+            optimization_score_eur=10.0,
+            effective_total_cost_eur=10.0,
+            extra_detour_km=5.0,
+            total_detour_km=5.0,
+        )
+        for item in results
+    ]
+    randomizer = random.Random(20260713)
+    for _ in range(12):
+        shuffled = list(tied)
+        randomizer.shuffle(shuffled)
+        components = _balanced_components_by_station(shuffled, request)
+        _assert(set(components.values()) == {(0.0, 0.0, 0.0)}, components)
+        ordered = _rank_results(shuffled, request)
+        _assert([item.station.station_id for item in ordered] == ["A", "B", "C"], ordered)
+
+
+def test_all_ranking_modes_are_deterministic_and_handle_single_candidate() -> None:
+    stations = [_ranking_station("A"), _ranking_station("B"), _ranking_station("C")]
+    candidates = [(station, 1.50) for station in stations]
+    provider = _MappedRouteProvider(
+        {station.station_id: (5.0, 5.0) for station in stations},
+        direct_distance_km=10.0,
+    )
+    randomizer = random.Random(20260713)
+    for mode in ("economic", "minimal_detour", "balanced"):
+        request = OptimizationInput(
+            origin=Coordinates(40.0, -3.0),
+            destination=Coordinates(41.0, -3.0),
+            liters=30.0,
+            optimization_mode=mode,
+        )
+        for _ in range(12):
+            shuffled = list(candidates)
+            randomizer.shuffle(shuffled)
+            results = optimize_candidates(shuffled, request, route_provider=provider)
+            _assert([item.station.station_id for item in results] == ["A", "B", "C"], results)
+
+    only = _ranking_station("only")
+    single_request = OptimizationInput(
+        origin=Coordinates(40.0, -3.0),
+        destination=Coordinates(41.0, -3.0),
+        liters=30.0,
+        optimization_mode="balanced",
+    )
+    single = optimize_candidates(
+        [(only, 1.50)],
+        single_request,
+        route_provider=_MappedRouteProvider({"only": (5.0, 5.0)}, direct_distance_km=10.0),
+    )
+    _assert([item.station.station_id for item in single] == ["only"], single)
+    _assert(_balanced_components_by_station(single, single_request)["only"] == (0.0, 0.0, 0.0), single)
+
+
+def test_api_result_limit_is_final_for_every_optimization_mode() -> None:
+    with TemporaryDirectory(prefix="fuelopt-ranking-modes-") as temp_dir:
+        db_path = Path(temp_dir) / "ranking.sqlite"
+        stations = [
+            _ranking_station(str(index), lat=40.0, lon=-3.0 - index / 1000.0)
+            for index in range(1, 11)
+        ]
+        prices = [Price(str(index), "gasoleo_a", 1.40 + index / 100.0, None, "TEST") for index in range(1, 11)]
+        replace_catalog(db_path, stations, prices, metadata={"source": "TEST"})
+        previous_settings = api_main.settings
+        api_main.settings = Settings(db_path=db_path, ors_api_key=None)
+        try:
+            for mode in ("economic", "minimal_detour", "balanced"):
+                base = dict(
+                    origin_lat=40.0,
+                    origin_lon=-3.0,
+                    destination_lat=40.0,
+                    destination_lon=-3.0,
+                    fuel_type="gasoleo_a",
+                    liters=30.0,
+                    max_candidates=10,
+                    optimization_mode=mode,
+                )
+                top_three = api_main.optimize(api_main.OptimizeRequest(**base, result_limit=3))
+                top_ten = api_main.optimize(api_main.OptimizeRequest(**base, result_limit=10))
+                three_ids = [item["station"]["station_id"] for item in top_three["items"]]
+                ten_ids = [item["station"]["station_id"] for item in top_ten["items"]]
+                _assert(three_ids == ten_ids[:3], {"mode": mode, "three": three_ids, "ten": ten_ids})
+                _assert(top_three["count"] == top_ten["count"] == 10, (mode, top_three, top_ten))
+                _assert(top_three["optimization_mode"] == mode, top_three)
+                _assert(top_three["route_source"] == "haversine_estimate", top_three)
+                _assert("using_haversine_estimate" in _warning_codes(top_three), top_three["warnings"])
+                _assert("balanced_score" not in top_three["best"], top_three["best"])
+                station_ids = [item["station"]["station_id"] for item in top_ten["items"]]
+                _assert(len(station_ids) == len(set(station_ids)), station_ids)
+        finally:
+            api_main.settings = previous_settings
 
 
 def test_optimizer_charges_extra_detour_only() -> None:
@@ -2155,6 +2847,20 @@ def run() -> None:
     test_token_filtering()
     test_catalog_database_and_optimizer()
     test_optimizer_charges_extra_detour_only()
+    test_economic_ranking_golden_liters_and_budget()
+    test_economic_ranking_golden_local_tie_and_input_order()
+    test_economic_ranking_golden_haversine()
+    test_economic_api_golden_result_limit_is_final()
+    test_optimization_mode_contract_is_explicit()
+    test_minimal_detour_ranks_trip_and_local_candidates()
+    test_why_selected_is_mode_specific_and_schema_compatible()
+    test_balanced_ranking_uses_equal_normalized_rank_weights()
+    test_balanced_equal_semantic_metrics_share_ranks_and_score()
+    test_balanced_semantic_ties_are_independent_per_dimension()
+    test_balanced_uses_competition_ranking_for_tied_groups()
+    test_balanced_all_tied_uses_only_id_and_ignores_input_order()
+    test_all_ranking_modes_are_deterministic_and_handle_single_candidate()
+    test_api_result_limit_is_final_for_every_optimization_mode()
     test_prefilter_uses_route_corridor_for_trips()
     test_economic_expansion_can_include_cheap_outer_candidate()
     test_same_place_threshold_controls_search_shape()

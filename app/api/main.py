@@ -6,8 +6,6 @@ import logging
 import hmac
 import os
 import re
-import subprocess
-import sys
 import threading
 import time
 import unicodedata
@@ -45,13 +43,26 @@ except ImportError:
 
 from app.config import load_settings
 from app.config import PROJECT_ROOT
+from app.bootstrap import bootstrap_if_managed
+from app.catalog.refresh_service import (
+    EXIT_ALREADY_RUNNING,
+    EXIT_VALIDATION_FAILED,
+    RefreshRequest,
+    run_catalog_refresh,
+)
+from app.paths import APP_PATHS
+from app.windows_credentials import install_secret_redaction
 from app.api.warnings import build_optimize_warnings
 from app.data_sources.brand_catalog import canonical_brand_id, ui_brand_catalog
-from app.models import Coordinates, FUEL_FIELDS, OptimizationInput
+from app.models import Coordinates, FUEL_FIELDS, OptimizationInput, OptimizationMode
 from app.optimizer.ranking import HaversineEstimateProvider, optimize_from_db_with_context
 from app.api.ui import STATIC_DIR, load_index_html
 from app.routing.ors import (
+    ORSServiceError,
     ORSRouteProvider,
+    PUBLIC_GEOCODING_ERROR,
+    PUBLIC_ROUTE_ERROR,
+    PUBLIC_ROUTING_SERVICE_ERROR,
     geocode_address,
     geocode_candidates,
     geocode_candidates_autocomplete,
@@ -81,6 +92,8 @@ class _JsonFormatter(logging.Formatter):
                 data[key] = getattr(record, key)
         if record.exc_info:
             data["exc"] = self.formatException(record.exc_info)
+        elif record.exc_text:
+            data["exc"] = record.exc_text
         return json.dumps(data, ensure_ascii=False, default=str)
 
 
@@ -90,6 +103,7 @@ logging.basicConfig(handlers=[_log_handler], level=logging.INFO, force=True)
 logger = logging.getLogger("fuelopt.api")
 
 settings = load_settings()
+install_secret_redaction(logging.getLogger(), settings.ors_api_key)
 
 
 def _first_forwarded_ip(forwarded_for: str) -> str | None:
@@ -189,8 +203,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 # Baseline security headers applied to every response (H6). No CSP is set:
-# the UI loads Leaflet + OSM tiles from unpkg/CDN, GoatCounter, and uses inline
-# event handlers/styles, so a strict CSP would break current behavior. The
+# the UI loads OSM tiles and uses inline event handlers/styles, so a strict
+# CSP would break current behavior. The
 # Permissions-Policy keeps geolocation enabled for same-origin (the map uses it)
 # while disabling camera/microphone.
 _SECURITY_HEADERS = {
@@ -239,40 +253,34 @@ async def _log_requests(request: Request, call_next):
 
 @app.on_event("startup")
 def _validate_startup() -> None:
+    logger.info("fastapi startup entered; bootstrap verification starting")
     if not settings.ors_api_key:
-        logging.warning(
-            "ORS_API_KEY no está configurada. "
-            "Geocodificación y rutas reales no estarán disponibles."
+        logger.warning(
+            "ors_configuration_missing: geocoding and road routing unavailable"
+        )
+    try:
+        bootstrap = bootstrap_if_managed(settings.db_path, settings.minetur_snapshot_path)
+    except Exception:
+        logger.exception("fastapi startup bootstrap failed")
+        raise
+    if bootstrap is not None:
+        logger.info(
+            "user_data_bootstrap database_action=%s database_source=%s snapshot_action=%s logs_action=%s",
+            bootstrap.database_action,
+            bootstrap.database_source,
+            bootstrap.snapshot_action,
+            bootstrap.logs_action,
         )
     if not settings.db_path.exists():
         raise RuntimeError(
             f"Base de datos no encontrada en {settings.db_path}. "
             "Ejecuta scripts/refresh_catalog.py antes de arrancar."
         )
+    logger.info("fastapi startup completed")
 
 
 INDEPENDENT_BRAND_LABEL = "Independientes / sin marca"
 INDEPENDENT_BRAND_HINT = "Incluye estaciones independientes o con rótulo no reconocido."
-
-
-def _catalog_refresh_command(report_path: Path) -> list[str]:
-    args = [
-        "--source",
-        "minetur",
-        "--write-report",
-        str(report_path),
-    ]
-    if getattr(sys, "frozen", False):
-        return [sys.executable, "--catalog-refresh-script", *args]
-    return [sys.executable, str(PROJECT_ROOT / "scripts" / "refresh_catalog.py"), *args]
-
-
-def _catalog_refresh_env() -> dict[str, str]:
-    env = os.environ.copy()
-    env["FUELOPT_PROJECT_ROOT"] = str(PROJECT_ROOT)
-    if getattr(sys, "frozen", False):
-        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
-    return env
 
 
 def _bearer_token(value: str | None) -> str:
@@ -348,7 +356,10 @@ class OptimizeRequest(BaseModel):
     )
     max_search_extent_km: float = Field(default=settings.max_search_extent_km, gt=0, le=800.0)
     economic_expansion_enabled: bool = True
-    optimization_mode: str = Field(default=settings.default_optimization_mode)
+    optimization_mode: OptimizationMode = Field(
+        default=settings.default_optimization_mode,
+        validate_default=True,
+    )
     local_search_radius_km: float | None = Field(default=None, gt=0, le=500.0)
     corridor_radius_km: float | None = Field(default=None, gt=0, le=200.0)
     max_candidates: int = Field(default=settings.max_route_candidates, gt=0, le=250)
@@ -421,13 +432,17 @@ def _resolve_coordinates(address: str | None, lat: float | None, lon: float | No
     if address:
         try:
             return geocode_address(address, settings=settings)
+        except ORSServiceError as exc:
+            status_code = 400 if exc.configuration_error else 502
+            raise HTTPException(status_code=status_code, detail=exc.public_message) from None
         except RuntimeError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+            logger.warning("geocode_runtime_error failure_type=%s", exc.__class__.__name__)
+            raise HTTPException(status_code=400, detail=PUBLIC_GEOCODING_ERROR) from None
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except RequestException as exc:
             logger.warning("geocode_provider_error: %s", exc.__class__.__name__)
-            raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
+            raise HTTPException(status_code=502, detail=PUBLIC_GEOCODING_ERROR) from None
     raise HTTPException(status_code=400, detail=f"{label} requires address or lat/lon.")
 
 
@@ -573,11 +588,15 @@ def geocode(
         return {
             "items": _geocode_search_variants(q, size=size, focus_lat=focus_lat, focus_lon=focus_lon)
         }
+    except ORSServiceError as exc:
+        status_code = 400 if exc.configuration_error else 502
+        raise HTTPException(status_code=status_code, detail=exc.public_message) from None
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.warning("geocode_runtime_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=400, detail=PUBLIC_GEOCODING_ERROR) from None
     except RequestException as exc:
         logger.warning("geocode_provider_error: %s", exc.__class__.__name__)
-        raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
+        raise HTTPException(status_code=502, detail=PUBLIC_GEOCODING_ERROR) from None
 
 
 @app.get("/geocode")
@@ -597,11 +616,15 @@ def reverse_geocode(lat: float, lon: float) -> dict[str, Any]:
     try:
         item = reverse_geocode_coordinates(lat=lat, lon=lon, settings=settings)
         return {"item": item}
+    except ORSServiceError as exc:
+        status_code = 400 if exc.configuration_error else 502
+        raise HTTPException(status_code=status_code, detail=exc.public_message) from None
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.warning("reverse_geocode_runtime_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=400, detail=PUBLIC_GEOCODING_ERROR) from None
     except RequestException as exc:
         logger.warning("reverse_geocode_provider_error: %s", exc.__class__.__name__)
-        raise HTTPException(status_code=502, detail="Geocoding provider unavailable.") from exc
+        raise HTTPException(status_code=502, detail=PUBLIC_GEOCODING_ERROR) from None
 
 
 @app.get("/reverse-geocode")
@@ -628,10 +651,14 @@ def route_stopover(payload: RouteStopoverRequest) -> dict[str, Any]:
         provider = ORSRouteProvider(settings=settings)
         first_leg = provider.route_geometry(origin, station)
         second_leg = provider.route_geometry(station, destination)
+    except ORSServiceError as exc:
+        raise HTTPException(status_code=502, detail=exc.public_message) from None
     except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.warning("route_runtime_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=502, detail=PUBLIC_ROUTE_ERROR) from None
     except RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"Routing provider failed: {exc}") from exc
+        logger.warning("route_provider_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=502, detail=PUBLIC_ROUTE_ERROR) from None
     return {
         "route_source": "openrouteservice_directions",
         "legs": [
@@ -661,50 +688,6 @@ def how_it_works() -> str:
     return (STATIC_DIR / "como-funciona.html").read_text(encoding="utf-8")
 
 
-class FeedbackPayload(BaseModel):
-    email: str = Field(..., min_length=1)
-    message: str = Field(..., min_length=10)
-
-
-@app.post("/feedback")
-@limiter.limit("5/minute")
-def submit_feedback(request: Request, payload: FeedbackPayload) -> dict[str, bool]:
-    import re as _re
-    import smtplib
-    from email.mime.text import MIMEText
-
-    if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", payload.email):
-        raise HTTPException(status_code=422, detail="Correo electrónico no válido.")
-
-    gmail_user = os.getenv("GMAIL_USER", "")
-    gmail_password = os.getenv("GMAIL_APP_PASSWORD", "")
-    recipient = os.getenv("FEEDBACK_RECIPIENT", gmail_user)
-
-    if not gmail_user or not gmail_password:
-        logger.error("GMAIL_USER o GMAIL_APP_PASSWORD no configurados")
-        raise HTTPException(status_code=500, detail={"error": "No se pudo enviar el mensaje"})
-
-    subject = f"[FuelOpt Feedback] Nueva idea de {payload.email}"
-    body = f"Remitente: {payload.email}\n\n{payload.message}"
-
-    msg = MIMEText(body, "plain", "utf-8")
-    msg["Subject"] = subject
-    msg["From"] = gmail_user
-    msg["To"] = recipient
-
-    try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as smtp:
-            smtp.ehlo()
-            smtp.starttls()
-            smtp.login(gmail_user, gmail_password)
-            smtp.sendmail(gmail_user, [recipient], msg.as_string())
-    except Exception as exc:
-        logger.error("feedback_smtp_error: %s", exc)
-        raise HTTPException(status_code=500, detail={"error": "No se pudo enviar el mensaje"})
-
-    return {"ok": True}
-
-
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def robots_txt() -> str:
     return (STATIC_DIR / "robots.txt").read_text(encoding="utf-8")
@@ -715,11 +698,12 @@ def health() -> dict[str, Any]:
     try:
         db_status = database_health(settings.db_path)
     except Exception as exc:
+        logger.error("health_database_unavailable failure_type=%s", exc.__class__.__name__)
         raise HTTPException(
             status_code=503,
-            detail={"status": "down", "database": "unavailable", "error": str(exc)},
-        ) from exc
-    return {"status": "ok", **db_status}
+            detail={"status": "down", "database": "unavailable"},
+        ) from None
+    return {"status": "ok", "service": "FuelOpt", **db_status}
 
 
 @app.get("/fuels")
@@ -805,28 +789,15 @@ def refresh_catalog(request: Request, _: None = Depends(_require_catalog_refresh
     if not _refresh_lock.acquire(blocking=False):
         raise HTTPException(status_code=429, detail="Catalog refresh already in progress.")
     try:
-        report_path = PROJECT_ROOT / "data" / "reports" / "catalog_refresh_report.json"
-        cmd = _catalog_refresh_command(report_path)
-        try:
-            completed = subprocess.run(
-                cmd,
-                cwd=PROJECT_ROOT,
-                env=_catalog_refresh_env(),
-                capture_output=True,
-                text=True,
-                timeout=900,
+        result = run_catalog_refresh(
+            RefreshRequest.from_settings(
+                settings,
+                source="minetur",
+                report_path=APP_PATHS.logs_dir / "catalog_refresh_report.json",
             )
-        except subprocess.TimeoutExpired as exc:
-            raise HTTPException(status_code=504, detail="Catalog refresh timed out.") from exc
-
-        report: dict[str, object] = {}
-        if report_path.exists():
-            try:
-                report = json.loads(report_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                report = {}
-
-        if completed.returncode == 2:
+        )
+        report = result.report
+        if result.exit_code == EXIT_VALIDATION_FAILED:
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -838,7 +809,7 @@ def refresh_catalog(request: Request, _: None = Depends(_require_catalog_refresh
                 },
             )
 
-        if report.get("refresh_status") == "skipped":
+        if result.exit_code == EXIT_ALREADY_RUNNING:
             raise HTTPException(
                 status_code=429,
                 detail={
@@ -848,15 +819,15 @@ def refresh_catalog(request: Request, _: None = Depends(_require_catalog_refresh
                 },
             )
 
-        if completed.returncode != 0:
-            detail = report.get("refresh_error") or completed.stderr or completed.stdout or "Catalog refresh failed."
+        if result.exit_code != 0:
+            detail = report.get("refresh_error") or "Catalog refresh failed."
             raise HTTPException(status_code=502, detail=str(detail))
 
         status = _catalog_status()
         return {
             "refresh": report,
             "catalog": status,
-            "returncode": completed.returncode,
+            "returncode": result.exit_code,
         }
     finally:
         _refresh_lock.release()
@@ -929,8 +900,11 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
             if payload.use_ors
             else HaversineEstimateProvider(detour_factor=settings.route_detour_factor)
         )
+    except ORSServiceError as exc:
+        raise HTTPException(status_code=400, detail=exc.public_message) from None
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.warning("route_configuration_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=400, detail=PUBLIC_ROUTING_SERVICE_ERROR) from None
     try:
         results, search_context = optimize_from_db_with_context(
             settings.db_path,
@@ -941,8 +915,11 @@ def optimize(payload: OptimizeRequest) -> dict[str, Any]:
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ORSServiceError as exc:
+        raise HTTPException(status_code=502, detail=exc.public_message) from None
     except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        logger.warning("optimization_runtime_error failure_type=%s", exc.__class__.__name__)
+        raise HTTPException(status_code=502, detail="No se pudo completar la optimización en este momento.") from None
     items = [item.to_dict() for item in results[:payload.result_limit]]
     deprecated_parameters = payload.deprecated_parameters_used()
     try:

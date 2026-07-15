@@ -22,15 +22,21 @@ class CatalogValidationResult:
     status: dict[str, object] = field(default_factory=dict)
 
 
-def validate_catalog_db(db_path: Path, rules: CatalogValidationRules | None = None) -> CatalogValidationResult:
+def validate_catalog_db(
+    db_path: Path,
+    rules: CatalogValidationRules | None = None,
+    *,
+    readonly: bool = False,
+    immutable: bool = False,
+) -> CatalogValidationResult:
     active_rules = rules or CatalogValidationRules()
     errors: list[str] = []
     warnings: list[str] = []
 
     try:
-        database_health(db_path)
-        status = catalog_status(db_path)
-        prices = price_status(db_path)
+        database_health(db_path, readonly=readonly, immutable=immutable)
+        status = catalog_status(db_path, readonly=readonly, immutable=immutable)
+        prices = price_status(db_path, readonly=readonly, immutable=immutable)
     except Exception as exc:
         return CatalogValidationResult(ok=False, errors=[f"database_unreadable: {exc}"])
 

@@ -1,5 +1,12 @@
 # FuelOpt Catalog Refresh - comandos utiles
 
+> **Estado: SUPERSEDED**
+> **Fecha de archivo:** 2026-07-12
+> **Documento canónico sustituto:** [Configuración](../CONFIGURATION.md) y [solución de problemas](../TROUBLESHOOTING.md)
+> **Motivo:** describe la tarea y rutas anteriores al ejecutable instalado.
+> **Valor histórico:** conserva comandos de diagnóstico del refresco legacy.
+> **Advertencia:** no ejecutes estos comandos como guía actual; no representan la arquitectura vigente.
+
 La tarea programada se llama:
 
 ```powershell

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 import time
-from typing import Any
+from typing import Any, NoReturn
 
 import requests
 
@@ -14,6 +15,78 @@ ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions/driving-car
 ORS_GEOCODE_URL = "https://api.openrouteservice.org/geocode/search"
 ORS_GEOCODE_AUTOCOMPLETE_URL = "https://api.openrouteservice.org/geocode/autocomplete"
 ORS_REVERSE_GEOCODE_URL = "https://api.openrouteservice.org/geocode/reverse"
+
+PUBLIC_GEOCODING_ERROR = "No se pudo consultar la ubicación en este momento."
+PUBLIC_ROUTE_ERROR = "No se pudo calcular la ruta en este momento."
+PUBLIC_ROUTING_SERVICE_ERROR = "El servicio de rutas no está disponible temporalmente."
+
+logger = logging.getLogger("fuelopt.ors")
+
+
+class ORSServiceError(RuntimeError):
+    """Publicly safe ORS failure without provider request details or credentials."""
+
+    def __init__(
+        self,
+        public_message: str,
+        *,
+        operation: str,
+        failure_type: str,
+        remote_status: int | None = None,
+        configuration_error: bool = False,
+    ) -> None:
+        super().__init__(public_message)
+        self.public_message = public_message
+        self.operation = operation
+        self.failure_type = failure_type
+        self.remote_status = remote_status
+        self.configuration_error = configuration_error
+
+
+def _safe_remote_status(exc: BaseException) -> int | None:
+    try:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        return int(status) if status is not None else None
+    except Exception:
+        return None
+
+
+def _raise_ors_failure(
+    operation: str,
+    exc: BaseException,
+    public_message: str,
+    *,
+    failure_type: str | None = None,
+    configuration_error: bool = False,
+) -> NoReturn:
+    safe_failure_type = failure_type or exc.__class__.__name__
+    remote_status = _safe_remote_status(exc)
+    logger.warning(
+        "ors_operation_failed operation=%s failure_type=%s remote_status=%s",
+        operation,
+        safe_failure_type,
+        remote_status if remote_status is not None else "none",
+    )
+    raise ORSServiceError(
+        public_message,
+        operation=operation,
+        failure_type=safe_failure_type,
+        remote_status=remote_status,
+        configuration_error=configuration_error,
+    ) from None
+
+
+def _require_ors_key(settings: Settings, operation: str, public_message: str) -> str:
+    try:
+        return require_ors_api_key(settings)
+    except RuntimeError as exc:
+        _raise_ors_failure(
+            operation,
+            exc,
+            public_message,
+            failure_type="configuration",
+            configuration_error=True,
+        )
 
 
 GEOCODE_LAYER_LABELS = {
@@ -95,10 +168,18 @@ def _request_geocode_candidates(
             params=params,
             timeout=20,
         )
-    except OSError as exc:
-        raise RuntimeError(f"ORS geocoding failed: {exc}") from exc
-    response.raise_for_status()
-    return _parse_geocode_candidates(response.json(), address)
+        response.raise_for_status()
+        return _parse_geocode_candidates(response.json(), address)
+    except (
+        requests.RequestException,
+        OSError,
+        AttributeError,
+        IndexError,
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        _raise_ors_failure("geocode", exc, PUBLIC_GEOCODING_ERROR)
 
 
 def geocode_candidates(
@@ -110,7 +191,7 @@ def geocode_candidates(
     focus_lon: float | None = None,
 ) -> list[dict[str, Any]]:
     cfg = settings or load_settings()
-    api_key = require_ors_api_key(cfg)
+    api_key = _require_ors_key(cfg, "geocode", PUBLIC_GEOCODING_ERROR)
     params: dict[str, Any] = {
         "api_key": api_key,
         "text": address,
@@ -134,7 +215,7 @@ def geocode_candidates_autocomplete(
     focus_lon: float | None = None,
 ) -> list[dict[str, Any]]:
     cfg = settings or load_settings()
-    api_key = require_ors_api_key(cfg)
+    api_key = _require_ors_key(cfg, "geocode_autocomplete", PUBLIC_GEOCODING_ERROR)
     params: dict[str, Any] = {
         "api_key": api_key,
         "text": address,
@@ -163,7 +244,7 @@ def reverse_geocode_coordinates(
     size: int = 1,
 ) -> dict[str, Any] | None:
     cfg = settings or load_settings()
-    api_key = require_ors_api_key(cfg)
+    api_key = _require_ors_key(cfg, "reverse_geocode", PUBLIC_GEOCODING_ERROR)
     params: dict[str, Any] = {
         "api_key": api_key,
         "point.lat": lat,
@@ -177,43 +258,51 @@ def reverse_geocode_coordinates(
             params=params,
             timeout=20,
         )
-    except OSError as exc:
-        raise RuntimeError(f"ORS reverse geocoding failed: {exc}") from exc
-    response.raise_for_status()
-    payload = response.json()
-    features = payload.get("features") or []
-    if not features:
-        return None
-    feature = features[0]
-    coords = feature.get("geometry", {}).get("coordinates") or []
-    if len(coords) < 2:
-        return None
-    props = feature.get("properties") or {}
-    label = props.get("label") or props.get("name")
-    layer = str(props.get("layer") or "")
-    title = str(props.get("name") or props.get("street") or label or "")
-    subtitle = ", ".join(
-        _distinct_nonempty(
-            [
-                props.get("street"),
-                props.get("locality") or props.get("localadmin"),
-                props.get("county"),
-                props.get("region"),
-                props.get("country"),
-            ]
+        response.raise_for_status()
+        payload = response.json()
+        features = payload.get("features") or []
+        if not features:
+            return None
+        feature = features[0]
+        coords = feature.get("geometry", {}).get("coordinates") or []
+        if len(coords) < 2:
+            return None
+        props = feature.get("properties") or {}
+        label = props.get("label") or props.get("name")
+        layer = str(props.get("layer") or "")
+        title = str(props.get("name") or props.get("street") or label or "")
+        subtitle = ", ".join(
+            _distinct_nonempty(
+                [
+                    props.get("street"),
+                    props.get("locality") or props.get("localadmin"),
+                    props.get("county"),
+                    props.get("region"),
+                    props.get("country"),
+                ]
+            )
         )
-    )
-    return {
-        "label": str(label or title or f"{lat:.5f}, {lon:.5f}"),
-        "name": str(props.get("name") or title or label or ""),
-        "title": title or str(label or ""),
-        "subtitle": subtitle,
-        "layer": layer,
-        "layer_label": GEOCODE_LAYER_LABELS.get(layer, layer.title() or "Lugar"),
-        "lat": float(coords[1]),
-        "lon": float(coords[0]),
-        "source": props.get("source"),
-    }
+        return {
+            "label": str(label or title or f"{lat:.5f}, {lon:.5f}"),
+            "name": str(props.get("name") or title or label or ""),
+            "title": title or str(label or ""),
+            "subtitle": subtitle,
+            "layer": layer,
+            "layer_label": GEOCODE_LAYER_LABELS.get(layer, layer.title() or "Lugar"),
+            "lat": float(coords[1]),
+            "lon": float(coords[0]),
+            "source": props.get("source"),
+        }
+    except (
+        requests.RequestException,
+        OSError,
+        AttributeError,
+        KeyError,
+        IndexError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        _raise_ors_failure("reverse_geocode", exc, PUBLIC_GEOCODING_ERROR)
 
 
 class ORSRouteProvider:
@@ -221,7 +310,11 @@ class ORSRouteProvider:
 
     def __init__(self, settings: Settings | None = None, timeout_sec: int = 30, retries: int = 2) -> None:
         self.settings = settings or load_settings()
-        self.api_key = require_ors_api_key(self.settings)
+        self.api_key = _require_ors_key(
+            self.settings,
+            "route_configuration",
+            PUBLIC_ROUTING_SERVICE_ERROR,
+        )
         self.timeout_sec = timeout_sec
         self.retries = retries
 
@@ -259,12 +352,24 @@ class ORSRouteProvider:
                 if not isinstance(matrix, list):
                     raise ValueError("ORS matrix response did not include distances.")
                 return matrix
-            except (requests.RequestException, ValueError, OSError) as exc:
+            except (
+                requests.RequestException,
+                OSError,
+                AttributeError,
+                IndexError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 last_error = exc
                 if attempt == self.retries:
                     break
                 time.sleep(2 * attempt)
-        raise RuntimeError(f"ORS matrix failed: {last_error}") from last_error
+        _raise_ors_failure(
+            "matrix",
+            last_error or RuntimeError("matrix request was not attempted"),
+            PUBLIC_ROUTING_SERVICE_ERROR,
+        )
 
     def distances_for_candidates(
         self,
@@ -322,9 +427,21 @@ class ORSRouteProvider:
                 if len(route) < 2:
                     raise ValueError("ORS directions response did not include a usable geometry.")
                 return route
-            except (requests.RequestException, ValueError, OSError) as exc:
+            except (
+                requests.RequestException,
+                OSError,
+                AttributeError,
+                IndexError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as exc:
                 last_error = exc
                 if attempt == self.retries:
                     break
                 time.sleep(2 * attempt)
-        raise RuntimeError(f"ORS directions failed: {last_error}") from last_error
+        _raise_ors_failure(
+            "directions",
+            last_error or RuntimeError("directions request was not attempted"),
+            PUBLIC_ROUTE_ERROR,
+        )

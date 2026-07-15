@@ -1,8 +1,8 @@
 """H7 database-artifact guardrail (reporting-only, non-destructive).
 
 The active catalog DB (data/db/gas_stations.sqlite) is intentionally tracked in
-git so the local demo boots with zero configuration (see
-docs/DATABASE_ARTIFACT_POLICY.md). This check does NOT delete, rewrite, or
+git so the installed application can bootstrap with zero configuration (see
+docs/DEVELOPMENT.md). This check does NOT delete, rewrite, or
 modify the DB. It only reports its tracked status / size and fails on a very
 conservative ceiling, to catch an accidentally committed oversized binary.
 """
@@ -69,7 +69,7 @@ def test_db_artifact_report() -> None:
         print(
             f"  WARNING: DB size {size_mb} MB exceeds the soft threshold "
             f"{SOFT_WARN_MB} MB. Consider the migration path in "
-            f"docs/DATABASE_ARTIFACT_POLICY.md."
+            f"docs/DEVELOPMENT.md."
         )
 
     # Conservative hard ceiling only.

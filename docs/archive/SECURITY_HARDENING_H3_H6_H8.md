@@ -1,5 +1,12 @@
 # Security hardening: H3 / H6 / H8
 
+> **Estado: SUPERSEDED**
+> **Fecha de archivo:** 2026-07-12
+> **Documento canónico sustituto:** [Arquitectura](../ARCHITECTURE.md), [configuración](../CONFIGURATION.md) y [backlog](../FINAL_REVIEW_BACKLOG.md)
+> **Motivo:** analiza proxy público, Railway y analítica ya retirados.
+> **Valor histórico:** conserva el razonamiento de cabeceras, proxies e IP.
+> **Advertencia:** las referencias a analítica externa, CDN y Railway son históricas; no representan el producto vigente.
+
 This note documents the operational flags introduced for the audit findings
 H3 (proxy rate-limit keys), H6 (security headers) and H8 (IP logging / PII),
 and what still must be verified in a real proxied deployment (Railway).
@@ -47,7 +54,7 @@ Every response carries:
 uses the browser Geolocation API on the same origin.
 
 **No `Content-Security-Policy` is set.** The UI loads Leaflet and OSM tiles from
-`unpkg`/CDN, loads GoatCounter analytics, and uses inline `onerror` handlers and
+`unpkg`/CDN, loads an external analytics service (now removed), and uses inline `onerror` handlers and
 inline `style` attributes. A strict CSP would break these without app changes,
 so CSP is deliberately left out of this minimal hardening pass and can be added
 later together with the necessary frontend refactor.
