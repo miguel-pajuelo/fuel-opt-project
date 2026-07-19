@@ -294,6 +294,10 @@ def test_header_has_no_support_chip_and_keeps_primary_actions() -> None:
     _assert(".header-privacy-link" in styles, "Header privacy link CSS missing.")
     _assert('href="/privacidad"' in html, "Privacy link should remain in the header.")
     _assert('href="/como-funciona"' in html, "How-it-works link should remain in the header.")
+    _assert(
+        ".app-header .brand {\n    width: 100%;\n    max-width: 100%;\n    flex-wrap: wrap;" in styles,
+        "Header branding and navigation must wrap without horizontal overflow on narrow screens.",
+    )
     issues_url = "https://github.com/miguel-pajuelo/fuel-opt-project/issues/new"
     _assert('class="feedback-chip"' in html, "Feedback action should remain in the header.")
     _assert(".feedback-chip" in styles, "Feedback action styling should remain available.")

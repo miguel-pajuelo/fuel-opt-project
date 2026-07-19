@@ -10,11 +10,11 @@ from app.config import Settings, load_settings, require_ors_api_key
 from app.models import Coordinates, Station
 
 
-ORS_MATRIX_URL = "https://api.openrouteservice.org/v2/matrix/driving-car"
-ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions/driving-car/geojson"
-ORS_GEOCODE_URL = "https://api.openrouteservice.org/geocode/search"
-ORS_GEOCODE_AUTOCOMPLETE_URL = "https://api.openrouteservice.org/geocode/autocomplete"
-ORS_REVERSE_GEOCODE_URL = "https://api.openrouteservice.org/geocode/reverse"
+ORS_MATRIX_URL = "https://api.heigit.org/openrouteservice/v2/matrix/driving-car"
+ORS_DIRECTIONS_URL = "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson"
+ORS_GEOCODE_URL = "https://api.heigit.org/pelias/v1/search"
+ORS_GEOCODE_AUTOCOMPLETE_URL = "https://api.heigit.org/pelias/v1/autocomplete"
+ORS_REVERSE_GEOCODE_URL = "https://api.heigit.org/pelias/v1/reverse"
 
 PUBLIC_GEOCODING_ERROR = "No se pudo consultar la ubicación en este momento."
 PUBLIC_ROUTE_ERROR = "No se pudo calcular la ruta en este momento."

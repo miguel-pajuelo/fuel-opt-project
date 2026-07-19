@@ -2838,6 +2838,17 @@ select:focus {
 }
 
 @media (max-width: 560px) {
+  .app-header .brand {
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+
+  .header-privacy-link {
+    margin-left: 0;
+  }
+
   .onboarding-dialog__content {
     padding: 18px 18px 20px;
   }

@@ -170,9 +170,9 @@ def _check_public_documentation() -> None:
     _assert("No desactives Microsoft Defender" in installation, "installation guide must not advise disabling Defender")
     _assert("No continúes" in installation and "checksum no coincide" in installation, "unsafe download warning is missing")
 
-    for term in ("320 px", "zoom al 200 %", "Credenciales históricas de ORS", "permanece pendiente"):
+    for term in ("320 px", "zoom al 200 %", "Credenciales históricas de ORS", "confirmó la revocación o rotación"):
         _assert(term in releasing, f"manual release validation was not migrated: {term}")
-    _assert("no bloquea el código" in releasing.lower(), "FR-048 release impact is not documented")
+    _assert("se corrigió el overflow horizontal" in releasing.lower(), "FR-048 responsive fix is not documented")
     _assert("No registres su valor" in releasing, "private ORS rotation checklist must prohibit recording credentials")
 
     security = _read("SECURITY.md")
