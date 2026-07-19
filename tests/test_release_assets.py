@@ -24,13 +24,13 @@ from scripts.verify_release_assets import (
 )
 
 
-VERSION = "0.1.1"
-TAG = "v0.1.1"
+VERSION = "0.1.2"
+TAG = "v0.1.2"
 COMMIT = "a" * 40
-TITLE = "FuelOpt 0.1.1"
+TITLE = "FuelOpt 0.1.2"
 BODY = (
-    "FuelOpt 0.1.1\n\n"
-    "Artefactos generados para la etiqueta v0.1.1. "
+    "FuelOpt 0.1.2\n\n"
+    "Artefactos generados para la etiqueta v0.1.2. "
     "Verifica el instalador y el ZIP portable con SHA256SUMS.txt antes de utilizarlos.\n"
 )
 

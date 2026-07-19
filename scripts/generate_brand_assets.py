@@ -9,7 +9,7 @@ from PIL import Image, ImageCms, ImageDraw
 
 
 ROOT = Path(__file__).resolve().parents[1]
-APPROVED_SHA256 = "0EF1C3988F4711352F4ABDF4A2EC1B3081E80A02F75FAE28A3B545A88DC82A16"
+APPROVED_SHA256 = "33A01D179FB6297AB711DB5980D45E6A15A568053D1A1AD94279579008ACECCD"
 ORIGINAL_SIZE = (1254, 1254)
 ICO_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 WEB_SIZES = (16, 32, 48, 180, 192, 512)
@@ -45,7 +45,7 @@ def validate_source(path: Path) -> Image.Image:
 
 
 def connected_exterior_mask(image: Image.Image) -> Image.Image:
-    """Select only the near-black background connected to the canvas border."""
+    """Select only the pale neutral background connected to the canvas border."""
     width, height = image.size
     pixels = image.load()
     exterior = bytearray(width * height)
@@ -53,7 +53,7 @@ def connected_exterior_mask(image: Image.Image) -> Image.Image:
 
     def eligible(x: int, y: int) -> bool:
         red, green, blue = pixels[x, y]
-        return max(red, green, blue) <= 14 and abs(red - green) <= 8 and abs(green - blue) <= 8
+        return min(red, green, blue) >= 225 and max(red, green, blue) - min(red, green, blue) <= 35
 
     def enqueue(x: int, y: int) -> None:
         offset = y * width + x

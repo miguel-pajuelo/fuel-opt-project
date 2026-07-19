@@ -55,15 +55,15 @@ def _resource_ids(pe: pefile.PE) -> set[int]:
 
 def validate_source() -> None:
     version, numeric = parse_version(DEFAULT_VERSION)
-    _assert(version == "0.1.1" and numeric == (0, 1, 1, 0), "default version mapping is invalid")
+    _assert(version == "0.1.2" and numeric == (0, 1, 2, 0), "default version mapping is invalid")
     content = render_version_info(DEFAULT_VERSION)
     for key, value in EXPECTED_TEXT_FIELDS.items():
         _assert(f"StringStruct(u'{key}', u'{value}')" in content, f"missing generated field: {key}")
-    _assert("StringStruct(u'FileVersion', u'0.1.1')" in content, "text FileVersion is inconsistent")
-    _assert("StringStruct(u'ProductVersion', u'0.1.1')" in content, "text ProductVersion is inconsistent")
+    _assert("StringStruct(u'FileVersion', u'0.1.2')" in content, "text FileVersion is inconsistent")
+    _assert("StringStruct(u'ProductVersion', u'0.1.2')" in content, "text ProductVersion is inconsistent")
     _assert(f"StringStruct(u'LegalCopyright', u'{COPYRIGHT_NOTICE}')" in content, "copyright holder is inconsistent")
-    _assert("filevers=(0, 1, 1, 0)" in content, "numeric FileVersion is inconsistent")
-    _assert("prodvers=(0, 1, 1, 0)" in content, "numeric ProductVersion is inconsistent")
+    _assert("filevers=(0, 1, 2, 0)" in content, "numeric FileVersion is inconsistent")
+    _assert("prodvers=(0, 1, 2, 0)" in content, "numeric ProductVersion is inconsistent")
     _assert("CompanyName" not in content, "CompanyName must be omitted until an identity is approved")
     _assert(not FORBIDDEN_VALUE_PATTERN.search(content), "generated VERSIONINFO contains unsafe text")
     for invalid in ("", "1", "1.2", "01.2.3", "1.2.3.4", "1.2.x", "65536.0.0"):

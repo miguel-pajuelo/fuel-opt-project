@@ -289,9 +289,15 @@ def test_header_has_no_support_chip_and_keeps_primary_actions() -> None:
         _assert(token not in combined, f"Removed support component token remains: {token!r}")
 
     _assert('class="header-privacy-link"' in html, "Privacy link should be placed next to the FuelOpt wordmark.")
+    _assert('class="wordmark__mark" src="/static/icons/fuelopt-48.png"' in html, "Header must display the approved FuelOpt mark.")
+    _assert(".wordmark__mark" in styles, "Header brand mark CSS missing.")
     _assert(".header-privacy-link" in styles, "Header privacy link CSS missing.")
     _assert('href="/privacidad"' in html, "Privacy link should remain in the header.")
     _assert('href="/como-funciona"' in html, "How-it-works link should remain in the header.")
+    _assert(
+        ".app-header .brand {\n    width: 100%;\n    max-width: 100%;\n    flex-wrap: wrap;" in styles,
+        "Header branding and navigation must wrap without horizontal overflow on narrow screens.",
+    )
     issues_url = "https://github.com/miguel-pajuelo/fuel-opt-project/issues/new"
     _assert('class="feedback-chip"' in html, "Feedback action should remain in the header.")
     _assert(".feedback-chip" in styles, "Feedback action styling should remain available.")
@@ -334,6 +340,15 @@ def test_first_opening_quick_help_is_accessible_and_non_blocking() -> None:
         _assert(step in html, f"Quick help step is missing: {step}")
     _assert('id="quick_help_start"' in html and ">Empezar</button>" in html, "Quick help primary action is missing.")
     _assert('id="quick_help_trigger"' in html and "Ayuda rápida" in html, "Manual quick-help access is missing.")
+    video_tag = re.search(r'<video\b(?P<attrs>[^>]*)id="quick_help_video"(?P<tail>[^>]*)>', html)
+    _assert(video_tag, "Quick help promotional video is missing.")
+    video_attrs = video_tag.group("attrs") + video_tag.group("tail")
+    for required in ("autoplay", "muted", "loop", "controls", 'preload="auto"', "playsinline", 'poster="/static/icons/fuelopt-512.png"'):
+        _assert(required in video_attrs, f"Quick help video attribute is missing: {required}")
+    _assert('<source src="/static/media/fuelopt-tutorial.mp4" type="video/mp4">' in html, "Quick help video source is missing.")
+    _assert('id="quick_help_video_fallback"' in html and "Abrir el vídeo directamente" in html, "Quick help video fallback is missing.")
+    tutorial_video = ROOT / "static" / "media" / "fuelopt-tutorial.mp4"
+    _assert(tutorial_video.is_file() and tutorial_video.stat().st_size > 0, "Tutorial video asset is missing or empty.")
 
     _assert("fuelopt:onboarding:v1:dismissed" in js, "Quick help storage key must be versioned.")
     _assert("window.localStorage.getItem(ONBOARDING_STORAGE_KEY)" in js, "Quick help should read its dismissed state.")
@@ -349,9 +364,34 @@ def test_first_opening_quick_help_is_accessible_and_non_blocking() -> None:
     _assert("dialog.addEventListener('cancel'" in js and "event.preventDefault()" in js, "Escape dismissal must be handled deliberately.")
     _assert("returnFocusTarget" in js and "focusTarget.focus()" in js, "Focus should return to the opening control.")
     _assert("closeButton.focus()" in js, "Focus should move into the dialog when it opens.")
+    _assert("video.addEventListener('error'" in js, "Video load failures must reveal the fallback.")
+    _assert("video.pause()" in js, "Closing quick help must pause the video.")
+    _assert("video.currentTime = 0" in js, "Quick help must restart the video from the beginning.")
+    _assert("video.muted = true" in js, "Quick help autoplay must begin muted.")
+    _assert("const playPromise = video.play()" in js and "playPromise.catch" in js, "Quick help must handle blocked autoplay without errors.")
     _assert(".onboarding-dialog::backdrop" in styles, "Quick help needs a visually subdued backdrop.")
-    _assert("width: min(520px, calc(100% - 24px))" in styles, "Quick help should fit narrow viewports.")
+    _assert("width: min(95vw, 1200px)" in styles, "Desktop quick help must use the compact wide layout.")
+    _assert("max-height: 90dvh" in styles, "Desktop quick help must remain inside the viewport.")
     _assert("overflow-x: hidden" in styles, "Quick help must prevent horizontal overflow.")
+    _assert("aspect-ratio: 16 / 9" in styles and "object-fit: contain" in styles, "Quick help video must retain its full 16:9 frame.")
+    _assert("grid-template-columns: minmax(0, 1.55fr) minmax(320px, .85fr)" in styles, "Desktop quick help must prioritize the video column.")
+    _assert(
+        ".tutorial-brand {\n  display: flex;\n  flex-direction: row;\n  align-items: center;\n  gap: 12px;" in styles,
+        "Tutorial branding must form a compact horizontal heading.",
+    )
+    _assert("width: min(88%, 380px)" in styles and "justify-self: center" in styles, "Quick help action must use a centered controlled width.")
+    _assert("padding-right: 72px" in styles, "Desktop quick-help title must reserve a safe area for the close button.")
+    _assert("width: 44px" in styles and "height: 44px" in styles and "z-index: 10" in styles, "Quick-help close control must retain a safe accessible target.")
+    _assert("font-size: 17px" in styles and "font-weight: 800" in styles, "Quick-help step headings need stronger visual hierarchy.")
+    _assert("font-size: 14px" in styles and "font-weight: 600" in styles, "Quick-help step descriptions need improved readability.")
+    _assert("body:has(.onboarding-dialog[open])" in styles, "The page must remain scroll-locked while quick help is open.")
+    _assert('grid-template-areas:\n    "brand title"\n    "video intro"\n    "video steps"\n    "video action"' in styles, "Desktop quick help grid areas are missing.")
+    _assert(".tutorial-main {\n  display: contents;" in styles, "Quick help title and brand must share the top grid row.")
+    _assert(html.count('class="tutorial-brand"') == 1, "Quick help must render the brand only once.")
+    _assert(html.index('class="tutorial-header"') < html.index('class="tutorial-main"'), "Quick help brand header must precede the two-column content.")
+    _assert("max-height: 68dvh" in styles, "Tutorial video must retain a useful viewport-relative height limit.")
+    _assert("@media (max-width: 800px)" in styles, "Quick help responsive breakpoint is missing.")
+    _assert("width: min(94vw, 560px)" in styles and "max-height: 92dvh" in styles, "Mobile quick help sizing is missing.")
     dialog_rule = re.search(r"\.onboarding-dialog\s*\{(?P<body>[^}]*)\}", styles)
     _assert(dialog_rule and "font-family: inherit" in dialog_rule.group("body"), "Quick help must use the app typography.")
     primary_rule = re.search(r"\.onboarding-dialog__primary\s*\{(?P<body>[^}]*)\}", styles)
@@ -388,10 +428,10 @@ def test_quick_help_is_scoped_to_the_install_instance() -> None:
     _assert("#{INSTALL_INSTANCE_FRAGMENT}={encoded}" in launcher, "Launcher must put the install ID in a fragment.")
     _assert("?fuelopt-install=" not in launcher, "Install ID must never be added to the query string.")
     _assert("browser opened url=" not in launcher, "Browser URL containing the install ID must not be logged.")
-    _assert('UI_CACHE_REVISION = "install-onboarding-v2"' in launcher, "Launcher needs a non-personal UI cache revision.")
+    _assert('UI_CACHE_REVISION = "tutorial-playback-v3"' in launcher, "Launcher needs a non-personal UI cache revision.")
     _assert("fuelopt-ui" in launcher, "Launcher must request the revised local UI URL.")
-    _assert("/static/styles.css?v=install-onboarding-v2" in html, "Critical CSS needs the revised cache key.")
-    _assert("/static/app.js?v=install-onboarding-v2" in html, "Critical JS needs the revised cache key.")
+    _assert("/static/styles.css?v=tutorial-step-type-v8" in html, "Critical CSS needs the revised cache key.")
+    _assert("/static/app.js?v=tutorial-playback-v3" in html, "Critical JS needs the revised cache key.")
 
 
 def test_sidebar_and_floating_search_layout() -> None:

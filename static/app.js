@@ -37,8 +37,17 @@
       const trigger = $('quick_help_trigger');
       const closeButton = $('quick_help_close');
       const startButton = $('quick_help_start');
+      const video = $('quick_help_video');
+      const videoFallback = $('quick_help_video_fallback');
       let openedAutomatically = false;
       let returnFocusTarget = null;
+
+      if (video && videoFallback) {
+        video.addEventListener('error', () => {
+          video.hidden = true;
+          videoFallback.hidden = false;
+        });
+      }
 
       function wasQuickHelpDismissed() {
         try {
@@ -64,11 +73,25 @@
         openedAutomatically = automatic;
         returnFocusTarget = opener || document.activeElement;
         dialog.showModal();
+        if (video) {
+          video.currentTime = 0;
+          video.muted = true;
+          const playPromise = video.play();
+          if (playPromise !== undefined) {
+            playPromise.catch(() => {
+              // Native controls remain available if autoplay is blocked.
+            });
+          }
+        }
         window.requestAnimationFrame(() => closeButton.focus());
       }
 
       function closeQuickHelp() {
         if (!dialog.open) return;
+        if (video && typeof video.pause === 'function') {
+          video.pause();
+          video.currentTime = 0;
+        }
         if (openedAutomatically) rememberQuickHelpDismissal();
         openedAutomatically = false;
         dialog.close();

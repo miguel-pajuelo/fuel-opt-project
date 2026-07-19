@@ -7,6 +7,11 @@ config.json
 # Local tool state
 .claude/
 
+# Local branding and media source files
+/new_logo.png
+/FuelOpt Social Ad.mp4
+/FuelOpt Story.mp4
+
 # Python/cache artifacts
 __pycache__/
 *.py[cod]

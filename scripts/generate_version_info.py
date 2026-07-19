@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 
-DEFAULT_VERSION = "0.1.1"
+DEFAULT_VERSION = "0.1.2"
 VERSION_PATTERN = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 COPYRIGHT_NOTICE = "Copyright © 2026 Miguel Pajuelo Gómez"
 

@@ -1,6 +1,19 @@
 # Changelog
 
-## [0.1.1] - Unreleased
+## [0.1.2] - 2026-07-19
+
+### Added
+
+- Nueva identidad visual y nuevo logo de FuelOpt en la aplicación, favicon, ejecutable e instalador.
+- Vídeo explicativo integrado en la guía rápida y distribuido dentro del paquete de Windows.
+
+### Changed
+
+- El tutorial adopta un diseño más amplio, legible y responsive, con reproducción automática silenciada y en bucle.
+- Se mejoran la jerarquía visual, el contraste, la navegación por teclado y el comportamiento del modal en pantallas pequeñas.
+- La integración de OpenRouteService utiliza los endpoints vigentes de la plataforma unificada de HeiGIT.
+
+## [0.1.1] - 2026-07-15
 
 ### Changed
 

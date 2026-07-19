@@ -1,8 +1,8 @@
 # Publicación
 
-## 0.1.1 — Unreleased
+## 0.1.2 — 2026-07-19
 
-La versión de mantenimiento actualiza el refresco predeterminado, la documentación y la publicación automática. Esta sección no autoriza un tag ni una release.
+La versión estable actualiza la identidad visual, incorpora el vídeo de la guía rápida y mejora su diseño responsive.
 
 ## Preparación
 
@@ -15,8 +15,8 @@ La versión de mantenimiento actualiza el refresco predeterminado, la documentac
 
 ## Validaciones manuales antes de publicar
 
-- **Interfaz responsive:** existe una observación pendiente de overflow horizontal a 320 px, posiblemente relacionada con el mapa o el selector de marcas. Reproduce y localiza el origen antes de corregirlo. Antes de publicar, comprueba obligatoriamente la interfaz a 320 px, con zoom al 200 % y en escritorio; confirma que no hay scroll horizontal involuntario y que mapa y marcas siguen siendo utilizables. Esta observación no bloquea el código de mantenimiento, pero sí requiere revisión manual previa a la publicación.
-- **Credenciales históricas de ORS:** confirma por un canal privado que cualquier credencial histórica de OpenRouteService ha sido revocada o rotada. No registres su valor ni lo copies en Issues, documentación, logs, commits o chats. Esta comprobación permanece pendiente mientras el propietario no aporte confirmación externa; el repositorio no debe afirmar que se ha completado sin esa evidencia.
+- **Interfaz responsive:** para `0.1.2` se corrigió el overflow horizontal de la cabecera y se comprobó la interfaz a 320 px, con zoom al 200 % y en escritorio. No se observó scroll horizontal involuntario y mapa, controles y filtros permanecieron utilizables.
+- **Credenciales históricas de ORS:** confirma por un canal privado que cualquier credencial histórica de OpenRouteService ha sido revocada o rotada. No registres su valor ni lo copies en Issues, documentación, logs, commits o chats. Para `0.1.2`, la persona responsable confirmó la revocación o rotación antes de publicar, sin registrar ningún valor de credencial.
 
 ## Publicación por tag
 

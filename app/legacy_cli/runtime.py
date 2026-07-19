@@ -66,7 +66,7 @@ EPSILON_EUR = 2.0   # margen de coste para la regla epsilon
 DISTANCE_UNCERTAINTY_KM = 0.75   # km por tramo (ajustable)
 
 ORS_API_KEY = os.getenv("ORS_API_KEY")
-ORS_MATRIX_URL = "https://api.openrouteservice.org/v2/matrix/driving-car"
+ORS_MATRIX_URL = "https://api.heigit.org/openrouteservice/v2/matrix/driving-car"
 TIMEOUT_HTTP = 30  # segundos; usado en todas las peticiones HTTP
 
 # Tokens que aparecen en todas las fichas Ballenoil por el JavaScript global de

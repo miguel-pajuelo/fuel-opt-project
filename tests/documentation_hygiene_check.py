@@ -39,7 +39,7 @@ REMOVED_INTERNAL_DOCUMENTS = (
 )
 REPOSITORY_URL = "https://github.com/miguel-pajuelo/fuel-opt-project"
 LATEST_RELEASE_URL = f"{REPOSITORY_URL}/releases/latest"
-BRAND_SOURCE_SHA256 = "0EF1C3988F4711352F4ABDF4A2EC1B3081E80A02F75FAE28A3B545A88DC82A16"
+BRAND_SOURCE_SHA256 = "33A01D179FB6297AB711DB5980D45E6A15A568053D1A1AD94279579008ACECCD"
 APACHE_LICENSE_SHA256 = "C71D239DF91726FC519C6EB72D318EC65820627232B2F796219E87DCF35D0AB4"
 STATION_LOGOS_TREE_SHA256 = "6638980529C47A117CC7C1F2CF9F017C80AA4FF96E78C297547767941AE8BE94"
 
@@ -137,18 +137,19 @@ def _check_repository_hygiene() -> None:
 def _check_public_documentation() -> None:
     readme = _read("README.md")
     _assert(REPOSITORY_URL in readme and LATEST_RELEASE_URL in readme, "README release links are incorrect")
-    for stale in ("pre-release", "primera versión", "blocker", "FINAL_REVIEW_BACKLOG", "PR2_RECONCILIATION", "0.1.1", "Unreleased"):
+    for stale in ("pre-release", "primera versión", "blocker", "FINAL_REVIEW_BACKLOG", "PR2_RECONCILIATION", "0.1.2", "Unreleased"):
         _assert(stale.lower() not in readme.lower(), f"README contains internal or future wording: {stale}")
 
     changelog = _read("CHANGELOG.md")
     releasing = _read("docs/RELEASING.md")
-    _assert("## [0.1.1] - Unreleased" in changelog, "CHANGELOG does not contain 0.1.1 Unreleased")
+    _assert("## [0.1.2] - 2026-07-19" in changelog, "CHANGELOG does not contain the published 0.1.2 date")
+    _assert("## [0.1.1] - 2026-07-15" in changelog, "published 0.1.1 history is incorrect")
     _assert("## [0.1.0] - 2026-07-15" in changelog, "published 0.1.0 history is incorrect")
-    _assert("0.1.1 — Unreleased" in releasing, "RELEASING does not identify the maintenance version")
+    _assert("0.1.2 — 2026-07-19" in releasing, "RELEASING does not identify the stable version")
     for relative in CANONICAL_DOCUMENTS:
         if relative not in {"CHANGELOG.md", "docs/RELEASING.md"}:
             text = _read(relative)
-            _assert("0.1.1" not in text and "Unreleased" not in text, f"Future version leaked into {relative}")
+            _assert("0.1.2" not in text and "Unreleased" not in text, f"Future version leaked into {relative}")
 
     for removed in REMOVED_INTERNAL_DOCUMENTS:
         _assert(not (ROOT / removed).exists(), f"Internal documentation still exists: {removed}")
@@ -169,9 +170,9 @@ def _check_public_documentation() -> None:
     _assert("No desactives Microsoft Defender" in installation, "installation guide must not advise disabling Defender")
     _assert("No continúes" in installation and "checksum no coincide" in installation, "unsafe download warning is missing")
 
-    for term in ("320 px", "zoom al 200 %", "Credenciales históricas de ORS", "permanece pendiente"):
+    for term in ("320 px", "zoom al 200 %", "Credenciales históricas de ORS", "confirmó la revocación o rotación"):
         _assert(term in releasing, f"manual release validation was not migrated: {term}")
-    _assert("no bloquea el código" in releasing.lower(), "FR-048 release impact is not documented")
+    _assert("se corrigió el overflow horizontal" in releasing.lower(), "FR-048 responsive fix is not documented")
     _assert("No registres su valor" in releasing, "private ORS rotation checklist must prohibit recording credentials")
 
     security = _read("SECURITY.md")

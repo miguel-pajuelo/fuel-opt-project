@@ -26,7 +26,7 @@ from app.models import Coordinates
 # and the raw OpenRouteService URL.
 _FAKE_ORS_KEY = "ors_test_secret_DO_NOT_EXPOSE_123"
 _FAKE_ORS_URL = (
-    "https://api.openrouteservice.org/geocode/search"
+    "https://api.heigit.org/pelias/v1/search"
     f"?api_key={_FAKE_ORS_KEY}&text=x"
 )
 _FAKE_AUTHORIZATION = f"Authorization: Bearer {_FAKE_ORS_KEY}"
@@ -39,8 +39,25 @@ _SENSITIVE_TOKENS = (
     _FAKE_ORS_URL,
     _FAKE_AUTHORIZATION,
     "api_key",
-    "openrouteservice.org",
+    "api.heigit.org",
 )
+
+
+def test_ors_uses_current_heigit_endpoints() -> None:
+    assert ors_module.ORS_MATRIX_URL == "https://api.heigit.org/openrouteservice/v2/matrix/driving-car"
+    assert ors_module.ORS_DIRECTIONS_URL == (
+        "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson"
+    )
+    assert ors_module.ORS_GEOCODE_URL == "https://api.heigit.org/pelias/v1/search"
+    assert ors_module.ORS_GEOCODE_AUTOCOMPLETE_URL == "https://api.heigit.org/pelias/v1/autocomplete"
+    assert ors_module.ORS_REVERSE_GEOCODE_URL == "https://api.heigit.org/pelias/v1/reverse"
+
+    production_sources = (
+        ROOT / "app" / "routing" / "ors.py",
+        ROOT / "app" / "legacy_cli" / "runtime.py",
+    )
+    for source in production_sources:
+        assert "api.openrouteservice.org" not in source.read_text(encoding="utf-8")
 
 
 def _boom(*_args, **_kwargs):
