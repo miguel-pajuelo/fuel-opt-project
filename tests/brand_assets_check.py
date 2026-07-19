@@ -8,7 +8,7 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_SOURCE_SHA256 = "0EF1C3988F4711352F4ABDF4A2EC1B3081E80A02F75FAE28A3B545A88DC82A16"
+EXPECTED_SOURCE_SHA256 = "33A01D179FB6297AB711DB5980D45E6A15A568053D1A1AD94279579008ACECCD"
 ICO_SIZES = {(16, 16), (20, 20), (24, 24), (32, 32), (40, 40), (48, 48), (64, 64), (128, 128), (256, 256)}
 PNG_SIZES = {
     "assets/fuelopt-icon-1024.png": 1024,
@@ -75,6 +75,7 @@ def run() -> None:
     _assert(r'#define AppIconSource "..\assets\fuelopt.ico"' in installer, "Inno Setup ICO source missing")
     _assert("SetupIconFile={#AppIconSource}" in installer, "Inno Setup icon reference missing")
     _assert("/static/favicon.ico" in index and "/static/icons/fuelopt-32.png" in index, "index.html favicon references missing")
+    _assert('/static/icons/fuelopt-48.png' in index, "Header brand mark reference missing")
 
     tracked_brand_graphics = {path.relative_to(ROOT).as_posix() for path in (ROOT / "assets").rglob("*") if path.is_file() and path.suffix.lower() in {".png", ".ico", ".svg"}}
     _assert(tracked_brand_graphics == {"assets/source/fuelopt-icon-approved.png", "assets/fuelopt-icon-1024.png", "assets/fuelopt.ico"}, tracked_brand_graphics)

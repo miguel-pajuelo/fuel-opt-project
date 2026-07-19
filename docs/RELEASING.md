@@ -1,8 +1,8 @@
 # Publicación
 
-## 0.1.1 — Unreleased
+## 0.1.2 — 2026-07-19
 
-La versión de mantenimiento actualiza el refresco predeterminado, la documentación y la publicación automática. Esta sección no autoriza un tag ni una release.
+La versión estable actualiza la identidad visual, incorpora el vídeo de la guía rápida y mejora su diseño responsive.
 
 ## Preparación
 

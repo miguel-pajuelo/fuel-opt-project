@@ -19,8 +19,9 @@
     }
     .wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 80px; }
     header { margin-bottom: 48px; }
-    .wordmark { font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
-    .wordmark span { color: var(--green); }
+    .wordmark { display: inline-flex; align-items: center; gap: 8px; font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
+    .wordmark img { display: block; width: 48px; height: 48px; object-fit: contain; }
+    .wordmark span { color: var(--ink); }
     h1 { font-size: 28px; font-weight: 600; margin: 16px 0 8px; }
     .lead { color: var(--muted); margin: 0 0 40px; }
     h2 { font-size: 16px; font-weight: 600; margin: 32px 0 8px; text-transform: uppercase;
@@ -46,7 +47,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="wordmark">Fuel<span>Opt</span></div>
+    <div class="wordmark"><img src="/static/icons/fuelopt-48.png" alt="" width="48" height="48"><span>FuelOpt</span></div>
   </header>
 
   <a class="back" href="/">&#8592; Volver a FuelOpt</a>

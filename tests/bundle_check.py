@@ -64,6 +64,7 @@ def validate_bundle(bundle: Path) -> None:
         internal / "static" / "favicon.ico",
         internal / "static" / "icons" / "fuelopt-32.png",
         internal / "static" / "icons" / "fuelopt-180.png",
+        internal / "static" / "media" / "fuelopt-tutorial.mp4",
         internal / "static" / "vendor" / "leaflet" / "leaflet.js",
         internal / "static" / "vendor" / "leaflet" / "leaflet.css",
         internal / "static" / "vendor" / "leaflet" / "LICENSE",

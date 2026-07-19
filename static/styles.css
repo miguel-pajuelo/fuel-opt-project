@@ -157,6 +157,9 @@ a {
 }
 
 .wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 30px;
   line-height: 1;
@@ -164,8 +167,16 @@ a {
   color: var(--ink);
 }
 
-.wordmark span {
-  color: var(--gold);
+.wordmark__mark {
+  display: block;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  object-fit: contain;
+}
+
+.wordmark__label {
+  color: var(--ink);
 }
 
 .beta-badge {
@@ -226,9 +237,10 @@ a {
 
 /* Quick help shown on the first opening and available from the header. */
 .onboarding-dialog {
-  width: min(520px, calc(100% - 24px));
-  max-width: 520px;
-  max-height: calc(100dvh - 24px);
+  position: relative;
+  width: min(95vw, 1200px);
+  max-width: 1200px;
+  max-height: 90dvh;
   margin: auto;
   padding: 0;
   border: 1px solid rgba(159, 122, 58, .28);
@@ -237,8 +249,11 @@ a {
   color: var(--ink);
   font-family: inherit;
   box-shadow: 0 28px 80px rgba(31, 25, 17, .24);
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
+}
+
+body:has(.onboarding-dialog[open]) {
+  overflow: hidden;
 }
 
 .onboarding-dialog::backdrop {
@@ -247,20 +262,61 @@ a {
 }
 
 .onboarding-dialog__content {
-  position: relative;
   box-sizing: border-box;
-  padding: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, .85fr);
+  grid-template-rows: auto auto auto auto;
+  grid-template-areas:
+    "brand title"
+    "video intro"
+    "video steps"
+    "video action";
+  column-gap: 26px;
+  align-items: start;
+  max-height: 90dvh;
+  padding: 22px 24px 24px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.tutorial-header {
+  grid-area: brand;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-width: 0;
+  padding-right: 44px;
+}
+
+.tutorial-brand {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+
+.onboarding-dialog__brand {
+  display: block;
+  width: 54px;
+  height: 54px;
+  margin: 0;
+  object-fit: contain;
+}
+
+.tutorial-main {
+  display: contents;
 }
 
 .onboarding-dialog__close {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 20px;
+  right: 20px;
+  z-index: 10;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   border: 1px solid rgba(31, 25, 17, .12);
   border-radius: 999px;
   background: rgba(255, 255, 255, .72);
@@ -281,34 +337,81 @@ a {
 }
 
 .onboarding-dialog__eyebrow {
-  margin-bottom: 8px;
+  margin: 0;
   color: var(--gold);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: .12em;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.2;
+  letter-spacing: .14em;
   text-transform: uppercase;
 }
 
 .onboarding-dialog h2 {
-  max-width: 390px;
+  grid-area: title;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
   margin: 0;
-  padding-right: 30px;
-  font-size: clamp(26px, 6vw, 34px);
-  line-height: 1.08;
+  padding-right: 72px;
+  font-size: clamp(30px, 3vw, 36px);
+  line-height: 1.06;
   letter-spacing: -.035em;
 }
 
 .onboarding-dialog__intro {
-  margin: 14px 0 24px;
+  grid-area: intro;
+  margin: 10px 0 0;
   color: var(--muted);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: 16px;
+  line-height: 1.58;
+}
+
+.onboarding-video-shell {
+  grid-area: video;
+  align-self: start;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid rgba(159, 122, 58, .28);
+  border-radius: 16px;
+  background: var(--night);
+}
+
+.onboarding-video {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 68dvh;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: var(--night);
+}
+
+.onboarding-video-fallback {
+  margin: 0;
+  padding: 22px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.onboarding-video-fallback a {
+  color: var(--gold-hover);
+  font-weight: 750;
+  text-decoration: underline;
 }
 
 .onboarding-steps {
+  grid-area: steps;
+  align-self: start;
   display: grid;
-  gap: 16px;
-  margin: 0;
+  gap: 14px;
+  margin: 16px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -335,22 +438,26 @@ a {
 }
 
 .onboarding-steps h3 {
-  margin: 1px 0 4px;
-  font-size: 15px;
-  line-height: 1.3;
+  margin: 0 0 5px;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.28;
 }
 
 .onboarding-steps p {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 600;
   line-height: 1.5;
 }
 
 .onboarding-dialog__primary {
-  width: 100%;
+  grid-area: action;
+  align-self: start;
+  width: min(88%, 380px);
   min-height: 46px;
-  margin-top: 26px;
+  margin: 18px auto 0;
   border: 1px solid var(--gold);
   border-radius: 14px;
   background: var(--gold);
@@ -2659,15 +2766,26 @@ select:focus {
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 800px) {
   .onboarding-dialog {
-    width: calc(100% - 20px);
-    max-height: calc(100dvh - 20px);
+    width: min(94vw, 560px);
+    max-width: 560px;
+    max-height: 92dvh;
     border-radius: 19px;
   }
 
   .onboarding-dialog__content {
-    padding: 28px 20px 22px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto auto auto;
+    grid-template-areas:
+      "brand"
+      "title"
+      "intro"
+      "video"
+      "steps"
+      "action";
+    max-height: 92dvh;
+    padding: 20px 24px 24px;
   }
 
   .onboarding-dialog__close {
@@ -2675,12 +2793,62 @@ select:focus {
     right: 12px;
   }
 
+  .tutorial-header {
+    padding-right: 56px;
+  }
+
+  .onboarding-dialog h2 {
+    margin-top: 16px;
+    padding-right: 0;
+  }
+
   .onboarding-dialog__intro {
-    margin-bottom: 20px;
+    margin-top: 12px;
+  }
+
+  .onboarding-video-shell {
+    width: 100%;
+    margin-top: 16px;
+  }
+
+  .onboarding-video {
+    width: 100%;
+    height: auto;
+    max-height: 52dvh;
   }
 
   .onboarding-steps {
     gap: 13px;
+    margin-top: 16px;
+  }
+
+  .onboarding-dialog__primary {
+    margin-top: 18px;
+  }
+
+  .side {
+    padding: 22px 18px 18px;
+  }
+}
+
+.tutorial-start-button {
+  align-self: center;
+  justify-self: center;
+  margin-inline: auto;
+}
+
+@media (max-width: 560px) {
+  .onboarding-dialog__content {
+    padding: 18px 18px 20px;
+  }
+
+  .onboarding-dialog__brand {
+    width: 52px;
+    height: 52px;
+  }
+
+  .onboarding-dialog h2 {
+    font-size: clamp(26px, 8vw, 32px);
   }
 
   .side {

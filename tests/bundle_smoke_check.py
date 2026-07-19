@@ -99,6 +99,10 @@ def validate_smoke(bundle: Path) -> None:
             )
             status, frontend = _request(base_url + "/")
             _assert(status == 200 and b"FuelOpt" in frontend, "Frontend smoke request failed")
+            media_request = urllib.request.Request(base_url + "/static/media/fuelopt-tutorial.mp4", method="HEAD")
+            with urllib.request.urlopen(media_request, timeout=2) as media_response:
+                _assert(media_response.status == 200, "Packaged tutorial video request failed")
+                _assert(media_response.headers.get_content_type() == "video/mp4", "Tutorial video MIME type is not video/mp4")
             active_db = isolated_localappdata / "FuelOpt" / "data" / "db" / "gas_stations.sqlite"
             _assert(active_db.is_file(), "First-start bootstrap did not create the active database")
             shutdown = subprocess.run(

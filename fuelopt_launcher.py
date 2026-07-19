@@ -56,7 +56,7 @@ CORRUPT_LOCK_GRACE_SEC = 2.0
 MAINTENANCE_FAILURE_EXIT_CODE = 10
 INSTALL_INSTANCE_MARKER = "install-instance-id.txt"
 INSTALL_INSTANCE_FRAGMENT = "fuelopt-install"
-UI_CACHE_REVISION = "install-onboarding-v2"
+UI_CACHE_REVISION = "tutorial-playback-v3"
 
 
 def _looks_like_project_root(path: Path) -> bool:

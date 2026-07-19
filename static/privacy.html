@@ -12,8 +12,10 @@
     * { box-sizing:border-box; }
     body { margin:0; font-family:Inter,ui-sans-serif,system-ui,sans-serif; background:var(--bg); color:var(--ink); line-height:1.65; }
     .wrap { max-width:760px; margin:0 auto; padding:48px 24px 80px; }
-    .wordmark { font-family:Georgia,serif; font-size:24px; }
-    .wordmark span, a { color:var(--green); }
+    .wordmark { display:inline-flex; align-items:center; gap:8px; font-family:Georgia,serif; font-size:24px; }
+    .wordmark img { display:block; width:48px; height:48px; object-fit:contain; }
+    .wordmark span { color:var(--ink); }
+    a { color:var(--green); }
     h1 { font-size:28px; margin:16px 0 8px; }
     h2 { font-size:17px; margin:32px 0 8px; color:var(--green); }
     p, ul { margin:0 0 16px; }
@@ -25,7 +27,7 @@
 </head>
 <body>
 <main class="wrap">
-  <div class="wordmark">Fuel<span>Opt</span></div>
+  <div class="wordmark"><img src="/static/icons/fuelopt-48.png" alt="" width="48" height="48"><span>FuelOpt</span></div>
   <a class="back" href="/">← Volver a FuelOpt</a>
   <h1>Privacidad</h1>
   <p class="lead">Cómo trata FuelOpt los datos durante su uso en el equipo.</p>
